@@ -18,6 +18,7 @@ describe('Managed account routes', () => {
   beforeAll(async () => {
     tempDir = mkdtempSync(path.join(os.tmpdir(), 'verso-managed-account-'));
     envSnapshot = {
+      VERSO_RUNTIME_MODE: process.env.VERSO_RUNTIME_MODE,
       VERSO_BACKEND_URL: process.env.VERSO_BACKEND_URL,
       VERSO_CHAT_STORE_PATH: process.env.VERSO_CHAT_STORE_PATH,
       VERSO_MANAGED_SESSION_TOKEN: process.env.VERSO_MANAGED_SESSION_TOKEN,
@@ -26,6 +27,7 @@ describe('Managed account routes', () => {
     };
 
     backendPort = await allocatePort();
+    process.env.VERSO_RUNTIME_MODE = 'managed';
     process.env.VERSO_BACKEND_URL = `http://127.0.0.1:${backendPort}`;
     process.env.VERSO_CHAT_STORE_PATH = path.join(tempDir, 'chat.sqlite');
     delete process.env.VERSO_MANAGED_SESSION_TOKEN;
@@ -50,11 +52,12 @@ describe('Managed account routes', () => {
       backendServer = null;
     }
 
-    process.env.VERSO_BACKEND_URL = envSnapshot.VERSO_BACKEND_URL;
-    process.env.VERSO_CHAT_STORE_PATH = envSnapshot.VERSO_CHAT_STORE_PATH;
-    process.env.VERSO_MANAGED_SESSION_TOKEN = envSnapshot.VERSO_MANAGED_SESSION_TOKEN;
-    process.env.VERSO_MANAGED_SESSION_EXPIRES_AT = envSnapshot.VERSO_MANAGED_SESSION_EXPIRES_AT;
-    process.env.VERSO_MANAGED_USER_ID = envSnapshot.VERSO_MANAGED_USER_ID;
+    restoreEnv('VERSO_RUNTIME_MODE', envSnapshot.VERSO_RUNTIME_MODE);
+    restoreEnv('VERSO_BACKEND_URL', envSnapshot.VERSO_BACKEND_URL);
+    restoreEnv('VERSO_CHAT_STORE_PATH', envSnapshot.VERSO_CHAT_STORE_PATH);
+    restoreEnv('VERSO_MANAGED_SESSION_TOKEN', envSnapshot.VERSO_MANAGED_SESSION_TOKEN);
+    restoreEnv('VERSO_MANAGED_SESSION_EXPIRES_AT', envSnapshot.VERSO_MANAGED_SESSION_EXPIRES_AT);
+    restoreEnv('VERSO_MANAGED_USER_ID', envSnapshot.VERSO_MANAGED_USER_ID);
     rmSync(tempDir, { recursive: true, force: true });
   });
 
@@ -110,6 +113,11 @@ describe('Managed account routes', () => {
     expect(res.status).toBe(400);
   });
 });
+
+function restoreEnv(key: string, value: string | undefined): void {
+  if (value === undefined) delete process.env[key];
+  else process.env[key] = value;
+}
 
 function url(pathname: string): string {
   return `http://127.0.0.1:${currentPort}${pathname}`;

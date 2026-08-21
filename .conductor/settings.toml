@@ -5,7 +5,7 @@ setup = "./scripts/conductor-setup.sh"
 run_mode = "nonconcurrent"
 
 [scripts.run.verso]
-command = "./scripts/conductor-run-verso.sh"
+command = "VERSO_RUN_PROFILE=local ./scripts/conductor-run-verso.sh"
 default = true
 icon = "monitor"
 available_in = [ "local" ]

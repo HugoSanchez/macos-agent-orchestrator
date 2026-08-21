@@ -373,10 +373,11 @@ export function getTemplateHermesHome(): string {
     || join(os.homedir(), '.hermes');
 }
 
-export function getManagedHermesHome(templateHome: string): string {
+export function getVersoHermesHome(templateHome: string, runtimeMode: RuntimeMode): string {
   const override = process.env.VERSO_HERMES_HOME?.trim();
   if (override) return override;
-  return join(resolveHermesRoot(templateHome), 'profiles', 'verso');
+  const profileName = runtimeMode === 'managed' ? 'verso' : `verso-${runtimeMode}`;
+  return join(resolveHermesRoot(templateHome), 'profiles', profileName);
 }
 
 function resolveHermesRoot(home: string): string {

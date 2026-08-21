@@ -13,7 +13,8 @@ A native macOS app for chatting with a local Hermes agent through a desktop UI.
 ## Development
 
 ```sh
-# Open the macOS app in Xcode
+# Open the macOS app in Xcode. Shared Debug/Release builds default to local:
+# no Verso account, hosted backend, telemetry, or update polling.
 open verso.xcodeproj
 
 # Run the local sidecar for browser-only development.
@@ -22,7 +23,17 @@ open verso.xcodeproj
 cd desktop/orchestrator && npm install && VERSO_ALLOW_UNAUTHENTICATED_SIDECAR=1 npm run dev
 ```
 
-### Managed Hermes startup
+### Runtime modes
+
+Verso is one application with three launch modes:
+
+- `local` (source default): local app state and user-configured Hermes providers; Verso-managed services are disabled.
+- `byo`: the same managed-service boundary as local, reserved for explicit bring-your-own-provider behavior.
+- `managed`: Verso sign-in, hosted backend/integrations, Sentry, and Sparkle updates.
+
+The app resolves `VERSO_RUNTIME_MODE` first, then the mode embedded at build time. Missing or invalid values fail closed to `local`. Local and BYO use separate chat, connection, memory, and Hermes state, so they cannot modify an existing managed profile.
+
+### Hermes startup
 
 For local app testing, the clean path is:
 
@@ -35,7 +46,7 @@ If Hermes was installed via the normal CLI flow, `orchestrator` will now auto-de
 hermes gateway run
 ```
 
-`orchestrator` launches Hermes in an isolated verso profile under `~/.hermes/profiles/verso`, seeded from your default Hermes config on first run. That avoids clashing with any other Hermes gateway you may already have running.
+`orchestrator` launches Hermes in a runtime-scoped home under `~/Library/Application Support/Verso/runtime/local/hermes-home` (or the corresponding `byo` directory). That keeps source runs away from both your managed Verso data and any other Hermes gateway you may already have running.
 
 No extra Xcode env vars are required for the common case.
 
@@ -59,6 +70,21 @@ VERSO_HERMES_GATEWAY_URL="http://127.0.0.1:8642"
 VERSO_HERMES_STARTUP_TIMEOUT_MS="45000"
 ```
 
+### Managed product development
+
+The managed product remains in this repository and is selected explicitly:
+
+```sh
+# Product-like build and launch using the existing managed profile, Keychain
+# session, shared memory, and deployed services.
+VERSO_RUN_PROFILE=managed ./scripts/conductor-run-verso.sh
+
+# Official signed product build. Ordinary Release remains local by default.
+./scripts/build-managed-release.sh
+```
+
+For Cmd+R in Xcode, add `VERSO_RUNTIME_MODE=managed` to the scheme environment. Managed service identifiers remain embedded, but runtime gates prevent local/BYO launches from using them.
+
 ## Conductor
 
 This repository has shared Conductor settings in `.conductor/settings.toml`.
@@ -69,7 +95,7 @@ app/Hermes state. Conductor reflects shared repository settings only after they
 are merged to the default branch on the remote (`origin/main`), not merely
 because they exist on a workspace branch.
 
-The default Conductor run script:
+The shared Conductor run action:
 
 - validates `desktop/runtime-bundles/` from `CONDUCTOR_ROOT_PATH`
 - links a workspace's `desktop/runtime-bundles` to that root-local bundle when
@@ -81,21 +107,24 @@ The default Conductor run script:
 - runs the built Debug app binary in the foreground so Conductor Stop controls
   the launched process
 - refuses to start if another `verso` process is already running
-- scrubs stale `VERSO_*` debugging overrides, then uses the deployed Privy
-  frontend/backend and a durable Conductor Hermes profile. On its first run it
-  migrates the existing workspace profile and restores the installed app's
-  additive capabilities (Codex credentials, scheduled jobs, and connected
-  tool manifest), without mixing in its conflicting model configuration.
-  Indexed memory remains in the shared Verso memory DB, so it is available to
-  the agent after every rebuild.
+- scrubs stale `VERSO_*` debugging overrides, then launches `local` with
+  dedicated chat, connection, memory, and Hermes state.
+
+Personal repository settings can keep the product workflow as the default on
+one machine without changing the OSS behavior. In the repository root,
+`.conductor/settings.local.toml` has higher precedence than the shared file;
+point its `scripts.run.verso.command` at `./scripts/conductor-run-verso.sh`.
+That script's personal default is `managed`, preserving the existing durable
+Conductor Hermes profile, Keychain session, shared Verso memory DB, and
+deployed Privy/backend services.
 
 The runtime symlink keeps workspace execution clean without Spotlight testing:
 the workspace builds and runs its own checked-out code, while the generated,
 gitignored runtime bundle is reused from the repository root after validation.
 The symlink points only at the validated root bundle and setup refuses any
 mismatched existing runtime path. Nonconcurrent run mode remains necessary
-because the product-like Conductor run deliberately uses shared per-user
-account and memory state plus one durable Conductor Hermes profile.
+because each selected runtime profile deliberately uses durable per-user
+Hermes and memory state.
 
 If setup reports a missing or stale runtime bundle, repair it from the repository
 root:

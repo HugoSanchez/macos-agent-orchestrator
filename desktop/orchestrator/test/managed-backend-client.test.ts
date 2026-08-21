@@ -1,6 +1,10 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import http from 'node:http';
-import { ManagedBackendClient, ManagedBackendError } from '../src/integrations/managed-backend-client.ts';
+import {
+  ManagedBackendClient,
+  ManagedBackendError,
+  resolveManagedBackendUrl,
+} from '../src/integrations/managed-backend-client.ts';
 
 let backendServer: http.Server | null = null;
 let backendPort = 0;
@@ -37,6 +41,35 @@ function freshClient(opts: { withSession?: boolean } = {}): ManagedBackendClient
 }
 
 describe('ManagedBackendClient.getAccount', () => {
+  it('stays disabled in local mode even with a stale backend URL and session', async () => {
+    const client = new ManagedBackendClient({
+      runtimeMode: 'local',
+      baseUrl: 'https://managed.example',
+    });
+    client.setSession({
+      token: 'stale-token',
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      userId: 'stale-user',
+      email: null,
+      displayName: null,
+      receivedAt: new Date().toISOString(),
+    });
+
+    const account = await client.getAccount();
+
+    expect(client.configured).toBe(false);
+    expect(client.getStoredSession()).toBeNull();
+    expect(account.runtimeMode).toBe('local');
+    expect(account.capabilities).toEqual({ managedAccount: false, remoteConnections: false });
+  });
+
+  it('has no implicit managed backend default', () => {
+    expect(resolveManagedBackendUrl('managed', {})).toBe('');
+    expect(resolveManagedBackendUrl('local', {
+      VERSO_BACKEND_URL: 'https://managed.example',
+    })).toBe('');
+  });
+
   it('reports signed out when no session is loaded', async () => {
     const client = freshClient({ withSession: false });
 

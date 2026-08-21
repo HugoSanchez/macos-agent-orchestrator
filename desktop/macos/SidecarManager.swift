@@ -27,12 +27,15 @@ final class SidecarManager: ObservableObject {
     private let restartPolicy = SidecarRestartPolicy.standard
     private let processController: SidecarProcessController
     private let httpTransport: any SidecarHTTPTransport
+    private let runtimeConfiguration: VersoRuntimeConfiguration
     private let logger = Logger(subsystem: "com.verso.app", category: "Sidecar")
 
     init(
+        runtimeConfiguration: VersoRuntimeConfiguration = .resolve(),
         processController: SidecarProcessController? = nil,
         httpTransport: any SidecarHTTPTransport = URLSession.shared
     ) {
+        self.runtimeConfiguration = runtimeConfiguration
         self.processController = processController ?? SidecarProcessController(
             logFileURL: SidecarProcessController.defaultLogFileURL
         )
@@ -57,6 +60,11 @@ final class SidecarManager: ObservableObject {
     }
 
     func updateManagedSession(_ session: ManagedAppSession?) {
+        guard runtimeConfiguration.requiresManagedSession else {
+            managedSession = nil
+            managedAccount = nil
+            return
+        }
         let previousUserId = managedSession?.userId
         managedSession = session
         if let session {
@@ -192,6 +200,10 @@ final class SidecarManager: ObservableObject {
     }
 
     func refreshManagedAccount() async {
+        guard runtimeConfiguration.requiresManagedSession else {
+            managedAccount = nil
+            return
+        }
         guard let baseURL, let authToken else {
             managedAccount = nil
             return
@@ -213,6 +225,7 @@ final class SidecarManager: ObservableObject {
     /// over loopback IPC. The orchestrator never persists the bearer token; on
     /// sidecar restart we re-seed via env vars in `launchProcess`.
     private func pushManagedSession(_ session: ManagedAppSession?) async {
+        guard runtimeConfiguration.requiresManagedSession else { return }
         guard let baseURL, let authToken else { return }
         do {
             let client = SidecarHTTPClient(
@@ -324,6 +337,7 @@ final class SidecarManager: ObservableObject {
         }
         let launchEnvironment = SidecarLaunchEnvironment.make(
             baseEnvironment: environment,
+            runtimeConfiguration: runtimeConfiguration,
             homeDirectory: NSHomeDirectory(),
             bundleRoot: bundleRoot,
             hermesHomeOverride: environment["VERSO_HERMES_HOME"],

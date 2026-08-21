@@ -214,7 +214,8 @@ describe('HermesSupervisor: managed config override', () => {
     supervisor.setOrchestratorBaseUrl('http://127.0.0.1:62000');
     (supervisor as unknown as { ensureManagedHermesHome: () => void }).ensureManagedHermesHome();
 
-    const parsed = YAML.parse(readFileSync(path.join(managedHome, 'config.yaml'), 'utf8')) as Record<string, unknown>;
+    const localHome = path.join(tempRoot, 'profiles', 'verso-local');
+    const parsed = YAML.parse(readFileSync(path.join(localHome, 'config.yaml'), 'utf8')) as Record<string, unknown>;
     expect(parsed.model).toEqual({
       provider: 'openai-codex',
       default: 'gpt-5.5',

@@ -1,3 +1,5 @@
+import { readRuntimeMode, type RuntimeMode } from './runtime-mode.ts';
+
 export interface ManagedSessionRecord {
   token: string;
   expiresAt: string;
@@ -44,6 +46,11 @@ export type ManagedAccountState =
   | 'backend_unavailable';
 
 export interface ManagedAccountView {
+  runtimeMode: RuntimeMode;
+  capabilities: {
+    managedAccount: boolean;
+    remoteConnections: boolean;
+  };
   backend: {
     configured: boolean;
     baseUrl: string | null;
@@ -103,21 +110,39 @@ export class ManagedBackendError extends Error {
 // this, dev/test runs silently adopt whatever service happens to be
 // listening on the default local port (e.g. another workspace's backend)
 // and surface its half-configured sign-in flow as "Verso is broken".
-function resolveDefaultBackendUrl(): string {
-  const raw = process.env.VERSO_BACKEND_URL?.trim();
+export function resolveManagedBackendUrl(
+  runtimeMode: RuntimeMode,
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  if (runtimeMode !== 'managed') return '';
+  const raw = env.VERSO_BACKEND_URL?.trim();
   if (raw && ['off', 'none', 'disabled'].includes(raw.toLowerCase())) return '';
-  return raw || 'http://127.0.0.1:8788';
+  return raw || '';
+}
+
+interface ManagedBackendClientOptions {
+  runtimeMode?: RuntimeMode;
+  baseUrl?: string;
 }
 
 export class ManagedBackendClient {
   private readonly baseUrl: string;
+  private readonly runtimeMode: RuntimeMode;
 
   private currentSession: ManagedSessionRecord | null;
 
-  constructor(baseUrl = resolveDefaultBackendUrl()) {
-    this.baseUrl = baseUrl.replace(/\/+$/, '');
-    this.currentSession = readSessionFromEnv();
-    const source = process.env.VERSO_BACKEND_URL?.trim() ? 'env VERSO_BACKEND_URL' : 'default';
+  constructor(options: string | ManagedBackendClientOptions = {}) {
+    const normalizedOptions = typeof options === 'string'
+      ? { runtimeMode: 'managed' as const, baseUrl: options }
+      : options;
+    this.runtimeMode = normalizedOptions.runtimeMode ?? readRuntimeMode();
+    const resolvedBaseUrl = normalizedOptions.baseUrl
+      ?? resolveManagedBackendUrl(this.runtimeMode);
+    this.baseUrl = this.runtimeMode === 'managed' ? resolvedBaseUrl.replace(/\/+$/, '') : '';
+    this.currentSession = this.runtimeMode === 'managed' ? readSessionFromEnv() : null;
+    const source = normalizedOptions.baseUrl !== undefined
+      ? 'constructor'
+      : process.env.VERSO_BACKEND_URL?.trim() ? 'env VERSO_BACKEND_URL' : 'disabled default';
     console.error(`[managed-backend] baseUrl=${this.baseUrl || '(disabled)'} (${source})`);
   }
 
@@ -131,7 +156,7 @@ export class ManagedBackendClient {
   }
 
   setSession(record: ManagedSessionRecord | null): void {
-    this.currentSession = record;
+    this.currentSession = this.runtimeMode === 'managed' ? record : null;
   }
 
   getStoredSession(): ManagedSessionRecord | null {
@@ -143,6 +168,11 @@ export class ManagedBackendClient {
     const expired = stored ? isIsoExpired(stored.expiresAt) : false;
 
     const view: ManagedAccountView = {
+      runtimeMode: this.runtimeMode,
+      capabilities: {
+        managedAccount: this.runtimeMode === 'managed',
+        remoteConnections: this.configured,
+      },
       backend: {
         configured: this.configured,
         baseUrl: this.configured ? this.baseUrl : null,

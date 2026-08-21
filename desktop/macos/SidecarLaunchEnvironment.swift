@@ -7,10 +7,9 @@ struct SidecarManagedSessionSeed: Equatable {
 }
 
 struct SidecarLaunchEnvironment {
-    static let defaultBackendURL = "https://verso-backend-2lg3.onrender.com"
-
     static func make(
         baseEnvironment: [String: String],
+        runtimeConfiguration: VersoRuntimeConfiguration,
         homeDirectory: String,
         bundleRoot: String?,
         hermesHomeOverride: String?,
@@ -29,21 +28,28 @@ struct SidecarLaunchEnvironment {
         let currentPath = environment["PATH"] ?? ""
         environment["PATH"] = (extraPaths + [currentPath]).joined(separator: ":")
 
-        // Debug and Conductor launches are product-testing paths too. Only an
-        // explicit scheme environment should replace the deployed backend.
-        if environment["VERSO_BACKEND_URL"]?
-            .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true {
-            environment["VERSO_BACKEND_URL"] = defaultBackendURL
+        environment["VERSO_RUNTIME_MODE"] = runtimeConfiguration.mode.rawValue
+        environment["VERSO_BACKEND_URL"] = runtimeConfiguration.mode.usesManagedServices
+            ? (runtimeConfiguration.managedBackendURL ?? "off")
+            : "off"
+
+        let resolvedHermesHomeOverride: String?
+        if let hermesHomeOverride, !hermesHomeOverride.isEmpty {
+            resolvedHermesHomeOverride = hermesHomeOverride
+        } else if runtimeConfiguration.mode.usesManagedServices {
+            resolvedHermesHomeOverride = nil
+        } else {
+            resolvedHermesHomeOverride = "\(homeDirectory)/Library/Application Support/Verso/runtime/\(runtimeConfiguration.mode.rawValue)/hermes-home"
         }
 
         SidecarRuntimeResolver.applyBundledRuntimeEnvironment(
             &environment,
             bundleRoot: bundleRoot,
             homeDirectory: homeDirectory,
-            hermesHomeOverride: hermesHomeOverride
+            hermesHomeOverride: resolvedHermesHomeOverride
         )
 
-        if let managedSession {
+        if runtimeConfiguration.mode.usesManagedServices, let managedSession {
             environment["VERSO_MANAGED_SESSION_TOKEN"] = managedSession.token
             environment["VERSO_MANAGED_SESSION_EXPIRES_AT"] = managedSession.expiresAt
             environment["VERSO_MANAGED_USER_ID"] = managedSession.userId

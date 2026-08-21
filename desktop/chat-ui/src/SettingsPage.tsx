@@ -21,6 +21,11 @@ import { CodexMark, CodexConnectFlow, useCodexConnect } from './CodexConnect';
 import { postShellAction } from './shell-bridge';
 
 interface ManagedAccountView {
+  runtimeMode: 'local' | 'byo' | 'managed';
+  capabilities: {
+    managedAccount: boolean;
+    remoteConnections: boolean;
+  };
   backend: {
     configured: boolean;
     baseUrl: string | null;
@@ -134,30 +139,41 @@ export function SettingsPage({ onBack }: Props) {
         </div>
       ) : account ? (
         <div className="settings-body">
-          <section className="settings-section">
-            <h2>Account</h2>
-            <div className="settings-row">
-              <span className="settings-label">Signed in as</span>
-              <span className="settings-value">
-                {account.account.user?.email
-                  || account.account.user?.displayName
-                  || account.session.email
-                  || account.session.displayName
-                  || account.session.userId
-                  || 'Not signed in'}
-              </span>
-            </div>
-            <div className="settings-row">
-              <span className="settings-label">Status</span>
-              <span className="settings-value">{titleCase(account.account.state.replace(/_/g, ' '))}</span>
-            </div>
-            {account.account.entitlements[0] ? (
+          {account.capabilities.managedAccount ? (
+            <section className="settings-section">
+              <h2>Account</h2>
+              <div className="settings-row">
+                <span className="settings-label">Signed in as</span>
+                <span className="settings-value">
+                  {account.account.user?.email
+                    || account.account.user?.displayName
+                    || account.session.email
+                    || account.session.displayName
+                    || account.session.userId
+                    || 'Not signed in'}
+                </span>
+              </div>
+              <div className="settings-row">
+                <span className="settings-label">Status</span>
+                <span className="settings-value">{titleCase(account.account.state.replace(/_/g, ' '))}</span>
+              </div>
+              {account.account.entitlements[0] ? (
+                <div className="settings-row">
+                  <span className="settings-label">Mode</span>
+                  <span className="settings-value">{titleCase(account.account.entitlements[0].mode)}</span>
+                </div>
+              ) : null}
+            </section>
+          ) : (
+            <section className="settings-section">
+              <h2>Runtime</h2>
               <div className="settings-row">
                 <span className="settings-label">Mode</span>
-                <span className="settings-value">{titleCase(account.account.entitlements[0].mode)}</span>
+                <span className="settings-value">{titleCase(account.runtimeMode)}</span>
               </div>
-            ) : null}
-          </section>
+              <p className="settings-footnote">Verso managed services are disabled in this mode.</p>
+            </section>
+          )}
 
           <CodexSection />
 
@@ -167,19 +183,21 @@ export function SettingsPage({ onBack }: Props) {
 
           <AgentBrowserSection />
 
-          <section className="settings-section settings-section-signout">
-            <div className="settings-row">
-              <span className="settings-label">Session</span>
-              <button
-                type="button"
-                className="settings-button settings-button-danger"
-                onClick={handleSignOut}
-                disabled={isSigningOut}
-              >
-                {isSigningOut ? 'Signing out…' : 'Sign out'}
-              </button>
-            </div>
-          </section>
+          {account.capabilities.managedAccount ? (
+            <section className="settings-section settings-section-signout">
+              <div className="settings-row">
+                <span className="settings-label">Session</span>
+                <button
+                  type="button"
+                  className="settings-button settings-button-danger"
+                  onClick={handleSignOut}
+                  disabled={isSigningOut}
+                >
+                  {isSigningOut ? 'Signing out…' : 'Sign out'}
+                </button>
+              </div>
+            </section>
+          ) : null}
         </div>
       ) : null}
     </div>

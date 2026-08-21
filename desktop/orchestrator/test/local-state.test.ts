@@ -38,7 +38,7 @@ describe('local state isolation', () => {
 
       const snapshot = applyLocalStateIsolation({
         VERSO_LOCAL_STATE_ROOT: fixture.root,
-      }, { homeDir: fixture.home });
+      }, { homeDir: fixture.home, runtimeMode: 'managed' });
 
       expect(snapshot.mode).toBe('signed_out');
       expect(snapshot.legacyDataDetected).toBe(true);
@@ -53,6 +53,7 @@ describe('local state isolation', () => {
     try {
       mkdirSync(fixture.legacyHermesHome, { recursive: true });
       const env: NodeJS.ProcessEnv = {
+        VERSO_RUNTIME_MODE: 'managed',
         VERSO_LOCAL_STATE_ROOT: fixture.root,
         VERSO_MANAGED_USER_ID: 'usr_owner',
         VERSO_HERMES_HOME: fixture.legacyHermesHome,
@@ -89,6 +90,7 @@ describe('local state isolation', () => {
       writeFileSync(fixture.legacyChatStore, '', 'utf8');
       writeFileSync(fixture.ownerMarker, '{truncated', 'utf8');
       const env: NodeJS.ProcessEnv = {
+        VERSO_RUNTIME_MODE: 'managed',
         VERSO_LOCAL_STATE_ROOT: fixture.root,
         VERSO_MANAGED_USER_ID: 'usr_owner',
       };
@@ -116,6 +118,7 @@ describe('local state isolation', () => {
       const defaultHermesHome = path.join(fixture.home, '.hermes', 'profiles', 'verso');
       mkdirSync(defaultHermesHome, { recursive: true });
       const env: NodeJS.ProcessEnv = {
+        VERSO_RUNTIME_MODE: 'managed',
         VERSO_LOCAL_STATE_ROOT: fixture.root,
         VERSO_MANAGED_USER_ID: 'usr_owner',
       };
@@ -138,6 +141,7 @@ describe('local state isolation', () => {
       const defaultHermesHome = path.join(fixture.home, '.hermes', 'profiles', 'verso');
       mkdirSync(defaultHermesHome, { recursive: true });
       const env: NodeJS.ProcessEnv = {
+        VERSO_RUNTIME_MODE: 'managed',
         VERSO_LOCAL_STATE_ROOT: fixture.root,
         VERSO_MANAGED_USER_ID: 'usr_owner',
       };
@@ -158,6 +162,7 @@ describe('local state isolation', () => {
       mkdirSync(fixture.root, { recursive: true });
       writeOwnerMarker(fixture.ownerMarker, hash('usr_owner'));
       const env: NodeJS.ProcessEnv = {
+        VERSO_RUNTIME_MODE: 'managed',
         VERSO_LOCAL_STATE_ROOT: fixture.root,
         VERSO_MANAGED_USER_ID: 'usr_owner',
         VERSO_HERMES_HOME: fixture.legacyHermesHome,
@@ -179,6 +184,7 @@ describe('local state isolation', () => {
       mkdirSync(fixture.root, { recursive: true });
       writeOwnerMarker(fixture.ownerMarker, hash('usr_owner'));
       const env: NodeJS.ProcessEnv = {
+        VERSO_RUNTIME_MODE: 'managed',
         VERSO_LOCAL_STATE_ROOT: fixture.root,
         VERSO_MANAGED_USER_ID: 'usr_second',
         VERSO_HERMES_HOME: fixture.legacyHermesHome,
@@ -202,6 +208,7 @@ describe('local state isolation', () => {
     const fixture = makeFixture();
     try {
       const env: NodeJS.ProcessEnv = {
+        VERSO_RUNTIME_MODE: 'managed',
         VERSO_LOCAL_STATE_ROOT: fixture.root,
         VERSO_MANAGED_USER_ID: 'usr_fresh',
         VERSO_HERMES_HOME: fixture.legacyHermesHome,
@@ -222,10 +229,12 @@ describe('local state isolation', () => {
     const fixture = makeFixture();
     try {
       const firstEnv: NodeJS.ProcessEnv = {
+        VERSO_RUNTIME_MODE: 'managed',
         VERSO_LOCAL_STATE_ROOT: fixture.root,
         VERSO_MANAGED_USER_ID: 'usr_first',
       };
       const secondEnv: NodeJS.ProcessEnv = {
+        VERSO_RUNTIME_MODE: 'managed',
         VERSO_LOCAL_STATE_ROOT: fixture.root,
         VERSO_MANAGED_USER_ID: 'usr_second',
       };
@@ -271,6 +280,7 @@ describe('local state isolation', () => {
     const fixture = makeFixture();
     const envSnapshot = snapshotProcessEnv([
       'VERSO_HERMES_MANAGED',
+      'VERSO_RUNTIME_MODE',
       'VERSO_LOCAL_STATE_ROOT',
       'VERSO_MANAGED_USER_ID',
       'VERSO_CHAT_STORE_PATH',
@@ -287,6 +297,7 @@ describe('local state isolation', () => {
     try {
       result = await withProcessEnv({
         VERSO_HERMES_MANAGED: 'false',
+        VERSO_RUNTIME_MODE: 'managed',
         VERSO_LOCAL_STATE_ROOT: fixture.root,
         VERSO_MANAGED_USER_ID: 'usr_diagnostics',
         VERSO_HERMES_HOME: fixture.legacyHermesHome,
@@ -326,6 +337,56 @@ describe('local state isolation', () => {
     } finally {
       await result?.close();
       restoreProcessEnv(envSnapshot);
+      fixture.cleanup();
+    }
+  });
+
+  it.each(['local', 'byo'] as const)('uses isolated runtime state for %s without claiming managed data', (runtimeMode) => {
+    const fixture = makeFixture();
+    try {
+      writeFileSync(fixture.legacyChatStore, 'managed-data', 'utf8');
+      const env: NodeJS.ProcessEnv = {
+        VERSO_RUNTIME_MODE: runtimeMode,
+        VERSO_LOCAL_STATE_ROOT: fixture.root,
+      };
+
+      const snapshot = applyLocalStateIsolation(env, { homeDir: fixture.home });
+      const runtimeRoot = path.join(fixture.root, 'runtime', runtimeMode);
+
+      expect(snapshot.mode).toBe('runtime_scoped');
+      expect(snapshot.accountHash).toBeNull();
+      expect(env.VERSO_CHAT_STORE_PATH).toBe(path.join(runtimeRoot, 'chat-sessions.sqlite'));
+      expect(env.VERSO_CONNECTIONS_STORE_PATH).toBe(path.join(runtimeRoot, 'connections.json'));
+      expect(env.VERSO_HERMES_HOME).toBe(path.join(runtimeRoot, 'hermes-home'));
+      expect(env.VERSO_MEMORY_DB_PATH).toBe(path.join(runtimeRoot, 'memory', 'verso-memory.db'));
+      expect(env.VERSO_CUSTOM_CONNECTORS_STORE_PATH).toBe(path.join(runtimeRoot, 'custom-connectors.json'));
+      expect(env.VERSO_CUSTOM_CONNECTOR_ICONS_DIR).toBe(path.join(runtimeRoot, 'custom-connector-icons'));
+      expect(env.VERSO_COMPOSIO_TOOL_USAGE_STORE_PATH).toBe(path.join(runtimeRoot, 'composio-tool-usage.sqlite'));
+      expect(env.VERSO_INGESTION_STORE_PATH).toBe(path.join(runtimeRoot, 'ingestion.sqlite'));
+      expect(env.VERSO_BROWSER_SETTINGS_PATH).toBe(path.join(runtimeRoot, 'browser-settings.json'));
+      expect(env.VERSO_BROWSER_DATA_ROOT).toBe(path.join(runtimeRoot, 'browser'));
+      expect(readFileSync(fixture.legacyChatStore, 'utf8')).toBe('managed-data');
+      expect(existsSync(fixture.ownerMarker)).toBe(false);
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it('preserves explicit non-managed state overrides', () => {
+    const fixture = makeFixture();
+    try {
+      const explicitHermesHome = path.join(fixture.tempDir, 'explicit-local-hermes');
+      const env: NodeJS.ProcessEnv = {
+        VERSO_RUNTIME_MODE: 'local',
+        VERSO_LOCAL_STATE_ROOT: fixture.root,
+        VERSO_HERMES_HOME: explicitHermesHome,
+      };
+
+      const snapshot = applyLocalStateIsolation(env, { homeDir: fixture.home });
+
+      expect(snapshot.mode).toBe('runtime_scoped');
+      expect(env.VERSO_HERMES_HOME).toBe(explicitHermesHome);
+    } finally {
       fixture.cleanup();
     }
   });

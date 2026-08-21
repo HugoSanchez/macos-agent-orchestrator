@@ -1,7 +1,6 @@
 import SwiftUI
 import AppKit
 import Combine
-import Sentry
 import Sparkle
 
 @main
@@ -15,17 +14,21 @@ struct versoApp: App {
         .commands {
             CommandGroup(replacing: .appSettings) { }
             CommandGroup(after: .appInfo) {
-                CheckForUpdatesView(updater: appDelegate.updater)
+                if appDelegate.runtimeConfiguration.enablesUpdates {
+                    CheckForUpdatesView(updater: appDelegate.updater)
+                }
             }
             #if DEBUG
-            CommandMenu("Debug") {
-                Button("Send Test Event to Sentry") {
-                    let testError = NSError(
-                        domain: "verso.SentrySmokeTest",
-                        code: 1,
-                        userInfo: [NSLocalizedDescriptionKey: "Test event from Debug menu"]
-                    )
-                    Telemetry.reportError(testError, context: "sentry-smoke-test")
+            if appDelegate.runtimeConfiguration.enablesTelemetry {
+                CommandMenu("Debug") {
+                    Button("Send Test Event to Sentry") {
+                        let testError = NSError(
+                            domain: "verso.SentrySmokeTest",
+                            code: 1,
+                            userInfo: [NSLocalizedDescriptionKey: "Test event from Debug menu"]
+                        )
+                        Telemetry.reportError(testError, context: "sentry-smoke-test")
+                    }
                 }
             }
             #endif
@@ -72,14 +75,23 @@ private struct CheckForUpdatesView: View {
 private struct RootView: View {
     @ObservedObject var sidecar: SidecarManager
     @ObservedObject var managedSessionStore: ManagedSessionStore
+    let runtimeConfiguration: VersoRuntimeConfiguration
 
     var body: some View {
-        if managedSessionStore.isRestoringPersistedSession {
+        switch AppStartupPolicy.destination(
+            configuration: runtimeConfiguration,
+            isRestoringManagedSession: managedSessionStore.isRestoringPersistedSession,
+            managedSession: managedSessionStore.currentSession
+        ) {
+        case .restoringManagedSession:
             ManagedSessionRestoringView()
-        } else if let session = managedSessionStore.currentSession, !session.isExpired {
+        case .content:
             ContentView(sidecar: sidecar, managedSessionStore: managedSessionStore)
-        } else {
-            SignInView(managedSessionStore: managedSessionStore)
+        case .managedSignIn:
+            SignInView(
+                managedSessionStore: managedSessionStore,
+                frontendURL: runtimeConfiguration.managedFrontendURL
+            )
         }
     }
 }
@@ -111,9 +123,14 @@ private struct MainWindowContentView: View {
     @ObservedObject var sidecar: SidecarManager
     @ObservedObject var managedSessionStore: ManagedSessionStore
     @ObservedObject var updateUserDriver: VersoUpdateUserDriver
+    let runtimeConfiguration: VersoRuntimeConfiguration
 
     var body: some View {
-        RootView(sidecar: sidecar, managedSessionStore: managedSessionStore)
+        RootView(
+            sidecar: sidecar,
+            managedSessionStore: managedSessionStore,
+            runtimeConfiguration: runtimeConfiguration
+        )
             .overlay(alignment: .bottomTrailing) {
                 VersoUpdateToastOverlay(driver: updateUserDriver)
                     .padding(.trailing, 20)
@@ -131,9 +148,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     static private(set) weak var shared: AppDelegate?
 
     let updater: SPUUpdater
+    let runtimeConfiguration: VersoRuntimeConfiguration
 
-    private let sidecar = SidecarManager()
-    private let managedSessionStore = ManagedSessionStore()
+    private let sidecar: SidecarManager
+    private let managedSessionStore: ManagedSessionStore
     private let updateUserDriver: VersoUpdateUserDriver
     private var cancellables: Set<AnyCancellable> = []
     private var didScheduleLaunchUpdateCheck = false
@@ -147,7 +165,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var registeredMainWindow: NSWindow? { mainWindow }
 
     override init() {
-        Self.configureTelemetry()
+        let runtimeConfiguration = VersoRuntimeConfiguration.resolve()
+        self.runtimeConfiguration = runtimeConfiguration
+        self.sidecar = SidecarManager(runtimeConfiguration: runtimeConfiguration)
+        self.managedSessionStore = ManagedSessionStore(
+            isEnabled: runtimeConfiguration.requiresManagedSession
+        )
+        Telemetry.configure(configuration: runtimeConfiguration)
 
         let updateUserDriver = VersoUpdateUserDriver()
         self.updateUserDriver = updateUserDriver
@@ -161,11 +185,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         super.init()
         AppDelegate.shared = self
 
-        do {
-            try updater.start()
-        } catch {
-            NSLog("Failed to start Sparkle updater: \(error.localizedDescription)")
-            Telemetry.reportError(error, context: "sparkle-start")
+        if runtimeConfiguration.enablesUpdates {
+            do {
+                try updater.start()
+            } catch {
+                NSLog("Failed to start Sparkle updater: \(error.localizedDescription)")
+                Telemetry.reportError(error, context: "sparkle-start")
+            }
         }
     }
 
@@ -176,6 +202,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // the restored session after the non-interactive Keychain lookup, so
         // the sidecar launches once with the correct account identity instead
         // of launching signed out and immediately restarting.
+        if AppStartupPolicy.shouldStartSidecarAtLaunch(configuration: runtimeConfiguration) {
+            sidecar.start()
+        }
         scheduleLaunchUpdateCheckIfReady()
     }
 
@@ -206,6 +235,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {
+        guard runtimeConfiguration.requiresManagedSession else { return }
         guard !urls.isEmpty else { return }
 
         NSApp.activate(ignoringOtherApps: true)
@@ -217,20 +247,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private static func configureTelemetry() {
-        guard let dsn = Bundle.main.object(forInfoDictionaryKey: "SentryDSN") as? String,
-              !dsn.isEmpty else { return }
-
-        SentrySDK.start { options in
-            options.dsn = dsn
-            #if DEBUG
-            options.environment = "development"
-            #else
-            options.environment = "production"
-            #endif
-        }
-    }
-
     private func installStateObservers() {
         sidecar.$state
             .sink { [weak self] _ in
@@ -238,12 +254,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             .store(in: &cancellables)
 
-        managedSessionStore.$currentSession
-            .removeDuplicates()
-            .sink { [weak self] session in
-                self?.sidecar.updateManagedSession(session)
-            }
-            .store(in: &cancellables)
+        if runtimeConfiguration.requiresManagedSession {
+            managedSessionStore.$currentSession
+                .removeDuplicates()
+                .sink { [weak self] session in
+                    self?.sidecar.updateManagedSession(session)
+                }
+                .store(in: &cancellables)
+        }
     }
 
     private func createMainWindow() {
@@ -263,7 +281,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let rootView = MainWindowContentView(
             sidecar: sidecar,
             managedSessionStore: managedSessionStore,
-            updateUserDriver: updateUserDriver
+            updateUserDriver: updateUserDriver,
+            runtimeConfiguration: runtimeConfiguration
         )
         let hostingView = NSHostingView(rootView: rootView)
         hostingView.frame = NSRect(origin: .zero, size: contentRect.size)
@@ -300,6 +319,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func scheduleLaunchUpdateCheckIfReady() {
+        guard runtimeConfiguration.enablesUpdates else { return }
         guard !didScheduleLaunchUpdateCheck else { return }
         guard case .running = sidecar.state else { return }
 

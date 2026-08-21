@@ -14,7 +14,7 @@ import { CustomConnectorKeychain } from './keychain.ts';
 import { fetchRegisteredToolNames, hermesGatewayAuthHeaders } from './hermes-gateway-client.ts';
 import {
   HermesManagedProfile,
-  getManagedHermesHome,
+  getVersoHermesHome,
   getTemplateHermesHome,
 } from './hermes-managed-profile.ts';
 import {
@@ -113,7 +113,7 @@ export class HermesSupervisor {
   constructor(options: HermesSupervisorOptions = {}) {
     this.config = options.config ?? getHermesGatewayConfig();
     this.launch = options.launch ?? getHermesLaunchConfig();
-    this.runtimeMode = options.runtimeMode ?? 'managed';
+    this.runtimeMode = options.runtimeMode ?? 'local';
     this.memoryToolsMode = options.memoryToolsMode ?? 'full';
     this.customConnectorsStore = options.customConnectorsStore ?? new CustomConnectorsStore();
     this.customConnectorKeychain = options.customConnectorKeychain ?? new CustomConnectorKeychain();
@@ -122,7 +122,7 @@ export class HermesSupervisor {
     this.managedEndpointSelected = this.hasExplicitBaseUrl;
     this.manualMode = isManagedDisabled();
     this.templateHermesHome = getTemplateHermesHome();
-    this.managedHermesHome = getManagedHermesHome(this.templateHermesHome);
+    this.managedHermesHome = getVersoHermesHome(this.templateHermesHome, this.runtimeMode);
     this.managedProfile = new HermesManagedProfile({
       templateHome: this.templateHermesHome,
       managedHome: this.managedHermesHome,

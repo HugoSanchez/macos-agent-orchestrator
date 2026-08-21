@@ -12,5 +12,5 @@ export function readRuntimeMode(env: NodeJS.ProcessEnv = process.env): RuntimeMo
   if (raw && (VALID_MODES as string[]).includes(raw)) {
     return raw as RuntimeMode;
   }
-  return 'managed';
+  return 'local';
 }
