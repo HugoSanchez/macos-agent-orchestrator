@@ -96,7 +96,21 @@ if ${needs_node_install}; then
         -output "${NODE_DIR}/bin/node"
     chmod +x "${NODE_DIR}/bin/node"
 
+    # Node's distribution license also contains the notices for the
+    # third-party code compiled into the executable. Preserve it beside the
+    # universal binary so it travels into every Release app bundle.
+    cp "${tmp}/node-v${NODE_VERSION}-darwin-arm64/LICENSE" "${NODE_DIR}/LICENSE"
+
     echo "[bundle] node $(/usr/bin/lipo -info "${NODE_DIR}/bin/node")"
+fi
+
+# Existing runtime caches created before license preservation may already have
+# the correct binary and therefore skip the download block above. Backfill the
+# exact pinned Node license without forcing a binary rebuild.
+if [ ! -s "${NODE_DIR}/LICENSE" ]; then
+    echo "[bundle] downloading Node.js v${NODE_VERSION} license notices"
+    curl -fsSL "https://raw.githubusercontent.com/nodejs/node/v${NODE_VERSION}/LICENSE" \
+        -o "${NODE_DIR}/LICENSE"
 fi
 
 # ── Orchestrator source + node_modules ──────────────────────────────────────

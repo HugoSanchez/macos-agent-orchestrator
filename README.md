@@ -132,4 +132,8 @@ This repo is `huacamayo`. verso is the product.
 
 ## License
 
-Verso is available under the [MIT License](LICENSE).
+Copyright (C) 2026 Hugo Sanchez.
+
+Verso is licensed under the [GNU Affero General Public License, version 3
+only](LICENSE) (`AGPL-3.0-only`). Third-party components retain their own
+licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

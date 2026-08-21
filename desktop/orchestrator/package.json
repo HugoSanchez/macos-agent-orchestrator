@@ -2,7 +2,7 @@
   "name": "verso-sidecar",
   "version": "0.1.0",
   "description": "Thin local Hermes sidecar for the verso macOS app",
-  "license": "MIT",
+  "license": "AGPL-3.0-only",
   "type": "module",
   "main": "src/index.ts",
   "scripts": {

@@ -2,7 +2,7 @@
   "name": "verso-backend",
   "version": "0.1.0",
   "description": "Remote API backend for managed verso users",
-  "license": "MIT",
+  "license": "AGPL-3.0-only",
   "type": "module",
   "main": "src/index.ts",
   "scripts": {

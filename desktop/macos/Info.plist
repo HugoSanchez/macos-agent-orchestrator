@@ -34,7 +34,7 @@
 	<key>LSMinimumSystemVersion</key>
 	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
 	<key>NSHumanReadableCopyright</key>
-	<string></string>
+	<string>Copyright © 2026 Hugo Sanchez. Licensed under AGPL-3.0-only.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 	<key>SentryDSN</key>
