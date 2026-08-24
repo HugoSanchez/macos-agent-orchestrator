@@ -64,8 +64,96 @@ describe('ConnectionsService', () => {
     store.upsertConnection(fixtureConnection());
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({ message: 'not found' }, 404));
 
-    await expect(service.deleteConnection('ca_123')).resolves.toBeUndefined();
+    await expect(service.deleteConnection('ca_123')).resolves.toEqual({
+      connectedAccountId: 'ca_123',
+      composioAccountDeleted: true,
+      providerRevocation: 'already_absent',
+    });
 
+    expect(store.listConnections()).toEqual([]);
+  });
+
+  it.each(['revoked', 'already_absent', 'manual_action_required'] as const)(
+    'propagates the backend disconnect result "%s" and removes the local row',
+    async (providerRevocation) => {
+      const { service, store } = setupService();
+      store.upsertConnection(fixtureConnection());
+      vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({
+        disconnect: {
+          connectedAccountId: 'ca_123',
+          composioAccountDeleted: true,
+          providerRevocation,
+        },
+      }));
+
+      await expect(service.deleteConnection('ca_123')).resolves.toEqual({
+        connectedAccountId: 'ca_123',
+        composioAccountDeleted: true,
+        providerRevocation,
+      });
+
+      expect(store.listConnections()).toEqual([]);
+    },
+  );
+
+  it.each([
+    ['missing disconnect result', undefined],
+    ['missing composioAccountDeleted', { connectedAccountId: 'ca_123', providerRevocation: 'revoked' }],
+    ['false composioAccountDeleted', { connectedAccountId: 'ca_123', composioAccountDeleted: false, providerRevocation: 'revoked' }],
+    ['mismatched connectedAccountId', { connectedAccountId: 'ca_other', composioAccountDeleted: true, providerRevocation: 'revoked' }],
+    ['missing providerRevocation', { connectedAccountId: 'ca_123', composioAccountDeleted: true }],
+  ] as const)(
+    'rejects an unconfirmed 200 disconnect body (%s) sanitized and keeps the local row',
+    async (_label, disconnect) => {
+      const { service, store } = setupService();
+      store.upsertConnection(fixtureConnection());
+      vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({ disconnect }));
+
+      await expect(service.deleteConnection('ca_123')).rejects.toMatchObject({
+        status: 502,
+        message: 'Managed backend returned an invalid disconnect result.',
+      });
+
+      expect(store.listConnections()).toHaveLength(1);
+    },
+  );
+
+  it('keeps the local row when the backend reports a retryable revoke failure', async () => {
+    const { service, store } = setupService();
+    store.upsertConnection(fixtureConnection());
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      jsonResponse({ message: 'Could not revoke the provider connection. Try again.' }, 502),
+    );
+
+    await expect(service.deleteConnection('ca_123')).rejects.toMatchObject({ status: 502 });
+
+    expect(store.listConnections()).toHaveLength(1);
+  });
+
+  it('never reports an unconfirmed revocation as revoked', async () => {
+    // A legacy 204 body and an unrecognized status both mean the backend did
+    // not confirm provider revocation; both degrade to manual action.
+    const { service, store } = setupService();
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(jsonResponse({
+        disconnect: {
+          connectedAccountId: 'ca_123',
+          composioAccountDeleted: true,
+          providerRevocation: 'weird_future_status',
+        },
+      }));
+
+    store.upsertConnection(fixtureConnection());
+    await expect(service.deleteConnection('ca_123')).resolves.toMatchObject({
+      providerRevocation: 'manual_action_required',
+    });
+
+    store.upsertConnection(fixtureConnection());
+    await expect(service.deleteConnection('ca_123')).resolves.toMatchObject({
+      providerRevocation: 'manual_action_required',
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(store.listConnections()).toEqual([]);
   });
 

@@ -11,6 +11,8 @@ describe('Hermes Chat Streaming', () => {
   let requestLog: Array<Record<string, unknown>> = [];
   let breakConversationChain = false;
   let holdResponseStream = false;
+  let holdTitleResponse = false;
+  let releaseTitleResponse: (() => void) | null = null;
   let responseCounter = 0;
   let sessionCounter = 0;
   let messageCounter = 0;
@@ -29,6 +31,8 @@ describe('Hermes Chat Streaming', () => {
     requestLog = [];
     breakConversationChain = false;
     holdResponseStream = false;
+    holdTitleResponse = false;
+    releaseTitleResponse = null;
     responseCounter = 0;
     sessionCounter = 0;
     messageCounter = 0;
@@ -133,13 +137,20 @@ describe('Hermes Chat Streaming', () => {
             timestamp: Date.now() / 1000 + (messageCounter / 1000),
           })));
 
-          res.writeHead(200, {
-            'Content-Type': 'text/event-stream',
-            'Cache-Control': 'no-cache',
-            Connection: 'keep-alive',
-            'X-Hermes-Session-Id': sessionId,
-          });
-          writeResponseStream(res, responseId, outputText, 'Thinking through inflation drivers.');
+          const writeStream = () => {
+            res.writeHead(200, {
+              'Content-Type': 'text/event-stream',
+              'Cache-Control': 'no-cache',
+              Connection: 'keep-alive',
+              'X-Hermes-Session-Id': sessionId,
+            });
+            writeResponseStream(res, responseId, outputText, 'Thinking through inflation drivers.');
+          };
+          if (holdTitleResponse && input.startsWith('Generate a concise title')) {
+            releaseTitleResponse = writeStream;
+            return;
+          }
+          writeStream();
         });
         return;
       }
@@ -265,6 +276,47 @@ describe('Hermes Chat Streaming', () => {
     expect(requestLog[0].conversation).toBe(sessionId);
     expect(requestLog[0].instructions).toBeUndefined();
     expect(requestLog[0].conversation_history).toBeUndefined();
+  });
+
+  it('marks the response done before first-message title generation finishes', async () => {
+    holdTitleResponse = true;
+    const created = await fetchJson('/chat/sessions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: 'gpt-5.4' }),
+    });
+    const sessionId = created.body.session.id as string;
+
+    const res = await fetch(url(`/chat/sessions/${sessionId}/messages`), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: 'Name this conversation' }),
+    });
+    const reader = res.body!.getReader();
+    const decoder = new TextDecoder();
+    let received = '';
+    const doneReceived = (async () => {
+      while (!received.includes('"type":"done"')) {
+        const chunk = await reader.read();
+        if (chunk.done) break;
+        received += decoder.decode(chunk.value, { stream: true });
+      }
+      return received.includes('"type":"done"');
+    })();
+
+    const arrivedBeforeTitle = await Promise.race([
+      doneReceived,
+      new Promise<false>((resolve) => setTimeout(() => resolve(false), 1_000)),
+    ]);
+    try {
+      await vi.waitFor(() => expect(releaseTitleResponse).not.toBeNull());
+      expect(requestLog).toHaveLength(2);
+      expect(arrivedBeforeTitle).toBe(true);
+    } finally {
+      releaseTitleResponse?.();
+    }
+    await doneReceived;
+    while (!(await reader.read()).done) { /* drain the completed response */ }
   });
 
   it('rejects a second send for the same session and keeps cancellation reserved until unwind', async () => {

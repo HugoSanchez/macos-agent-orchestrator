@@ -1,8 +1,11 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import {
+  ComposioAccountRevoker,
   ComposioService,
+  ComposioServiceError,
   type ComposioClient,
   type ComposioServiceDependencies,
+  type ProviderRevocationResult,
 } from '../src/composio/service.ts';
 
 const slackSearchTool = {
@@ -53,8 +56,11 @@ function createFixture(dependencies: Omit<ComposioServiceDependencies, 'client'>
   const fetch = vi.fn(async () => {
     throw new Error('Unexpected Composio REST request');
   }) as unknown as typeof globalThis.fetch;
-  const service = new ComposioService('test-key', { client, fetch, ...dependencies });
-  return { service, client, fetch, execute, search, authorize };
+  const accountRevoker = {
+    revoke: vi.fn(async (_id: string): Promise<ProviderRevocationResult> => ({ status: 'revoked' })),
+  };
+  const service = new ComposioService('test-key', { client, fetch, accountRevoker, ...dependencies });
+  return { service, client, fetch, execute, search, authorize, accountRevoker };
 }
 
 afterEach(() => {
@@ -298,19 +304,30 @@ describe('ComposioService connection ownership', () => {
     expect(fixture.client.connectedAccounts.get).not.toHaveBeenCalled();
   });
 
-  test('verifies ownership, disables, and deletes the connected account', async () => {
-    const fixture = createFixture();
+  test('verifies ownership with trimmed ids, then revokes, disables, and deletes in order', async () => {
+    const fixture = createFixture({ log: vi.fn() });
     vi.mocked(fixture.client.connectedAccounts.list).mockResolvedValue({
       items: [{ id: 'ca_123', toolkit: { slug: 'slack' } }],
     });
-    await expect(fixture.service.deleteConnection(' user_1 ', ' ca_123 ')).resolves.toBeUndefined();
+    await expect(fixture.service.deleteConnection(' user_1 ', ' ca_123 ')).resolves.toEqual({
+      connectedAccountId: 'ca_123',
+      composioAccountDeleted: true,
+      providerRevocation: 'revoked',
+    });
     expect(fixture.client.connectedAccounts.list).toHaveBeenCalledWith({
       userIds: ['user_1'],
-      statuses: ['ACTIVE', 'INACTIVE'],
+      statuses: ['ACTIVE', 'INACTIVE', 'REVOKED'],
       limit: 100,
     });
+    expect(fixture.accountRevoker.revoke).toHaveBeenCalledWith('ca_123');
     expect(fixture.client.connectedAccounts.disable).toHaveBeenCalledWith('ca_123');
     expect(fixture.client.connectedAccounts.delete).toHaveBeenCalledWith('ca_123');
+
+    const revokeOrder = fixture.accountRevoker.revoke.mock.invocationCallOrder[0];
+    const disableOrder = vi.mocked(fixture.client.connectedAccounts.disable).mock.invocationCallOrder[0];
+    const deleteOrder = vi.mocked(fixture.client.connectedAccounts.delete).mock.invocationCallOrder[0];
+    expect(revokeOrder).toBeLessThan(disableOrder);
+    expect(disableOrder).toBeLessThan(deleteOrder);
   });
 
   test('does not mutate an account that is not owned by the authenticated user', async () => {
@@ -320,17 +337,19 @@ describe('ComposioService connection ownership', () => {
     });
     await expect(fixture.service.deleteConnection('user_1', 'ca_123'))
       .rejects.toMatchObject({ status: 404 });
+    expect(fixture.accountRevoker.revoke).not.toHaveBeenCalled();
     expect(fixture.client.connectedAccounts.disable).not.toHaveBeenCalled();
     expect(fixture.client.connectedAccounts.delete).not.toHaveBeenCalled();
   });
 
-  test('continues with token revocation when the best-effort disable fails', async () => {
+  test('continues with deletion when the best-effort disable fails after revocation', async () => {
     const fixture = createFixture();
     vi.mocked(fixture.client.connectedAccounts.list).mockResolvedValue({
       items: [{ id: 'ca_123', toolkit: { slug: 'slack' } }],
     });
     vi.mocked(fixture.client.connectedAccounts.disable).mockRejectedValue(new Error('already disabled'));
-    await fixture.service.deleteConnection('user_1', 'ca_123');
+    await expect(fixture.service.deleteConnection('user_1', 'ca_123'))
+      .resolves.toMatchObject({ providerRevocation: 'revoked' });
     expect(fixture.client.connectedAccounts.delete).toHaveBeenCalledWith('ca_123');
   });
 
@@ -369,5 +388,247 @@ describe('ComposioService connection ownership', () => {
       limit: 100,
       cursor: 'page_2',
     });
+  });
+});
+
+describe('ComposioService disconnect revocation lifecycle', () => {
+  function ownedAccount(fixture: ReturnType<typeof createFixture>) {
+    vi.mocked(fixture.client.connectedAccounts.list).mockResolvedValue({
+      items: [{ id: 'ca_123', toolkit: { slug: 'slack' } }],
+    });
+  }
+
+  test('unsupported provider revocation still deletes and logs a sanitized warning', async () => {
+    const log = vi.fn();
+    const fixture = createFixture({ log });
+    ownedAccount(fixture);
+    fixture.accountRevoker.revoke.mockResolvedValue({ status: 'manual_action_required', upstreamStatus: 409 });
+
+    await expect(fixture.service.deleteConnection('user_1', 'ca_123')).resolves.toEqual({
+      connectedAccountId: 'ca_123',
+      composioAccountDeleted: true,
+      providerRevocation: 'manual_action_required',
+    });
+    expect(fixture.client.connectedAccounts.disable).toHaveBeenCalledWith('ca_123');
+    expect(fixture.client.connectedAccounts.delete).toHaveBeenCalledWith('ca_123');
+    expect(log).toHaveBeenCalledWith('composio.disconnect.manualActionRequired', {
+      connectedAccountId: 'ca_123',
+      toolkitSlug: 'slack',
+      upstreamStatus: 409,
+    });
+  });
+
+  test('an already-absent upstream account still attempts an idempotent delete', async () => {
+    const fixture = createFixture({ log: vi.fn() });
+    ownedAccount(fixture);
+    fixture.accountRevoker.revoke.mockResolvedValue({ status: 'already_absent' });
+    vi.mocked(fixture.client.connectedAccounts.delete)
+      .mockRejectedValue(Object.assign(new Error('Connected account not found'), { status: 404 }));
+
+    await expect(fixture.service.deleteConnection('user_1', 'ca_123')).resolves.toEqual({
+      connectedAccountId: 'ca_123',
+      composioAccountDeleted: true,
+      providerRevocation: 'already_absent',
+    });
+    expect(fixture.client.connectedAccounts.delete).toHaveBeenCalledWith('ca_123');
+  });
+
+  test('a retryable revoke failure leaves the account and cached session untouched', async () => {
+    const fixture = createFixture({ log: vi.fn() });
+    ownedAccount(fixture);
+    await fixture.service.executeTool('user_1', 'SLACK_SEARCH_MESSAGES', { query: 'one' });
+    expect(fixture.client.create).toHaveBeenCalledTimes(1);
+
+    fixture.accountRevoker.revoke.mockRejectedValue(
+      new ComposioServiceError(502, 'Could not revoke the provider connection. Try again.'),
+    );
+
+    await expect(fixture.service.deleteConnection('user_1', 'ca_123'))
+      .rejects.toMatchObject({ status: 502 });
+    expect(fixture.client.connectedAccounts.disable).not.toHaveBeenCalled();
+    expect(fixture.client.connectedAccounts.delete).not.toHaveBeenCalled();
+
+    // The Tool Router session must survive so the disconnect can be retried.
+    await fixture.service.executeTool('user_1', 'SLACK_SEARCH_MESSAGES', { query: 'two' });
+    expect(fixture.client.create).toHaveBeenCalledTimes(1);
+  });
+
+  test('a delete failure after revocation surfaces sanitized and keeps the cached session', async () => {
+    const log = vi.fn();
+    const fixture = createFixture({ log });
+    ownedAccount(fixture);
+    await fixture.service.executeTool('user_1', 'SLACK_SEARCH_MESSAGES', { query: 'one' });
+    vi.mocked(fixture.client.connectedAccounts.delete)
+      .mockRejectedValue(new Error('upstream secret payload'));
+
+    await expect(fixture.service.deleteConnection('user_1', 'ca_123')).rejects.toMatchObject({
+      status: 502,
+      message: expect.not.stringContaining('upstream secret payload'),
+    });
+    expect(log).toHaveBeenCalledWith('composio.disconnect.deleteFailedAfterRevoke', {
+      connectedAccountId: 'ca_123',
+      toolkitSlug: 'slack',
+    });
+    expect(JSON.stringify(log.mock.calls)).not.toContain('upstream secret payload');
+
+    await fixture.service.executeTool('user_1', 'SLACK_SEARCH_MESSAGES', { query: 'two' });
+    expect(fixture.client.create).toHaveBeenCalledTimes(1);
+  });
+
+  test('retry after a post-revoke delete failure still finds the now-REVOKED account', async () => {
+    const fixture = createFixture({ log: vi.fn() });
+    vi.mocked(fixture.client.connectedAccounts.list).mockResolvedValue({
+      items: [{ id: 'ca_123', toolkit: { slug: 'slack' }, status: 'ACTIVE' }],
+    });
+    vi.mocked(fixture.client.connectedAccounts.delete).mockRejectedValueOnce(new Error('composio outage'));
+
+    await expect(fixture.service.deleteConnection('user_1', 'ca_123'))
+      .rejects.toMatchObject({ status: 502 });
+
+    // Composio transitions a successfully revoked account to REVOKED; the
+    // retry's ownership query must still surface it instead of 404ing.
+    vi.mocked(fixture.client.connectedAccounts.list).mockImplementation(async ({ statuses }) => ({
+      items: statuses?.includes('REVOKED')
+        ? [{ id: 'ca_123', toolkit: { slug: 'slack' }, status: 'REVOKED' }]
+        : [],
+    }));
+    fixture.accountRevoker.revoke.mockResolvedValue({ status: 'manual_action_required', upstreamStatus: 409 });
+
+    await expect(fixture.service.deleteConnection('user_1', 'ca_123')).resolves.toEqual({
+      connectedAccountId: 'ca_123',
+      composioAccountDeleted: true,
+      providerRevocation: 'manual_action_required',
+    });
+    expect(fixture.accountRevoker.revoke).toHaveBeenCalledTimes(2);
+    expect(fixture.client.connectedAccounts.delete).toHaveBeenCalledTimes(2);
+  });
+
+  test('a throwing logger cannot block deletion or change the manual-action result', async () => {
+    const log = vi.fn(() => {
+      throw new Error('logger exploded');
+    });
+    const fixture = createFixture({ log });
+    ownedAccount(fixture);
+    fixture.accountRevoker.revoke.mockResolvedValue({ status: 'manual_action_required', upstreamStatus: 400 });
+
+    await expect(fixture.service.deleteConnection('user_1', 'ca_123')).resolves.toEqual({
+      connectedAccountId: 'ca_123',
+      composioAccountDeleted: true,
+      providerRevocation: 'manual_action_required',
+    });
+    expect(log).toHaveBeenCalled();
+    expect(fixture.client.connectedAccounts.delete).toHaveBeenCalledWith('ca_123');
+  });
+
+  test('a throwing logger does not replace the sanitized post-revoke delete failure', async () => {
+    const log = vi.fn(() => {
+      throw new Error('logger exploded');
+    });
+    const fixture = createFixture({ log });
+    ownedAccount(fixture);
+    vi.mocked(fixture.client.connectedAccounts.delete).mockRejectedValue(new Error('upstream secret payload'));
+
+    const failure = await fixture.service.deleteConnection('user_1', 'ca_123').catch((error) => error);
+    expect(failure).toMatchObject({ name: 'ComposioServiceError', status: 502 });
+    expect(failure.message).not.toContain('logger exploded');
+    expect(failure.message).not.toContain('upstream secret payload');
+    expect(log).toHaveBeenCalled();
+  });
+
+  test('constructs the production revoke adapter from the API key and injected fetch', async () => {
+    const fixture = createFixture();
+    ownedAccount(fixture);
+    const fetchMock = vi.fn(async () => new Response(null, { status: 200 }));
+    const service = new ComposioService('test-key', {
+      client: fixture.client,
+      fetch: fetchMock as unknown as typeof globalThis.fetch,
+      log: vi.fn(),
+    });
+
+    await expect(service.deleteConnection('user_1', 'ca_123'))
+      .resolves.toMatchObject({ providerRevocation: 'revoked' });
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://backend.composio.dev/api/v3.1/connected_accounts/ca_123/revoke',
+      expect.objectContaining({
+        method: 'POST',
+        headers: { 'x-api-key': 'test-key', Accept: 'application/json' },
+      }),
+    );
+  });
+});
+
+describe('ComposioAccountRevoker', () => {
+  function revoker(fetchImpl: (url: string, init?: RequestInit) => Promise<Response>) {
+    const fetchMock = vi.fn(fetchImpl);
+    const log = vi.fn();
+    return {
+      revoker: new ComposioAccountRevoker({
+        apiKey: 'test-key',
+        fetch: fetchMock as unknown as typeof globalThis.fetch,
+        log,
+      }),
+      fetchMock,
+      log,
+    };
+  }
+
+  test('posts to the v3.1 revoke endpoint with a trimmed, URL-encoded id and no body', async () => {
+    const { revoker: adapter, fetchMock } = revoker(async () => new Response(null, { status: 200 }));
+    await expect(adapter.revoke(' ca/we ird ')).resolves.toEqual({ status: 'revoked' });
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('https://backend.composio.dev/api/v3.1/connected_accounts/ca%2Fwe%20ird/revoke');
+    expect(init).toMatchObject({ method: 'POST', headers: { 'x-api-key': 'test-key', Accept: 'application/json' } });
+    expect(init && 'body' in init ? init.body : undefined).toBeUndefined();
+  });
+
+  test('normalizes 404 to already_absent and 400/409 to manual_action_required', async () => {
+    for (const [status, expected] of [
+      [404, { status: 'already_absent' }],
+      [400, { status: 'manual_action_required', upstreamStatus: 400 }],
+      [409, { status: 'manual_action_required', upstreamStatus: 409 }],
+    ] as const) {
+      const { revoker: adapter } = revoker(async () => new Response('{"detail":"upstream"}', { status }));
+      await expect(adapter.revoke('ca_123')).resolves.toEqual(expected);
+    }
+  });
+
+  test('converts auth, rate-limit, server, and network failures into sanitized errors', async () => {
+    for (const [status, expectedStatus] of [[401, 502], [403, 502], [429, 503], [500, 502], [503, 502]] as const) {
+      const { revoker: adapter, log } = revoker(async () =>
+        new Response('{"error":"UPSTREAM_BODY","token":"tok_leak"}', { status }));
+      const failure = await adapter.revoke('ca_123').catch((error) => error);
+      expect(failure).toMatchObject({ name: 'ComposioServiceError', status: expectedStatus });
+      expect(failure.message).not.toContain('test-key');
+      expect(failure.message).not.toContain('UPSTREAM_BODY');
+      expect(failure.message).not.toContain('tok_leak');
+      const logged = JSON.stringify(log.mock.calls);
+      expect(logged).not.toContain('test-key');
+      expect(logged).not.toContain('UPSTREAM_BODY');
+      expect(logged).not.toContain('tok_leak');
+    }
+
+    const { revoker: networkAdapter } = revoker(async () => {
+      throw new Error('getaddrinfo ENOTFOUND backend.composio.dev x-api-key=test-key');
+    });
+    const networkFailure = await networkAdapter.revoke('ca_123').catch((error) => error);
+    expect(networkFailure).toMatchObject({ name: 'ComposioServiceError', status: 502 });
+    expect(networkFailure.message).not.toContain('test-key');
+    expect(networkFailure.message).not.toContain('ENOTFOUND');
+  });
+
+  test('a throwing logger does not replace the sanitized revoke failure', async () => {
+    const log = vi.fn(() => {
+      throw new Error('logger exploded');
+    });
+    const adapter = new ComposioAccountRevoker({
+      apiKey: 'test-key',
+      fetch: vi.fn(async () => new Response('{"error":"UPSTREAM_BODY"}', { status: 500 })) as unknown as typeof globalThis.fetch,
+      log,
+    });
+
+    const failure = await adapter.revoke('ca_123').catch((error) => error);
+    expect(failure).toMatchObject({ name: 'ComposioServiceError', status: 502 });
+    expect(failure.message).not.toContain('logger exploded');
+    expect(log).toHaveBeenCalled();
   });
 });

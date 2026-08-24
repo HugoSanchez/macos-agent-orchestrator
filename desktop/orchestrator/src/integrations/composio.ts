@@ -3,6 +3,8 @@ import {
   RemoteBridgeHttpError,
   RemoteComposioBridgeClient,
   type RemoteBridgeToolkitView,
+  type RemoteDisconnectConnectionResult,
+  type RemoteProviderRevocation,
 } from './composio-bridge-client.ts';
 import {
   ConnectionsStore,
@@ -28,6 +30,12 @@ export interface ConnectionView {
   toolkitName: string;
   logoUrl: string | null;
   status: 'active' | 'inactive';
+}
+
+export interface DisconnectConnectionView {
+  connectedAccountId: string;
+  composioAccountDeleted: true;
+  providerRevocation: RemoteProviderRevocation;
 }
 
 export interface ToolkitView {
@@ -150,17 +158,20 @@ export class ConnectionsService {
     }
   }
 
-  async deleteConnection(connectedAccountId: string): Promise<void> {
+  async deleteConnection(connectedAccountId: string): Promise<DisconnectConnectionView> {
     this.assertConfigured();
     const trimmedId = connectedAccountId.trim();
     if (!trimmedId) {
       throw new HttpError(400, 'Missing "connectedAccountId"');
     }
 
+    let remote: RemoteDisconnectConnectionResult | null = null;
     try {
-      await this.bridgeClient.deleteConnection(trimmedId);
+      remote = await this.bridgeClient.deleteConnection(trimmedId);
     } catch (error) {
       if (!(error instanceof RemoteBridgeHttpError && error.status === 404)) {
+        // Retryable failure: keep the local row so the sidebar's optimistic
+        // rollback restores it and the user can retry the revocation.
         throw mapRemoteBridgeError(error);
       }
       // DELETE is idempotent from the sidebar's point of view. If the
@@ -168,8 +179,15 @@ export class ConnectionsService {
       // local cache row so an old persisted connection cannot keep showing.
     }
 
+    // The local row is removed only after the managed backend confirmed the
+    // Composio deletion (or reported the account already absent).
     this.store.deleteConnection(trimmedId);
     this.notifyConnectionsChanged();
+    return {
+      connectedAccountId: trimmedId,
+      composioAccountDeleted: true,
+      providerRevocation: remote?.providerRevocation ?? 'already_absent',
+    };
   }
 
   async requestConnection(toolkitSlug: string, baseUrl: string): Promise<ConnectionRequestView> {

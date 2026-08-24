@@ -249,7 +249,7 @@ final class SidebarStore: ObservableObject {
         let original = connections
         connections.removeAll { $0.connectedAccountId == id }
         do {
-            try await context.client.disconnectConnection(id: id)
+            _ = try await context.client.disconnectConnection(id: id)
         } catch {
             guard accepts(context) else { return }
             connections = original

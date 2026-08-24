@@ -25,9 +25,8 @@ export function buildConnectionsRoutes(connections: ConnectionsService): Route[]
 
     route('DELETE', '/connections/:id', async (_req, res, params) => {
       try {
-        await connections.deleteConnection(params.id);
-        res.writeHead(204);
-        res.end();
+        const disconnect = await connections.deleteConnection(params.id);
+        json(res, 200, { disconnect });
       } catch (error: unknown) {
         handleHttpError(res, error);
       }

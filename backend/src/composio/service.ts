@@ -1,4 +1,5 @@
 import { Composio } from '@composio/core';
+import { ComposioAccountRevoker, type ConnectedAccountRevoker } from './account-revoker.ts';
 import { ComposioConnections } from './connections.ts';
 import { ComposioServiceError } from './errors.ts';
 import { ComposioToolkitCatalog } from './toolkit-catalog.ts';
@@ -16,6 +17,7 @@ import type {
   ComposioLog,
   ConnectionRequestStatus,
   ConnectionStatus,
+  DisconnectConnectionResult,
 } from './contracts.ts';
 
 export type {
@@ -28,7 +30,11 @@ export type {
   ComposioClient,
   ConnectionRequestStatus,
   ConnectionStatus,
+  DisconnectConnectionResult,
+  ProviderRevocationStatus,
 } from './contracts.ts';
+export type { ConnectedAccountRevoker, ProviderRevocationResult } from './account-revoker.ts';
+export { ComposioAccountRevoker } from './account-revoker.ts';
 export { ComposioServiceError } from './errors.ts';
 
 export interface ComposioServiceDependencies {
@@ -40,6 +46,8 @@ export interface ComposioServiceDependencies {
   sessionTtlMs?: number;
   allowedToolkits?: string;
   toolRouterToolkits?: string;
+  /** Injectable provider-revocation boundary; omit to construct the production adapter. */
+  accountRevoker?: ConnectedAccountRevoker;
 }
 
 /**
@@ -93,9 +101,20 @@ export class ComposioService {
       log: dependencies.log,
       sessionTtlMs: dependencies.sessionTtlMs,
     });
+    // Disconnect lifecycle events must be recorded even when no logger is
+    // injected: they carry only ids, toolkit slugs, and status codes, and are
+    // the monitoring signal for revoke/delete failures.
+    const lifecycleLog: ComposioLog = dependencies.log
+      ?? ((event, details) => console.warn(`[composio] ${event}`, details));
     this.connections = new ComposioConnections({
       client: this.client,
       catalog: this.catalog,
+      accountRevoker: dependencies.accountRevoker ?? new ComposioAccountRevoker({
+        apiKey: normalizedApiKey,
+        fetch: dependencies.fetch,
+        log: lifecycleLog,
+      }),
+      log: lifecycleLog,
       onConnectionsChanged: (userId) => this.toolRouter?.invalidateUser(userId),
     });
   }
@@ -109,7 +128,7 @@ export class ComposioService {
     return this.connections!.list(userId);
   }
 
-  async deleteConnection(userId: string, connectedAccountId: string): Promise<void> {
+  async deleteConnection(userId: string, connectedAccountId: string): Promise<DisconnectConnectionResult> {
     this.assertConfigured();
     return this.connections!.delete(userId, connectedAccountId);
   }

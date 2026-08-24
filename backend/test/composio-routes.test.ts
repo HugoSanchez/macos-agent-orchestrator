@@ -9,6 +9,8 @@ import {
   type BridgeSearchToolResult,
   type BridgeToolExecutionView,
   type BridgeToolSchemaView,
+  type DisconnectConnectionResult,
+  type ProviderRevocationStatus,
 } from '../src/composio/service.ts';
 import type { PrivyAuthVerifier, VerifiedPrivyAuthToken } from '../src/auth/types.ts';
 
@@ -36,6 +38,7 @@ class StubComposioService extends ComposioService {
   capturedRequestId: string | null = null;
   capturedCallbackUrl: string | null = null;
   requestOwnerUserId = 'did:privy:composio-test';
+  disconnectRevocation: ProviderRevocationStatus = 'revoked';
   constructor() { super('test-key'); }
 
   override get configured(): boolean { return true; }
@@ -71,9 +74,14 @@ class StubComposioService extends ComposioService {
     ];
   }
 
-  override async deleteConnection(userId: string, connectedAccountId: string): Promise<void> {
+  override async deleteConnection(userId: string, connectedAccountId: string): Promise<DisconnectConnectionResult> {
     this.capturedUserId = userId;
     this.capturedDeletedConnectionId = connectedAccountId;
+    return {
+      connectedAccountId,
+      composioAccountDeleted: true,
+      providerRevocation: this.disconnectRevocation,
+    };
   }
 
   override async getRequest(userId: string, requestId: string) {
@@ -199,16 +207,53 @@ describe('Composio routes', () => {
     expect(s.composio.capturedUserId).toBe(s.userId);
   });
 
-  test('DELETE /v1/composio/connections/:id uses authenticated user', async () => {
+  test('DELETE /v1/composio/connections/:id uses authenticated user and returns the disconnect result', async () => {
     s = await setup();
     const res = await s.app.inject({
       method: 'DELETE',
       url: '/v1/composio/connections/ca_1',
       headers: { authorization: `Bearer ${s.sessionToken}` },
     });
-    expect(res.statusCode).toBe(204);
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({
+      disconnect: {
+        connectedAccountId: 'ca_1',
+        composioAccountDeleted: true,
+        providerRevocation: 'revoked',
+      },
+    });
     expect(s.composio.capturedUserId).toBe(s.userId);
     expect(s.composio.capturedDeletedConnectionId).toBe('ca_1');
+  });
+
+  test('DELETE /v1/composio/connections/:id surfaces the manual-action result unchanged', async () => {
+    s = await setup();
+    s.composio.disconnectRevocation = 'manual_action_required';
+    const res = await s.app.inject({
+      method: 'DELETE',
+      url: '/v1/composio/connections/ca_1',
+      headers: { authorization: `Bearer ${s.sessionToken}` },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().disconnect.providerRevocation).toBe('manual_action_required');
+    expect(res.json().disconnect.composioAccountDeleted).toBe(true);
+  });
+
+  test('DELETE /v1/composio/connections/:id maps a retryable revoke failure without upstream details', async () => {
+    s = await setup();
+    s.composio.deleteConnection = async () => {
+      throw new ComposioServiceError(502, 'Could not revoke the provider connection. Try again.');
+    };
+    const res = await s.app.inject({
+      method: 'DELETE',
+      url: '/v1/composio/connections/ca_1',
+      headers: { authorization: `Bearer ${s.sessionToken}` },
+    });
+    expect(res.statusCode).toBe(502);
+    expect(res.json()).toEqual({
+      error: 'composio_error',
+      message: 'Could not revoke the provider connection. Try again.',
+    });
   });
 
   test('GET /v1/composio/toolkits passes query+limit params through', async () => {

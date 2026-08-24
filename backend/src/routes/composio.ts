@@ -27,8 +27,8 @@ export async function registerComposioRoutes(app: FastifyInstance, deps: Composi
     try {
       const auth = await deps.authService.authenticateAppSession(extractBearerToken(request));
       const { id } = request.params as { id: string };
-      await deps.composioService.deleteConnection(auth.user.id, id);
-      return reply.code(204).send();
+      const disconnect = await deps.composioService.deleteConnection(auth.user.id, id);
+      return reply.code(200).send({ disconnect });
     } catch (error) {
       return handleError(reply, error);
     }

@@ -765,6 +765,11 @@ async function runHermesMessage(
     toolCallCount,
   });
 
+  // The assistant response is complete at this point. Title generation is
+  // follow-up bookkeeping and can take several seconds, so do not include it
+  // in the response timer shown to the user.
+  sendSSE(opts.res, { type: 'done', session_id: opts.session.id });
+
   if (opts.isFirstUserMessage && assistantText) {
     const currentTitle = store.getSessionRecord(opts.session.id)?.title ?? '';
     if (currentTitle === DEFAULT_SESSION_TITLE) {
@@ -776,8 +781,6 @@ async function runHermesMessage(
       }
     }
   }
-
-  sendSSE(opts.res, { type: 'done', session_id: opts.session.id });
 }
 
 function readLatestAssistantReasoning(opts: {

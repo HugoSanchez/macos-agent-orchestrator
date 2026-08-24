@@ -83,6 +83,25 @@ struct SidebarCustomConnectorStatus: Decodable, Equatable {
     let cached: Bool?
 }
 
+enum SidebarProviderRevocation: String, Decodable, Equatable {
+    case revoked
+    case alreadyAbsent = "already_absent"
+    case manualActionRequired = "manual_action_required"
+
+    init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        // An unknown status must never be reported internally as fully revoked,
+        // so it degrades conservatively instead of failing the decode.
+        self = SidebarProviderRevocation(rawValue: raw) ?? .manualActionRequired
+    }
+}
+
+struct SidebarDisconnectResult: Decodable, Equatable {
+    let connectedAccountId: String
+    let composioAccountDeleted: Bool
+    let providerRevocation: SidebarProviderRevocation
+}
+
 // Internal so ChatWebView's shell snapshot can carry the same session model.
 struct SidebarChatSession: Codable, Identifiable, Equatable {
     let id: String
@@ -123,6 +142,10 @@ private struct SidebarChatSessionEnvelope: Decodable {
     let session: SidebarChatSession
 }
 
+private struct SidebarDisconnectResponse: Decodable {
+    let disconnect: SidebarDisconnectResult
+}
+
 private struct SidebarRenameSessionRequest: Encodable {
     let title: String
 }
@@ -137,7 +160,7 @@ protocol SidebarAPIClientProtocol {
     func archiveSession(id: String) async throws -> SidebarChatSession
     func renameSession(id: String, title: String) async throws -> SidebarChatSession
     func unarchiveSession(id: String) async throws -> SidebarChatSession
-    func disconnectConnection(id: String) async throws
+    func disconnectConnection(id: String) async throws -> SidebarDisconnectResult
     func retryCustomConnector(id: String) async throws -> URL?
     func disconnectCustomConnector(id: String) async throws
     func deleteCron(id: String) async throws
@@ -216,8 +239,12 @@ struct SidebarAPIClient: SidebarAPIClientProtocol {
         try await sessionMutation(path: "chat/sessions/\(id)/unarchive")
     }
 
-    func disconnectConnection(id: String) async throws {
-        try await http.perform(path: "connections/\(id)", method: "DELETE")
+    func disconnectConnection(id: String) async throws -> SidebarDisconnectResult {
+        try await http.decode(
+            SidebarDisconnectResponse.self,
+            path: "connections/\(id)",
+            method: "DELETE"
+        ).disconnect
     }
 
     func retryCustomConnector(id: String) async throws -> URL? {

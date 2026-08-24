@@ -7,6 +7,13 @@
 #
 # The script first asks Composio to revoke OAuth tokens at the upstream
 # provider, then deletes the connected account record from Composio.
+#
+# Failure policy mirrors the production disconnect flow
+# (backend/src/composio/connections.ts): 400/409 means the provider cannot
+# revoke programmatically and deletion proceeds (manual provider cleanup may
+# be needed); 404 means already absent and deletion proceeds idempotently;
+# auth, rate-limit, and server failures stop for that account so the
+# credential-bearing record stays visible for a retry.
 
 set -euo pipefail
 
@@ -94,7 +101,7 @@ for connected_account_id in "$@"; do
             echo "  revoke: ok"
             ;;
         400|409)
-            echo "  revoke: skipped/unsupported (HTTP ${revoke_status}); continuing to delete"
+            echo "  revoke: unsupported toolkit or non-revokable state (HTTP ${revoke_status}); continuing to delete — the provider grant may need manual removal"
             print_body "${revoke_body}"
             ;;
         404)
@@ -109,8 +116,13 @@ for connected_account_id in "$@"; do
             continue
             ;;
         *)
-            echo "  revoke: failed (HTTP ${revoke_status}); continuing to delete"
-            print_body "${revoke_body}"
+            # Retryable failure (rate limit / server error): keep the account
+            # so the revoke can be retried, matching the production flow.
+            echo "  revoke: failed (HTTP ${revoke_status}); stopping for this account so it can be retried" >&2
+            print_body "${revoke_body}" >&2
+            failed=1
+            rm -f "${revoke_body}" "${delete_body}"
+            continue
             ;;
     esac
 

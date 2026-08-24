@@ -121,6 +121,60 @@ final class SidebarStoreTests: XCTestCase {
         XCTAssertEqual(store.sessions.map(\.id), ["current"])
     }
 
+    func testConfirmedRevocationRemovesRow() async {
+        let client = StubSidebarAPIClient()
+        client.connections = [connection(id: "ca_gmail")]
+        let store = SidebarStore()
+        store.activate(client: client, accountId: "user-1")
+        await store.refreshConnections()
+        client.connections = []
+
+        await store.disconnectConnection(id: "ca_gmail")
+
+        XCTAssertTrue(store.connections.isEmpty)
+    }
+
+    func testAlreadyAbsentRevocationRemovesRow() async {
+        let client = StubSidebarAPIClient()
+        client.connections = [connection(id: "ca_gmail")]
+        client.disconnectRevocation = .alreadyAbsent
+        let store = SidebarStore()
+        store.activate(client: client, accountId: "user-1")
+        await store.refreshConnections()
+        client.connections = []
+
+        await store.disconnectConnection(id: "ca_gmail")
+
+        XCTAssertTrue(store.connections.isEmpty)
+    }
+
+    func testManualActionRequiredRemainsAnInternalOutcomeAndRemovesRow() async {
+        let client = StubSidebarAPIClient()
+        client.connections = [connection(id: "ca_gmail")]
+        client.disconnectRevocation = .manualActionRequired
+        let store = SidebarStore()
+        store.activate(client: client, accountId: "user-1")
+        await store.refreshConnections()
+        client.connections = []
+
+        await store.disconnectConnection(id: "ca_gmail")
+
+        XCTAssertTrue(store.connections.isEmpty)
+    }
+
+    func testTransientDisconnectFailureRestoresOptimisticallyRemovedRow() async {
+        let client = StubSidebarAPIClient()
+        client.connections = [connection(id: "ca_gmail")]
+        client.disconnectError = SidebarStubError.missingFixture
+        let store = SidebarStore()
+        store.activate(client: client, accountId: "user-1")
+        await store.refreshConnections()
+
+        await store.disconnectConnection(id: "ca_gmail")
+
+        XCTAssertEqual(store.connections.map(\.id), ["ca_gmail"])
+    }
+
     private func session(
         id: String,
         createdAt: String = "2026-08-19T10:00:00Z",
@@ -236,7 +290,17 @@ private final class StubSidebarAPIClient: SidebarAPIClientProtocol {
     }
     func renameSession(id: String, title: String) async throws -> SidebarChatSession { try missingFixture() }
     func unarchiveSession(id: String) async throws -> SidebarChatSession { try missingFixture() }
-    func disconnectConnection(id: String) async throws {}
+    var disconnectRevocation: SidebarProviderRevocation = .revoked
+    var disconnectError: Error?
+
+    func disconnectConnection(id: String) async throws -> SidebarDisconnectResult {
+        if let disconnectError { throw disconnectError }
+        return SidebarDisconnectResult(
+            connectedAccountId: id,
+            composioAccountDeleted: true,
+            providerRevocation: disconnectRevocation
+        )
+    }
     func retryCustomConnector(id: String) async throws -> URL? { nil }
     func disconnectCustomConnector(id: String) async throws {}
     func deleteCron(id: String) async throws {}

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildConnectionsRoutes, renderCallbackPage } from '../src/http/connections.ts';
 import { dispatch, json, route, type Route } from '../src/http/router.ts';
-import type { ConnectionsService } from '../src/integrations/composio.ts';
+import { HttpError, type ConnectionsService } from '../src/integrations/composio.ts';
 
 const SECRET = 'test-sidecar-secret';
 
@@ -172,6 +172,51 @@ describe('sidecar router auth boundary', () => {
     });
     expect(valid.status).toBe(201);
     expect(capturedBaseUrl).toBe('http://127.0.0.1:4123');
+  });
+
+  it('returns the disconnect result from DELETE /connections/:id', async () => {
+    const connections = {
+      deleteConnection: async (id: string) => ({
+        connectedAccountId: id,
+        composioAccountDeleted: true,
+        providerRevocation: 'manual_action_required',
+      }),
+    } as unknown as ConnectionsService;
+
+    const res = await request('/connections/ca_1', {
+      method: 'DELETE',
+      headers: authHeaders(),
+      routes: buildConnectionsRoutes(connections),
+    });
+
+    expect(res.status).toBe(200);
+    expect(JSON.parse(res.body)).toEqual({
+      disconnect: {
+        connectedAccountId: 'ca_1',
+        composioAccountDeleted: true,
+        providerRevocation: 'manual_action_required',
+      },
+    });
+  });
+
+  it('maps a retryable disconnect failure from DELETE /connections/:id without leaking internals', async () => {
+    const connections = {
+      deleteConnection: async () => {
+        throw new HttpError(502, 'Could not revoke the provider connection. Try again.');
+      },
+    } as unknown as ConnectionsService;
+
+    const res = await request('/connections/ca_1', {
+      method: 'DELETE',
+      headers: authHeaders(),
+      routes: buildConnectionsRoutes(connections),
+    });
+
+    expect(res.status).toBe(502);
+    expect(JSON.parse(res.body)).toEqual({
+      error: 'request_failed',
+      message: 'Could not revoke the provider connection. Try again.',
+    });
   });
 
   it('does not expose the secret in diagnostics', async () => {

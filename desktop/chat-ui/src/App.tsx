@@ -132,6 +132,7 @@ export function App() {
     customConnectors,
     toolkitCatalog,
     catalogRefreshToken,
+    connectingToolkitSlugs,
     setCodexConnected,
     refreshConnections,
     refreshModelStatus: refreshCodexStatus,
@@ -634,6 +635,7 @@ export function App() {
     <CatalogOverlay
       isOpen={isCatalogOpen}
       refreshToken={catalogRefreshToken}
+      connectingToolkitSlugs={connectingToolkitSlugs}
       onClose={handleCloseCatalog}
       onConnect={handleConnectToolkit}
       onCustomConnectorAdded={() => {

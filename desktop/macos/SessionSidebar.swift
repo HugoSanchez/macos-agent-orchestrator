@@ -887,10 +887,6 @@ private struct SidebarConnectionRow: View {
 
     @State private var isHovered = false
 
-    private var disconnectText: Color {
-        theme.dangerSoft
-    }
-
     // A live connection reads ink-faint; anything not active/connected
     // (needs-auth, failed, expired, …) reads as the editorial orange warn.
     private var isHealthy: Bool {
@@ -916,14 +912,11 @@ private struct SidebarConnectionRow: View {
             Spacer(minLength: 0)
 
             if isHovered {
-                Button(action: onDisconnect) {
-                    Text("Disconnect")
-                        .font(ConductorType.caption)
-                        .foregroundStyle(disconnectText)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .help("Revoke access and remove this connection")
+                SidebarDisconnectAction(
+                    theme: theme,
+                    help: "Revoke access and remove this connection",
+                    onDisconnect: onDisconnect
+                )
             } else if !isHealthy {
                 Text(connection.status.capitalized)
                     .font(ConductorType.meta)
@@ -974,14 +967,11 @@ private struct SidebarCustomConnectorRow: View {
             Spacer(minLength: 0)
 
             if isHovered {
-                Button(action: onDisconnect) {
-                    Text("Disconnect")
-                        .font(ConductorType.caption)
-                        .foregroundStyle(theme.dangerSoft)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .help("Disconnect and remove this custom connector")
+                SidebarDisconnectAction(
+                    theme: theme,
+                    help: "Disconnect and remove this custom connector",
+                    onDisconnect: onDisconnect
+                )
             }
         }
         .padding(.vertical, 7)
@@ -995,6 +985,52 @@ private struct SidebarCustomConnectorRow: View {
             }
             Button("Disconnect", role: .destructive, action: onDisconnect)
         }
+    }
+}
+
+/// Mirrors the routine-delete interaction: the ordinary affordance uses the
+/// standard row-action color, while only the explicit confirmation is red.
+private struct SidebarDisconnectAction: View {
+    let theme: ConductorThemePalette
+    let help: String
+    let onDisconnect: () -> Void
+
+    @State private var confirmingDisconnect = false
+    @State private var confirmResetTask: Task<Void, Never>?
+
+    var body: some View {
+        Button(action: handleTap) {
+            Text(confirmingDisconnect ? "Confirm" : "Disconnect")
+                .font(ConductorType.caption)
+                .foregroundStyle(confirmingDisconnect ? theme.dangerStrong : theme.inkDim)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(confirmingDisconnect ? "Click to disconnect" : help)
+        .onDisappear(perform: resetConfirm)
+    }
+
+    private func handleTap() {
+        if confirmingDisconnect {
+            resetConfirm()
+            onDisconnect()
+            return
+        }
+
+        confirmingDisconnect = true
+        confirmResetTask?.cancel()
+        confirmResetTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            if !Task.isCancelled {
+                confirmingDisconnect = false
+            }
+        }
+    }
+
+    private func resetConfirm() {
+        confirmResetTask?.cancel()
+        confirmResetTask = nil
+        confirmingDisconnect = false
     }
 }
 

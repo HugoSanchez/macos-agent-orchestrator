@@ -35,6 +35,10 @@ export function useSidecarResources({ onError }: UseSidecarResourcesOptions) {
   const [customConnectors, setCustomConnectors] = useState<CustomConnectorView[]>([]);
   const [toolkitCatalog, setToolkitCatalog] = useState<ToolkitView[]>([]);
   const [catalogRefreshToken, setCatalogRefreshToken] = useState(0);
+  const [connectingToolkitSlugs, setConnectingToolkitSlugs] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const connectingToolkitSlugsRef = useRef<Set<string>>(new Set());
   const connectionPollers = useRef<Map<string, number>>(new Map());
 
   const bumpCatalogRefresh = useCallback(() => {
@@ -91,6 +95,7 @@ export function useSidecarResources({ onError }: UseSidecarResourcesOptions) {
   const pollConnectionRequest = useCallback((
     requestId: string,
     onUpdate?: (request: ConnectionRequestView) => void,
+    onSettled?: () => void,
   ) => {
     const existing = connectionPollers.current.get(requestId);
     if (existing) window.clearInterval(existing);
@@ -110,6 +115,8 @@ export function useSidecarResources({ onError }: UseSidecarResourcesOptions) {
         } catch {
           window.clearInterval(poller);
           connectionPollers.current.delete(requestId);
+        } finally {
+          if (!connectionPollers.current.has(requestId)) onSettled?.();
         }
       })();
     }, 1500);
@@ -118,19 +125,32 @@ export function useSidecarResources({ onError }: UseSidecarResourcesOptions) {
   }, [bumpCatalogRefresh, refreshConnections]);
 
   const connectToolkit = useCallback((toolkit: { slug: string }) => {
+    const toolkitSlug = toolkit.slug;
+    if (connectingToolkitSlugsRef.current.has(toolkitSlug)) return;
+
+    connectingToolkitSlugsRef.current.add(toolkitSlug);
+    setConnectingToolkitSlugs(new Set(connectingToolkitSlugsRef.current));
+
+    const finishConnecting = () => {
+      connectingToolkitSlugsRef.current.delete(toolkitSlug);
+      setConnectingToolkitSlugs(new Set(connectingToolkitSlugsRef.current));
+    };
+
     void (async () => {
       try {
-        const request = await createConnectionRequest(toolkit.slug);
+        const request = await createConnectionRequest(toolkitSlug);
         bumpCatalogRefresh();
         if (request.status === 'pending') {
           openConnectionRequest(request.id);
-          pollConnectionRequest(request.id);
+          pollConnectionRequest(request.id, undefined, finishConnecting);
           return;
         }
         await refreshConnections();
         bumpCatalogRefresh();
         postShellAction({ kind: 'connections-changed' });
+        finishConnecting();
       } catch (error: unknown) {
+        finishConnecting();
         onError(error instanceof Error ? error.message : String(error));
       }
     })();
@@ -156,6 +176,8 @@ export function useSidecarResources({ onError }: UseSidecarResourcesOptions) {
     const clearConnectionPollers = () => {
       for (const handle of connectionPollers.current.values()) window.clearInterval(handle);
       connectionPollers.current.clear();
+      connectingToolkitSlugsRef.current.clear();
+      setConnectingToolkitSlugs(new Set());
     };
     window.addEventListener('verso:system-sleep', clearConnectionPollers);
     return () => window.removeEventListener('verso:system-sleep', clearConnectionPollers);
@@ -230,6 +252,7 @@ export function useSidecarResources({ onError }: UseSidecarResourcesOptions) {
     customConnectors,
     toolkitCatalog,
     catalogRefreshToken,
+    connectingToolkitSlugs,
     setCodexConnected,
     refreshConnections,
     refreshModelStatus,
