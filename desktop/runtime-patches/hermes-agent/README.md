@@ -27,10 +27,17 @@ gateway and exercises streaming plus the MCP OAuth routes.
    the desktop connection flow.
 6. `verso-personal-assistant-prompts.patch` — adapts the upstream agent prompt
    for Verso's general personal-assistant surface.
-7. `verso-request-overrides.patch` — supports per-request model and reasoning
+7. `verso-web-routing.patch` — keeps read-only extraction available without
+   provider credentials, routes known public URLs away from browser automation,
+   and makes browser-driving opt-in for cron jobs.
+8. `verso-request-overrides.patch` — supports per-request model and reasoning
    effort selected in the chat UI. It depends on patch 1.
-8. `verso-tool-search-pinned.patch` — keeps essential tools visible when
+9. `verso-tool-search-pinned.patch` — keeps essential tools visible when
    Hermes defers the remainder behind tool search.
+
+`verso-web-routing-tests.patch` is a source-only companion containing upstream
+regression tests. The patch helper applies it to Hermes source checkouts, but
+skips it for release `site-packages` trees because wheels do not ship `tests/`.
 
 ## Updating Hermes
 

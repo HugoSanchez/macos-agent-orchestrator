@@ -1,0 +1,391 @@
+diff --git a/agent/prompt_builder.py b/agent/prompt_builder.py
+index aaa132ee6c425f4a8e9716de1f1c4d28bb9fca52..b568b0be9e9a79840ce862b6d59b9833190ad865 100644
+--- a/agent/prompt_builder.py
++++ b/agent/prompt_builder.py
+@@ -445,6 +445,9 @@ OPENAI_MODEL_EXECUTION_GUIDANCE = (
+     "- If a task depends on output from a prior step, resolve that dependency first.\n"
+     "- For connected-app tasks, check whether the native app/toolkit is available "
+     "and connected before falling back to generic file, browser, terminal, or code-based paths.\n"
++    "- For read-only information at a known public URL, use web_extract first. "
++    "Use browser tools only when the page requires interaction, authentication, "
++    "client-side rendering that extraction cannot read, or after web_extract fails.\n"
+     "</prerequisite_checks>\n"
+     "\n"
+     "<verification>\n"
+diff --git a/cron/scheduler.py b/cron/scheduler.py
+index 3b59350354f7658abab6e3cc3e9b6b932bfb1af5..6c8a88832c9ff384cd56b3077f414c93caaae275 100644
+--- a/cron/scheduler.py
++++ b/cron/scheduler.py
+@@ -153,7 +153,7 @@ class CronPromptInjectionBlocked(Exception):
+     """
+ 
+ 
+-def _resolve_cron_disabled_toolsets(cfg: dict) -> list[str]:
++def _resolve_cron_disabled_toolsets(job: dict, cfg: dict) -> list[str]:
+     """Toolsets a cron-spawned agent must never receive.
+ 
+     Three protected toolsets are always disabled in cron context:
+@@ -161,12 +161,20 @@ def _resolve_cron_disabled_toolsets(cfg: dict) -> list[str]:
+       - ``messaging`` — interactive, needs a live gateway session
+       - ``clarify`` — interactive, blocks waiting for user input
+ 
++    Browser-driving is also disabled by default because scheduled jobs should
++    use connectors, APIs, feeds, ``web_search``, or ``web_extract`` for
++    unattended retrieval. A job may opt in explicitly by listing ``browser``
++    in its own ``enabled_toolsets``.
++
+     User-level ``agent.disabled_toolsets`` from config.yaml is layered on top
+     so per-job ``enabled_toolsets`` cannot bypass policy that applies to
+     ordinary agent runs (#25752 — LLM-supplied enabled_toolsets was widening
+     past config.yaml's denylist).
+     """
+     disabled = ["cronjob", "messaging", "clarify"]
++    per_job = job.get("enabled_toolsets") or []
++    if "browser" not in per_job:
++        disabled.append("browser")
+     agent_cfg = (cfg or {}).get("agent") or {}
+     user_disabled = agent_cfg.get("disabled_toolsets") or []
+     for name in user_disabled:
+@@ -3356,7 +3364,7 @@ def run_job(
+             provider_sort=pr.get("sort"),
+             openrouter_min_coding_score=(_cfg.get("openrouter") or {}).get("min_coding_score"),
+             enabled_toolsets=_resolve_cron_enabled_toolsets(job, _cfg),
+-            disabled_toolsets=_resolve_cron_disabled_toolsets(_cfg),
++            disabled_toolsets=_resolve_cron_disabled_toolsets(job, _cfg),
+             quiet_mode=True,
+             # Cron jobs should always inherit the user's SOUL.md identity from
+             # HERMES_HOME. When a workdir is configured, also inject project
+diff --git a/tools/web_tools.py b/tools/web_tools.py
+index 7754c386a56f933df69604237430f7cded139c11..aa9078b23ab215ac96c466f1ec9ab255023e1802 100644
+--- a/tools/web_tools.py
++++ b/tools/web_tools.py
+@@ -41,7 +41,9 @@ import logging
+ import os
+ import re
+ import asyncio
++from html import unescape
+ from typing import List, Dict, Any, Optional, TYPE_CHECKING
++from urllib.parse import urljoin
+ import httpx  # noqa: F401 — kept at module top so tests can patch tools.web_tools.httpx
+ # After the web-provider plugin migration (PR #25182), the Firecrawl SDK
+ # proxy, client construction, and response-shape normalizers all live in
+@@ -98,10 +100,154 @@ from tools.tool_backend_helpers import (  # noqa: F401
+     prefers_gateway,
+ )
+ from tools.url_safety import async_is_safe_url, normalize_url_for_request, sensitive_query_param_name
++from tools.website_policy import check_website_access
+ import sys
+ 
+ logger = logging.getLogger(__name__)
+ 
++_DIRECT_FETCH_MAX_BYTES = 3_000_000
++_DIRECT_FETCH_MAX_REDIRECTS = 5
++_DIRECT_FETCH_TIMEOUT = httpx.Timeout(20.0, connect=10.0)
++
++
++def _direct_html_to_text(value: str) -> tuple[str, str]:
++    """Return a compact title/text pair without adding an HTML dependency."""
++    title_match = re.search(r"<title\b[^>]*>(.*?)</title>", value, flags=re.I | re.S)
++    title = unescape(re.sub(r"\s+", " ", title_match.group(1)).strip()) if title_match else ""
++    value = re.sub(r"<head\b[^>]*>.*?</head\s*>", " ", value, flags=re.I | re.S)
++    value = re.sub(
++        r"<(script|style|noscript|svg)\b[^>]*>.*?</\1\s*>",
++        " ",
++        value,
++        flags=re.I | re.S,
++    )
++    value = re.sub(
++        r"</?(?:article|aside|blockquote|br|dd|div|dl|dt|figcaption|figure|footer|"
++        r"h[1-6]|header|hr|li|main|nav|ol|p|pre|section|table|tbody|td|tfoot|th|"
++        r"thead|tr|ul)\b[^>]*>",
++        "\n",
++        value,
++        flags=re.I,
++    )
++    value = re.sub(r"<[^>]+>", " ", value)
++    value = unescape(value).replace("\r", "")
++    lines = [re.sub(r"[ \t\f\v]+", " ", line).strip() for line in value.split("\n")]
++    text = "\n".join(line for line in lines if line)
++    return title, text
++
++
++async def _direct_extract_url(client: httpx.AsyncClient, url: str) -> Dict[str, Any]:
++    """Fetch one public URL directly, rechecking every redirect for SSRF."""
++    current_url = url
++    for _ in range(_DIRECT_FETCH_MAX_REDIRECTS + 1):
++        policy_block = check_website_access(current_url)
++        if policy_block:
++            return {
++                "url": current_url,
++                "title": "",
++                "content": "",
++                "error": policy_block.get("message", "Blocked by website policy"),
++                "blocked_by_policy": policy_block,
++            }
++        if not await async_is_safe_url(current_url):
++            return {
++                "url": current_url,
++                "title": "",
++                "content": "",
++                "error": "Blocked: URL targets a private or internal network address",
++            }
++
++        try:
++            async with client.stream("GET", current_url) as response:
++                if response.status_code in {301, 302, 303, 307, 308}:
++                    location = response.headers.get("location")
++                    if not location:
++                        return {
++                            "url": current_url,
++                            "title": "",
++                            "content": "",
++                            "error": f"HTTP {response.status_code} redirect had no Location header",
++                        }
++                    current_url = normalize_url_for_request(urljoin(current_url, location))
++                    sensitive_query_key = sensitive_query_param_name(current_url)
++                    if sensitive_query_key:
++                        return {
++                            "url": "",
++                            "title": "",
++                            "content": "",
++                            "error": (
++                                "Blocked: redirect URL contains a credential-like "
++                                f"query parameter ({sensitive_query_key})"
++                            ),
++                        }
++                    continue
++
++                response.raise_for_status()
++                body = bytearray()
++                async for chunk in response.aiter_bytes():
++                    body.extend(chunk)
++                    if len(body) > _DIRECT_FETCH_MAX_BYTES:
++                        return {
++                            "url": current_url,
++                            "title": "",
++                            "content": "",
++                            "error": (
++                                "Direct fetch exceeded the 3 MB safety limit; "
++                                "use a configured extraction provider for large documents"
++                            ),
++                        }
++                content_type = response.headers.get("content-type", "").lower()
++                if content_type.startswith(("image/", "audio/", "video/")) or any(
++                    kind in content_type for kind in ("application/pdf", "application/zip", "octet-stream")
++                ):
++                    return {
++                        "url": current_url,
++                        "title": "",
++                        "content": "",
++                        "error": f"Direct fetch does not extract binary content ({content_type or 'unknown type'})",
++                    }
++                encoding = response.encoding or "utf-8"
++                decoded = bytes(body).decode(encoding, errors="replace")
++        except (httpx.HTTPError, UnicodeError) as exc:
++            return {
++                "url": current_url,
++                "title": "",
++                "content": "",
++                "error": f"Direct fetch failed: {exc}",
++            }
++
++        if "html" in content_type or decoded.lstrip().lower().startswith(("<!doctype html", "<html")):
++            title, content = _direct_html_to_text(decoded)
++        else:
++            title, content = "", decoded.strip()
++        return {
++            "url": current_url,
++            "title": title,
++            "content": content,
++            "error": None if content else "Direct fetch returned no readable text",
++        }
++
++    return {
++        "url": current_url,
++        "title": "",
++        "content": "",
++        "error": f"Direct fetch exceeded {_DIRECT_FETCH_MAX_REDIRECTS} redirects",
++    }
++
++
++async def _direct_extract_urls(urls: List[str]) -> List[Dict[str, Any]]:
++    """Credential-free fallback for public, read-only page retrieval."""
++    headers = {
++        "Accept": "text/html,application/xhtml+xml,application/json,text/plain,text/*;q=0.9,*/*;q=0.1",
++        "User-Agent": "Verso/1.0 read-only web fetch",
++    }
++    async with httpx.AsyncClient(
++        follow_redirects=False,
++        timeout=_DIRECT_FETCH_TIMEOUT,
++        headers=headers,
++    ) as client:
++        return await asyncio.gather(*(_direct_extract_url(client, url) for url in urls))
++
+ 
+ def _web_extract_url(value: Any) -> Optional[str]:
+     """Return a usable URL from a model-supplied extract item.
+@@ -868,81 +1014,48 @@ async def web_extract_tool(
+             from agent.web_search_registry import (
+                 get_active_extract_provider,
+                 get_provider as _wsp_get_provider,
+-                _disabled_web_plugin_for,
+             )
+ 
+             provider = _wsp_get_provider(backend) if backend else None
+-            if provider is None or not provider.supports_extract():
+-                # When the configured name IS registered but doesn't support
+-                # extract (search-only providers like brave-free / ddgs /
+-                # searxng), surface that as a typed "search-only" error
+-                # rather than silently switching backends. When the name
+-                # isn't registered at all (typo / uninstalled plugin), fall
+-                # through to the active-provider walk.
+-                if provider is not None and not provider.supports_extract():
+-                    return json.dumps(
+-                        {
+-                            "success": False,
+-                            "error": (
+-                                f"{provider.display_name} is a search-only "
+-                                "backend and cannot extract URL content. "
+-                                "Set web.extract_backend to firecrawl, "
+-                                "tavily, exa, or parallel."
+-                            ),
+-                        },
+-                        ensure_ascii=False,
+-                    )
++            if provider is not None and not provider.supports_extract():
++                # A shared search backend such as DDGS or SearXNG should not
++                # make read-only URL extraction disappear. Skip it and use an
++                # extraction provider, or the direct fallback below.
++                provider = None
++            try:
++                availability_check = getattr(provider, "is_available", None)
++                provider_available = provider is not None and (
++                    not callable(availability_check) or availability_check()
++                )
++            except Exception:
++                provider_available = False
++            if not provider_available:
+                 provider = get_active_extract_provider()
+-                if provider is None:
+-                    # If the configured backend is a bundled web plugin the
+-                    # user explicitly disabled, the backend is set correctly
+-                    # and the real fix is to re-enable the plugin — say so
+-                    # instead of telling them to set web.extract_backend
+-                    # (which they already did). #40190 follow-up.
+-                    disabled_key = _disabled_web_plugin_for(capability="extract")
+-                    if disabled_key:
+-                        _vendor = disabled_key.split("/", 1)[-1]
+-                        return json.dumps(
+-                            {
+-                                "success": False,
+-                                "error": (
+-                                    f"web.extract_backend is set to '{_vendor}', "
+-                                    f"but its plugin ('{disabled_key}') is disabled "
+-                                    "in config. Re-enable it with "
+-                                    f"`hermes plugins enable {disabled_key}` "
+-                                    "(or remove it from plugins.disabled)."
+-                                ),
+-                            },
+-                            ensure_ascii=False,
+-                        )
+-                    return json.dumps(
+-                        {
+-                            "success": False,
+-                            "error": (
+-                                "No web extract provider configured. "
+-                                "Set web.extract_backend to firecrawl, "
+-                                "tavily, exa, or parallel."
+-                            ),
+-                        },
+-                        ensure_ascii=False,
+-                    )
+-
+-            logger.info(
+-                "Web extract via %s: %d URL(s)", provider.name, len(safe_urls)
+-            )
+ 
+-            # Async-or-sync dispatch: parallel + firecrawl have async
+-            # extract(); exa + tavily are sync.
+-            import inspect
+-            if inspect.iscoroutinefunction(provider.extract):
+-                results = await provider.extract(safe_urls, format=format)
++            if provider is None:
++                # Keep known public URLs readable without requiring a paid
++                # search/extraction provider. This direct path sends no
++                # cookies or credentials, caps response size, and rechecks
++                # every redirect against the SSRF policy.
++                logger.info("Web extract via direct fetch: %d URL(s)", len(safe_urls))
++                results = await _direct_extract_urls(safe_urls)
+             else:
+-                # Run sync extract() in a thread so we don't block the
+-                # event loop on network I/O.
+-                results = await asyncio.to_thread(
+-                    provider.extract, safe_urls, format=format
++                logger.info(
++                    "Web extract via %s: %d URL(s)", provider.name, len(safe_urls)
+                 )
+ 
++                # Async-or-sync dispatch: parallel + firecrawl have async
++                # extract(); exa + tavily are sync.
++                import inspect
++                if inspect.iscoroutinefunction(provider.extract):
++                    results = await provider.extract(safe_urls, format=format)
++                else:
++                    # Run sync extract() in a thread so we don't block the
++                    # event loop on network I/O.
++                    results = await asyncio.to_thread(
++                        provider.extract, safe_urls, format=format
++                    )
++
+         # Reconstruct the original input order across invalid, blocked, and
+         # provider-processed entries. Providers are expected to preserve the
+         # order of the safe URL list they receive.
+@@ -1050,12 +1163,12 @@ async def web_extract_tool(
+ def check_web_api_key() -> bool:
+     """Check whether the configured web backend is available.
+ 
+-    Used as the ``check_fn`` gate for the ``web_search`` and ``web_extract``
+-    tool registry entries — so a plugin-registered provider that reports
+-    ``is_available()`` must light the tools up even when no built-in backend
+-    has credentials (issues #28651, #31873). Resolution funnels through
+-    :func:`_is_backend_available`, which delegates non-legacy names to the
+-    registry.
++    Used as the ``check_fn`` gate for ``web_search``. ``web_extract`` remains
++    available through its credential-free direct fallback. A plugin-registered
++    provider that reports ``is_available()`` must light search up even when no
++    built-in backend has credentials (issues #28651, #31873). Resolution
++    funnels through :func:`_is_backend_available`, which delegates non-legacy
++    names to the registry.
+     """
+     # ``or ""``: a null ``web.backend`` value yields None from ``.get``, and
+     # ``None.lower()`` would raise. Mirrors ``_get_backend``.
+@@ -1085,6 +1198,11 @@ def check_web_api_key() -> bool:
+         return False
+ 
+ 
++def check_web_extract_available() -> bool:
++    """Known public URLs can always use the credential-free direct fallback."""
++    return True
++
++
+ if __name__ == "__main__":
+     """
+     Simple test/demo when run directly
+@@ -1191,7 +1309,7 @@ WEB_SEARCH_SCHEMA = {
+ 
+ WEB_EXTRACT_SCHEMA = {
+     "name": "web_extract",
+-    "description": "Extract content from web page URLs. Returns clean page content in markdown/text (no LLM summarization — fast). Also works with PDF URLs (arxiv papers, documents) — pass the PDF link directly. Pages within the char budget (default 15000) return whole; larger pages return a head+tail window with a footer telling you the full text's saved file path and the read_file call to page through the omitted middle. Inline images appear as [IMAGE: alt] placeholders; real image URLs are kept as links. If a URL fails or times out, use the browser tool instead.",
++    "description": "Extract read-only content from known public web page URLs. Public HTML, JSON, XML, and text work without provider credentials through a direct, size-limited fetch; configured extraction providers add richer parsing and PDF support. Returns clean page content in markdown/text (no LLM summarization — fast). Pages within the char budget (default 15000) return whole; larger pages return a head+tail window with a footer telling you the full text's saved file path and the read_file call to page through the omitted middle. Prefer this over browser_navigate for information retrieval. Use browser tools only when interaction, authentication, or client-side rendering is required, or after extraction fails.",
+     "parameters": {
+         "type": "object",
+         "properties": {
+@@ -1230,7 +1348,7 @@ registry.register(
+         "markdown",
+         char_limit=args.get("char_limit"),
+     ),
+-    check_fn=check_web_api_key,
++    check_fn=check_web_extract_available,
+     requires_env=_web_requires_env(),
+     is_async=True,
+     emoji="📄",

@@ -175,8 +175,13 @@ export class HermesSupervisor {
    */
   invoke(args: readonly string[]): { command: string; args: string[]; env: Record<string, string> } | null {
     if (!this.launch.command) return null;
-    const bundled = getBundledHermesInvocation();
-    if (bundled) {
+    if (isBundledRuntime()) {
+      const bundled = getBundledHermesInvocation();
+      // A partially built or corrupted bundle must never fall through to the
+      // Debug invocation below. launch.command is the Python interpreter in
+      // bundled mode, so passing bare Hermes arguments would make Python try
+      // to open a local file named `auth`, `gateway`, etc.
+      if (!bundled) return null;
       return {
         command: bundled.python,
         args: [bundled.hermesScript, ...args],

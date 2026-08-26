@@ -6,6 +6,10 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=runtime-config.sh
+source "${SCRIPT_DIR}/runtime-config.sh"
+
 WORKSPACE_PATH="${CONDUCTOR_WORKSPACE_PATH:-$(pwd)}"
 ROOT_PATH="${CONDUCTOR_ROOT_PATH:-${WORKSPACE_PATH}}"
 ROOT_BUNDLE="${ROOT_PATH}/desktop/runtime-bundles"
@@ -41,6 +45,20 @@ EOF
         exit 1
     fi
 done
+
+runtime_patch_dir="${WORKSPACE_PATH}/desktop/runtime-patches/hermes-agent"
+expected_runtime_patch_stamp="$(hermes_runtime_patch_stamp "${runtime_patch_dir}")"
+expected_runtime_stamp="${HERMES_REF}|${HERMES_EXTRAS}|${HERMES_EXTRA_PINS[*]}|${PYTHON_VERSION}|patches:${expected_runtime_patch_stamp}"
+actual_runtime_stamp="$(cat "${ROOT_BUNDLE}/site-packages/arm64/.stamp")"
+if [ "${actual_runtime_stamp}" != "${expected_runtime_stamp}" ]; then
+    cat >&2 <<EOF
+[conductor-setup] ERROR: shared Hermes runtime is stale for this workspace.
+
+Rebuild from this workspace, then run Verso again:
+  ./scripts/build-runtime-bundles.sh
+EOF
+    exit 1
+fi
 
 if ! cmp -s "${ROOT_BUNDLE}/site-packages/arm64/.stamp" "${ROOT_BUNDLE}/site-packages/arm64/.smoke-pass"; then
     cat >&2 <<EOF

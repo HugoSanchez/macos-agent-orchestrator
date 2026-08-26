@@ -31,6 +31,7 @@ import {
   createChatNavigationState,
   isChatSurfaceActive,
   reduceChatNavigation,
+  resolveShellSessionSelection,
 } from './chat-navigation-model';
 import { sessionMessageKey } from './session-message-model';
 import { useSessionMessages } from './use-session-messages';
@@ -223,17 +224,19 @@ export function App() {
 
   useEffect(() => {
     if (!shellState) return;
-    const next = shellState.selectedSessionId;
-    if (next === getCurrentSessionId()) return;
-    const nextSession = shellState.sessions.find((session) => session.id === next);
-    if (nextSession) setModel(nextSession.model);
+    const selection = resolveShellSessionSelection(shellState, getCurrentSessionId());
+    // Model synchronization is independent from message hydration. On app
+    // launch the message cache can already point at the selected session while
+    // the model picker still contains the default from a different chat.
+    if (selection.persistedModel !== undefined) setModel(selection.persistedModel);
+    if (!selection.shouldHydrate) return;
     // Leaving overlays open while switching sessions is jarring — every
     // session click from the leftbar should land you in the chat surface.
-    if (next) {
+    if (selection.id) {
       dispatchNavigation({ type: 'show-chat' });
       handleCloseCatalogs();
     }
-    void hydrateSession(next);
+    void hydrateSession(selection.id);
   }, [shellState, getCurrentSessionId, hydrateSession, handleCloseCatalogs]);
 
   useEffect(() => {

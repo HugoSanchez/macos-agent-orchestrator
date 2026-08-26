@@ -31,9 +31,8 @@ const activityRows = [
   ['googledrive', 'wide', 'success'],
 ] as const;
 
-// TODO: point at the public repos before launch.
-const GITHUB_URL = '#';
-const HERMES_URL = '#';
+const GITHUB_URL = 'https://github.com/HugoSanchez/macos-agent-orchestrator';
+const DOWNLOAD_URL = `${GITHUB_URL}/releases/download/v1.0.21/verso-1.0.21.dmg`;
 
 // Flip on once there are real testimonials to show.
 const SHOW_TESTIMONIALS = false;
@@ -70,7 +69,7 @@ export default function TriagePreviewPage() {
     <main className={styles.page} data-theme={theme}>
       <nav className={styles.nav}>
         <div className={styles.navInner}>
-          <Link href="/triage-preview" className={styles.brand}>
+          <Link href="/" className={styles.brand}>
             verso.
           </Link>
         </div>
@@ -80,18 +79,23 @@ export default function TriagePreviewPage() {
         <div className={styles.heroInner}>
           <div className={styles.heroTop}>
             <div className={styles.heroText}>
-              <h1>A free, open-source, agent orchestrator for your Mac.</h1>
+              <h1>A free, open-source, agent orchestrator for knowledge work.</h1>
               <p>
                 Verso connects to your apps, remembers what&rsquo;s going on around you, and gets
                 shit done &mdash; frontier AI without the setup it usually takes. Built on Hermes.
                 Free to use, yours to inspect.
               </p>
               <div className={styles.heroActions}>
-                <Link className={styles.primaryButton} href="/login">
+                <a className={styles.primaryButton} href={DOWNLOAD_URL} download>
                   Download for Mac
                   <ArrowRightIcon />
-                </Link>
-                <a className={styles.ghostButton} href={GITHUB_URL}>
+                </a>
+                <a
+                  className={styles.ghostButton}
+                  href={GITHUB_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
                   View on GitHub
                 </a>
               </div>
@@ -256,10 +260,10 @@ export default function TriagePreviewPage() {
         <h2>Try it out.</h2>
         <h2>It's yours.</h2>
         <p>One signed download, your own accounts, five minutes.</p>
-        <Link className={styles.secondaryButton} href="/login">
+        <a className={styles.secondaryButton} href={DOWNLOAD_URL} download>
           Download for Mac
           <ArrowRightIcon />
-        </Link>
+        </a>
       </section>
 
       <footer className={styles.footer}>

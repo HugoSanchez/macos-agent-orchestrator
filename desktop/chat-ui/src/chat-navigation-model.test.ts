@@ -4,7 +4,22 @@ import {
   createChatNavigationState,
   isChatSurfaceActive,
   reduceChatNavigation,
+  resolveShellSessionSelection,
 } from './chat-navigation-model';
+import type { ChatSessionSummary } from './types';
+
+function session(id: string, model: ChatSessionSummary['model']): ChatSessionSummary {
+  return {
+    id,
+    title: id,
+    createdAt: '2026-08-25T00:00:00.000Z',
+    updatedAt: '2026-08-25T00:00:00.000Z',
+    archivedAt: null,
+    model,
+    messageCount: 1,
+    lastMessagePreview: null,
+  };
+}
 
 describe('chat navigation model', () => {
   it('represents at most one catalog and one page', () => {
@@ -68,5 +83,31 @@ describe('chat navigation model', () => {
 
     state = reduceChatNavigation(state, { type: 'close-connections-catalog' });
     expect(isChatSurfaceActive(state)).toBe(true);
+  });
+
+  it('restores the persisted model even when the selected session is already hydrated', () => {
+    const selection = resolveShellSessionSelection({
+      sessions: [session('claude-chat', 'claude-opus-4-8')],
+      selectedSessionId: 'claude-chat',
+    }, 'claude-chat');
+
+    expect(selection).toEqual({
+      id: 'claude-chat',
+      persistedModel: 'claude-opus-4-8',
+      shouldHydrate: false,
+    });
+  });
+
+  it('hydrates and restores the model when switching sessions', () => {
+    const selection = resolveShellSessionSelection({
+      sessions: [session('gpt-chat', 'gpt-5.5'), session('claude-chat', 'claude-opus-4-8')],
+      selectedSessionId: 'claude-chat',
+    }, 'gpt-chat');
+
+    expect(selection).toEqual({
+      id: 'claude-chat',
+      persistedModel: 'claude-opus-4-8',
+      shouldHydrate: true,
+    });
   });
 });
