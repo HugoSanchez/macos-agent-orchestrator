@@ -26,6 +26,12 @@ describe('HermesSupervisor: managed config override', () => {
       VERSO_HERMES_COMMAND: process.env.VERSO_HERMES_COMMAND,
       VERSO_MEMORY_ENABLED: process.env.VERSO_MEMORY_ENABLED,
       VERSO_SIDECAR_AUTH_SECRET: process.env.VERSO_SIDECAR_AUTH_SECRET,
+      VERSO_BUNDLED_PYTHON_DIR: process.env.VERSO_BUNDLED_PYTHON_DIR,
+      VERSO_BUNDLED_SITE_PACKAGES_DIR: process.env.VERSO_BUNDLED_SITE_PACKAGES_DIR,
+      VERSO_BUNDLED_DEFAULTS: process.env.VERSO_BUNDLED_DEFAULTS,
+      VERSO_HERMES_HOME: process.env.VERSO_HERMES_HOME,
+      VERSO_BUNDLE_VERSION: process.env.VERSO_BUNDLE_VERSION,
+      VERSO_PYTHON_CACHE_DIR: process.env.VERSO_PYTHON_CACHE_DIR,
     };
     process.env.HERMES_HOME = templateHome;
     // Pretend Hermes is launchable so the supervisor doesn't bail out.
@@ -344,6 +350,43 @@ describe('HermesSupervisor: managed config override', () => {
       mcp_servers?: Record<string, { env?: Record<string, string> }>;
     };
     expect(parsed.mcp_servers?.verso?.env?.VERSO_SIDECAR_AUTH_SECRET).toBe('test-sidecar-token');
+  });
+
+  it('redirects every bundled Python MCP cache outside the signed app', () => {
+    const arch = process.arch === 'x64' ? 'x86_64' : process.arch;
+    const bundledRoot = path.join(tempRoot, 'bundle');
+    const bundledPythonDir = path.join(bundledRoot, 'python');
+    const bundledSitePackagesDir = path.join(bundledRoot, 'site-packages');
+    // Use the seeded template as the bundled defaults directory so this
+    // focused prepare() call has the same config input as a real launch.
+    const bundledDefaultsDir = tempRoot;
+    const pythonPath = path.join(bundledPythonDir, arch, 'python', 'bin', 'python3.11');
+    const hermesScript = path.join(bundledSitePackagesDir, arch, 'bin', 'hermes');
+    const sitePackages = path.join(bundledSitePackagesDir, arch, 'site-packages');
+    const pythonCache = path.join(tempRoot, 'python-bytecode');
+    mkdirSync(path.dirname(pythonPath), { recursive: true });
+    mkdirSync(path.dirname(hermesScript), { recursive: true });
+    mkdirSync(sitePackages, { recursive: true });
+    writeFileSync(pythonPath, '#!/bin/sh\n', 'utf8');
+    writeFileSync(hermesScript, '#!/bin/sh\n', 'utf8');
+    process.env.VERSO_BUNDLED_PYTHON_DIR = bundledPythonDir;
+    process.env.VERSO_BUNDLED_SITE_PACKAGES_DIR = bundledSitePackagesDir;
+    process.env.VERSO_BUNDLED_DEFAULTS = bundledDefaultsDir;
+    process.env.VERSO_HERMES_HOME = managedHome;
+    process.env.VERSO_BUNDLE_VERSION = 'test-bundle';
+    process.env.VERSO_PYTHON_CACHE_DIR = pythonCache;
+
+    const supervisor = new HermesSupervisor({ runtimeMode: 'managed' });
+    supervisor.setOrchestratorBaseUrl('http://127.0.0.1:62000');
+    (supervisor as unknown as { ensureManagedHermesHome: () => void }).ensureManagedHermesHome();
+
+    const parsed = YAML.parse(readFileSync(path.join(managedHome, 'config.yaml'), 'utf8')) as {
+      mcp_servers?: Record<string, { env?: Record<string, string> }>;
+    };
+    const env = parsed.mcp_servers?.verso?.env;
+    expect(env?.PYTHONDONTWRITEBYTECODE).toBe('1');
+    expect(env?.PYTHONPYCACHEPREFIX).toBe(pythonCache);
+    expect(env?.PYTHONPATH).toContain(sitePackages);
   });
 
   it('omits the memory tools env when memory is disabled', () => {
