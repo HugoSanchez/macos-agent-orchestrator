@@ -1,6 +1,6 @@
 # verso
 
-A native macOS app for chatting with a local Hermes agent through a desktop UI.
+A native macOS agent orchestrator built with Hermes Agent.
 
 ## Architecture
 
