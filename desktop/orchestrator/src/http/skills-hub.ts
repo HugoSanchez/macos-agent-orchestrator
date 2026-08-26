@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { json, route, type Route } from './router.ts';
 import type { HermesSupervisor } from './hermes-supervisor.ts';
+import { bundledPythonEnv } from './hermes-runtime-config.ts';
 import { getBundledHermesInvocation } from './runtime-bootstrap.ts';
 
 export interface HubSkillSummary {
@@ -164,7 +165,7 @@ function buildPythonInvocation(hermes: HermesSupervisor): { command: string; env
     return {
       command: bundled.python,
       env: {
-        PYTHONPATH: [bundled.sitePackages, process.env.PYTHONPATH].filter(Boolean).join(':'),
+        ...bundledPythonEnv(bundled),
         ...optionalSkillsEnv(),
       },
     };
@@ -175,7 +176,7 @@ function buildPythonInvocation(hermes: HermesSupervisor): { command: string; env
     return {
       command: localBundled.python,
       env: {
-        PYTHONPATH: [localBundled.sitePackages, process.env.PYTHONPATH].filter(Boolean).join(':'),
+        ...bundledPythonEnv(localBundled),
         ...optionalSkillsEnv(),
       },
     };

@@ -14,6 +14,7 @@ import { fileURLToPath } from 'node:url';
 import YAML from 'yaml';
 import type { RuntimeMode } from '../integrations/runtime-mode.ts';
 import { getBundledHermesInvocation, getBundledPython } from './runtime-bootstrap.ts';
+import { bundledPythonEnv } from './hermes-runtime-config.ts';
 import { isMemoryEnabled } from './lexical-provider.ts';
 import { applyMemorySoulSection, applySecuritySoulSection } from './memory-soul.ts';
 import { computePinnedToolNames } from './hermes-pinned-tools.ts';
@@ -312,7 +313,7 @@ export class HermesManagedProfile {
         };
         const sidecarAuthSecret = process.env.VERSO_SIDECAR_AUTH_SECRET?.trim();
         if (sidecarAuthSecret) env.VERSO_SIDECAR_AUTH_SECRET = sidecarAuthSecret;
-        if (bundled) env.PYTHONPATH = bundled.sitePackages;
+        if (bundled) Object.assign(env, bundledPythonEnv(bundled));
         if (memoryToolsActive) env.VERSO_MEMORY_TOOLS = 'full';
         mcpServers.verso = {
           command: pythonPath,
