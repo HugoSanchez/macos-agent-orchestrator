@@ -13,7 +13,9 @@ HERMES_EXTRA_PINS=("aiohttp==3.13.3")
 
 # Application order is part of the contract: request overrides build on the
 # reasoning callback introduced by the first patch. Every .patch file in the
-# directory must be listed here or verification fails.
+# directory must be listed in one of the inventories below or verification
+# fails. Source-test patches are applied only to a Hermes source checkout;
+# release site-packages intentionally do not ship upstream's tests/ tree.
 HERMES_PATCHES=(
     "api-server-reasoning-stream.patch"
     "codex-tool-schema-required.patch"
@@ -21,6 +23,21 @@ HERMES_PATCHES=(
     "verso-cron-running-status.patch"
     "verso-gateway-mcp-oauth.patch"
     "verso-personal-assistant-prompts.patch"
+    "verso-web-routing.patch"
     "verso-request-overrides.patch"
     "verso-tool-search-pinned.patch"
 )
+
+HERMES_SOURCE_TEST_PATCHES=(
+    "verso-web-routing-tests.patch"
+)
+
+hermes_runtime_patch_stamp() {
+    local patch_dir="$1"
+    local patch_name
+    for patch_name in "${HERMES_PATCHES[@]}"; do
+        # Hash contents only. Including shasum's filename column would make
+        # identical patches produce different stamps in different worktrees.
+        shasum -a 256 "${patch_dir}/${patch_name}" | awk '{print $1}'
+    done | shasum -a 256 | awk '{print $1}'
+}

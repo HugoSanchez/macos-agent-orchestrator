@@ -39,7 +39,8 @@ interface BrowserHostOptions {
 }
 
 function defaultBaseDir(): string {
-  return path.join(os.homedir(), 'Library', 'Application Support', 'verso');
+  return process.env.VERSO_BROWSER_DATA_ROOT?.trim()
+    || path.join(os.homedir(), 'Library', 'Application Support', 'verso');
 }
 
 function decodeState(value: unknown): BrowserHostState {

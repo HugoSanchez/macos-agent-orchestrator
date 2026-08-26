@@ -1,0 +1,285 @@
+diff --git a/tests/cron/test_scheduler.py b/tests/cron/test_scheduler.py
+index f5317bf2820f6421bbd25a4692136161cb97a76c..5ca21b6cfe9483fedb8b603b2bfdaee187620cce 100644
+--- a/tests/cron/test_scheduler.py
++++ b/tests/cron/test_scheduler.py
+@@ -1281,9 +1281,29 @@ class TestRunJobSessionPersistence:
+ 
+         kwargs = mock_agent_cls.call_args.kwargs
+         assert set(kwargs["disabled_toolsets"]) >= {
+-            "cronjob", "messaging", "clarify", "terminal", "file",
++            "cronjob", "messaging", "clarify", "browser", "terminal", "file",
+         }
+ 
++    def test_run_job_disables_browser_unless_job_explicitly_opts_in(self, tmp_path):
++        default_job = {
++            "id": "default-browser-policy-job",
++            "name": "test",
++            "prompt": "read a public page",
++        }
++        with self._run_job_patches(tmp_path) as (_fake_db, mock_agent_cls):
++            run_job(default_job)
++        assert "browser" in mock_agent_cls.call_args.kwargs["disabled_toolsets"]
++
++        browser_job = {
++            "id": "explicit-browser-policy-job",
++            "name": "test",
++            "prompt": "interact with a dynamic page",
++            "enabled_toolsets": ["browser"],
++        }
++        with self._run_job_patches(tmp_path) as (_fake_db, mock_agent_cls):
++            run_job(browser_job)
++        assert "browser" not in mock_agent_cls.call_args.kwargs["disabled_toolsets"]
++
+     def test_run_job_enabled_toolsets_resolves_from_platform_config_when_not_set(self, tmp_path):
+         """When a job has no explicit enabled_toolsets, the scheduler now
+         resolves them from ``hermes tools`` platform config for ``cron``
+diff --git a/tests/tools/test_web_direct_extract.py b/tests/tools/test_web_direct_extract.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..fffba0b4f5ab6779fafb6afbad041366500a7b36
+--- /dev/null
++++ b/tests/tools/test_web_direct_extract.py
+@@ -0,0 +1,140 @@
++"""Credential-free web extraction fallback used by Verso."""
++
++import json
++
++import httpx
++import pytest
++
++from tools import web_tools
++from tools.registry import registry
++
++
++def test_web_extract_is_advertised_without_provider_credentials():
++    entry = registry.get_entry("web_extract")
++    assert entry is not None
++    assert entry.check_fn is web_tools.check_web_extract_available
++    assert entry.check_fn() is True
++
++
++@pytest.mark.asyncio
++async def test_direct_extract_returns_readable_html(monkeypatch):
++    async def safe(_url):
++        return True
++
++    monkeypatch.setattr(web_tools, "async_is_safe_url", safe)
++    monkeypatch.setattr(web_tools, "check_website_access", lambda _url: None)
++
++    def handler(request: httpx.Request) -> httpx.Response:
++        assert request.headers.get("cookie") is None
++        assert request.headers.get("authorization") is None
++        return httpx.Response(
++            200,
++            headers={"content-type": "text/html; charset=utf-8"},
++            text=(
++                "<html><head><title>Example &amp; test</title>"
++                "<style>.hidden{display:none}</style></head>"
++                "<body><main><h1>Hello</h1><p>Useful facts.</p>"
++                "<script>steal()</script></main></body></html>"
++            ),
++        )
++
++    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
++        result = await web_tools._direct_extract_url(client, "https://example.com/page")
++
++    assert result == {
++        "url": "https://example.com/page",
++        "title": "Example & test",
++        "content": "Hello\nUseful facts.",
++        "error": None,
++    }
++
++
++@pytest.mark.asyncio
++async def test_direct_extract_rechecks_redirect_target(monkeypatch):
++    checked = []
++
++    async def safe(url):
++        checked.append(url)
++        return url != "http://127.0.0.1/private"
++
++    monkeypatch.setattr(web_tools, "async_is_safe_url", safe)
++    monkeypatch.setattr(web_tools, "check_website_access", lambda _url: None)
++
++    def handler(_request: httpx.Request) -> httpx.Response:
++        return httpx.Response(302, headers={"location": "http://127.0.0.1/private"})
++
++    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
++        result = await web_tools._direct_extract_url(client, "https://example.com/redirect")
++
++    assert checked == ["https://example.com/redirect", "http://127.0.0.1/private"]
++    assert result["error"] == "Blocked: URL targets a private or internal network address"
++
++
++@pytest.mark.asyncio
++async def test_direct_extract_rechecks_website_policy_after_redirect(monkeypatch):
++    async def safe(_url):
++        return True
++
++    def policy(url):
++        if url == "https://blocked.test/final":
++            return {"rule": "blocked.test", "message": "Blocked by website policy"}
++        return None
++
++    monkeypatch.setattr(web_tools, "async_is_safe_url", safe)
++    monkeypatch.setattr(web_tools, "check_website_access", policy)
++
++    def handler(_request: httpx.Request) -> httpx.Response:
++        return httpx.Response(302, headers={"location": "https://blocked.test/final"})
++
++    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
++        result = await web_tools._direct_extract_url(client, "https://example.com/redirect")
++
++    assert result["error"] == "Blocked by website policy"
++    assert result["blocked_by_policy"]["rule"] == "blocked.test"
++
++
++@pytest.mark.asyncio
++async def test_web_extract_uses_direct_fallback_when_no_provider(monkeypatch):
++    async def safe(_url):
++        return True
++
++    async def direct(urls):
++        return [{"url": urls[0], "title": "Direct", "content": "Body", "error": None}]
++
++    monkeypatch.setattr(web_tools, "async_is_safe_url", safe)
++    monkeypatch.setattr(web_tools, "_ensure_web_plugins_loaded", lambda: None)
++    monkeypatch.setattr(web_tools, "_get_extract_backend", lambda: "firecrawl")
++    monkeypatch.setattr(web_tools, "_direct_extract_urls", direct)
++    monkeypatch.setattr("agent.web_search_registry.get_provider", lambda _name: None)
++    monkeypatch.setattr("agent.web_search_registry.get_active_extract_provider", lambda: None)
++
++    result = json.loads(await web_tools.web_extract_tool(["https://example.com"]))
++    assert result["results"][0]["title"] == "Direct"
++    assert result["results"][0]["content"] == "Body"
++
++
++@pytest.mark.asyncio
++async def test_search_only_backend_does_not_disable_direct_extract(monkeypatch):
++    class SearchOnlyProvider:
++        display_name = "Search only"
++
++        def supports_extract(self):
++            return False
++
++    async def safe(_url):
++        return True
++
++    async def direct(urls):
++        return [{"url": urls[0], "title": "Direct", "content": "Body", "error": None}]
++
++    monkeypatch.setattr(web_tools, "async_is_safe_url", safe)
++    monkeypatch.setattr(web_tools, "_ensure_web_plugins_loaded", lambda: None)
++    monkeypatch.setattr(web_tools, "_get_extract_backend", lambda: "ddgs")
++    monkeypatch.setattr(web_tools, "_direct_extract_urls", direct)
++    monkeypatch.setattr(
++        "agent.web_search_registry.get_provider", lambda _name: SearchOnlyProvider()
++    )
++    monkeypatch.setattr("agent.web_search_registry.get_active_extract_provider", lambda: None)
++
++    result = json.loads(await web_tools.web_extract_tool(["https://example.com"]))
++    assert result["results"][0]["title"] == "Direct"
+diff --git a/tests/tools/test_web_providers_brave_free.py b/tests/tools/test_web_providers_brave_free.py
+index 7801b28bd6b5b44697fd9a539aabd26bf3559697..be66c321c92b71ee3333ced9084696a5a66120b4 100644
+--- a/tests/tools/test_web_providers_brave_free.py
++++ b/tests/tools/test_web_providers_brave_free.py
+@@ -242,7 +242,7 @@ class TestBraveFreeBackendWiring:
+ # ---------------------------------------------------------------------------
+ 
+ 
+-class TestBraveFreeSearchOnlyErrors:
++class TestBraveFreeSearchOnlyExtractFallback:
+     _register_providers = staticmethod(register_all_web_providers)
+ 
+     @pytest.fixture(autouse=True)
+@@ -252,7 +252,7 @@ class TestBraveFreeSearchOnlyErrors:
+         from agent.web_search_registry import _reset_for_tests
+         _reset_for_tests()
+ 
+-    def test_web_extract_returns_search_only_error(self, monkeypatch):
++    def test_web_extract_uses_direct_fallback(self, monkeypatch):
+         import asyncio
+         from tools import web_tools
+ 
+@@ -262,13 +262,15 @@ class TestBraveFreeSearchOnlyErrors:
+         async def _allow_ssrf(_url: str) -> bool:
+             return True
+ 
++        async def _direct(urls):
++            return [{"url": urls[0], "title": "Direct", "content": "Body", "error": None}]
++
+         monkeypatch.setattr(web_tools, "async_is_safe_url", _allow_ssrf)
++        monkeypatch.setattr(web_tools, "_direct_extract_urls", _direct)
+         monkeypatch.setattr("tools.interrupt.is_interrupted", lambda: False, raising=False)
+ 
+         result_str = asyncio.get_event_loop().run_until_complete(
+             web_tools.web_extract_tool(["https://example.com"])
+         )
+         result = json.loads(result_str)
+-        assert result["success"] is False
+-        assert "search-only" in result["error"].lower()
+-        assert "brave" in result["error"].lower()
++        assert result["results"][0]["title"] == "Direct"
+diff --git a/tests/tools/test_web_providers_ddgs.py b/tests/tools/test_web_providers_ddgs.py
+index 5166224bf0f83b0a9491a48f996217f82551de4e..163b26c1db2df56ef962a018743dcf436befcde5 100644
+--- a/tests/tools/test_web_providers_ddgs.py
++++ b/tests/tools/test_web_providers_ddgs.py
+@@ -281,7 +281,7 @@ class TestDDGSSearchOnlyErrors:
+         from agent.web_search_registry import _reset_for_tests
+         _reset_for_tests()
+ 
+-    def test_web_extract_returns_search_only_error(self, monkeypatch):
++    def test_web_extract_uses_direct_fallback(self, monkeypatch):
+         import asyncio
+         from tools import web_tools
+ 
+@@ -291,13 +291,15 @@ class TestDDGSSearchOnlyErrors:
+         async def _allow_ssrf(_url: str) -> bool:
+             return True
+ 
++        async def _direct(urls):
++            return [{"url": urls[0], "title": "Direct", "content": "Body", "error": None}]
++
+         monkeypatch.setattr(web_tools, "async_is_safe_url", _allow_ssrf)
++        monkeypatch.setattr(web_tools, "_direct_extract_urls", _direct)
+         monkeypatch.setattr("tools.interrupt.is_interrupted", lambda: False, raising=False)
+ 
+         result_str = asyncio.get_event_loop().run_until_complete(
+             web_tools.web_extract_tool(["https://example.com"])
+         )
+         result = json.loads(result_str)
+-        assert result["success"] is False
+-        assert "search-only" in result["error"].lower()
+-        assert "duckduckgo" in result["error"].lower() or "ddgs" in result["error"].lower()
++        assert result["results"][0]["title"] == "Direct"
+diff --git a/tests/tools/test_web_providers_searxng.py b/tests/tools/test_web_providers_searxng.py
+index 9ba407784478925279005a8c5f08f4c8d5968ccc..624a8f081de0dea1624e9e1e39f32e40096eb91f 100644
+--- a/tests/tools/test_web_providers_searxng.py
++++ b/tests/tools/test_web_providers_searxng.py
+@@ -345,7 +345,7 @@ class TestSearXNGOnlyExtractCrawlErrors:
+         from agent.web_search_registry import _reset_for_tests
+         _reset_for_tests()
+ 
+-    def test_web_extract_searxng_returns_clear_error(self, monkeypatch):
++    def test_web_extract_searxng_uses_direct_fallback(self, monkeypatch):
+         import asyncio
+         from tools import web_tools
+ 
+@@ -355,12 +355,15 @@ class TestSearXNGOnlyExtractCrawlErrors:
+         async def _allow_ssrf(_url: str) -> bool:
+             return True
+ 
++        async def _direct(urls):
++            return [{"url": urls[0], "title": "Direct", "content": "Body", "error": None}]
++
+         monkeypatch.setattr(web_tools, "async_is_safe_url", _allow_ssrf)
++        monkeypatch.setattr(web_tools, "_direct_extract_urls", _direct)
+         monkeypatch.setattr("tools.interrupt.is_interrupted", lambda: False, raising=False)
+ 
+         result_str = asyncio.get_event_loop().run_until_complete(
+             web_tools.web_extract_tool(["https://example.com"])
+         )
+         result = json.loads(result_str)
+-        assert result["success"] is False
+-        assert "search-only" in result["error"].lower() or "SearXNG" in result["error"]
++        assert result["results"][0]["title"] == "Direct"

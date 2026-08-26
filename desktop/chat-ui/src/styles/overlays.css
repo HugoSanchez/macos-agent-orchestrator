@@ -285,6 +285,10 @@
   color: var(--status-connected);
 }
 
+.catalog-row-pill.is-connecting:disabled {
+  color: var(--catalog-pill-color);
+}
+
 /* Inline confirmation card rendered in the chat when the agent's
    `cronjob` tool returns success. Click "View" → cron detail page. */
 .cron-tool-card {

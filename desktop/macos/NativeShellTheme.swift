@@ -44,7 +44,6 @@ struct ConductorThemePalette {
 
     // Destructive / warning text (system red at per-mode opacities).
     let danger: Color        // inline error text
-    let dangerSoft: Color    // "Disconnect" affordance
     let dangerStrong: Color  // routine delete confirmation
 
     // Connection-logo fallback tile.
@@ -99,7 +98,6 @@ enum ConductorThemes {
         rowHoverFill: Color.white.opacity(0.03),
         cardFill: Color(red: 38/255, green: 40/255, blue: 43/255).opacity(0.38), // paper-2 × 0.38
         danger: Color.red.opacity(0.88),
-        dangerSoft: Color.red.opacity(0.72),
         dangerStrong: Color.red.opacity(0.92),
         iconFallbackFill: Color.white.opacity(0.08),
         iconFallbackText: Color.white.opacity(0.7),
@@ -146,7 +144,6 @@ enum ConductorThemes {
         rowHoverFill: Color(red: 50/255, green: 48/255, blue: 40/255).opacity(0.045),
         cardFill: Color(red: 239/255, green: 235/255, blue: 224/255).opacity(0.82), // paper-2 × 0.82
         danger: Color.red.opacity(0.74),
-        dangerSoft: Color.red.opacity(0.58),
         dangerStrong: Color.red.opacity(0.78),
         iconFallbackFill: Color.black.opacity(0.06),
         iconFallbackText: Color.black.opacity(0.55),

@@ -96,7 +96,21 @@ if ${needs_node_install}; then
         -output "${NODE_DIR}/bin/node"
     chmod +x "${NODE_DIR}/bin/node"
 
+    # Node's distribution license also contains the notices for the
+    # third-party code compiled into the executable. Preserve it beside the
+    # universal binary so it travels into every Release app bundle.
+    cp "${tmp}/node-v${NODE_VERSION}-darwin-arm64/LICENSE" "${NODE_DIR}/LICENSE"
+
     echo "[bundle] node $(/usr/bin/lipo -info "${NODE_DIR}/bin/node")"
+fi
+
+# Existing runtime caches created before license preservation may already have
+# the correct binary and therefore skip the download block above. Backfill the
+# exact pinned Node license without forcing a binary rebuild.
+if [ ! -s "${NODE_DIR}/LICENSE" ]; then
+    echo "[bundle] downloading Node.js v${NODE_VERSION} license notices"
+    curl -fsSL "https://raw.githubusercontent.com/nodejs/node/v${NODE_VERSION}/LICENSE" \
+        -o "${NODE_DIR}/LICENSE"
 fi
 
 # ── Orchestrator source + node_modules ──────────────────────────────────────
@@ -237,7 +251,29 @@ printf '%s\n' "${HERMES_REF}" > "${HERMES_BUNDLE}/.verso-hermes-ref"
 mkdir -p "${SITE_PACKAGES_DIR}"
 
 pip_tmp="$(mktemp -d)"
-trap 'rm -rf "${pip_tmp}"' EXIT
+active_site_packages_stage=""
+active_site_packages_backup=""
+active_site_packages_target=""
+site_packages_swapped=false
+bundle_build_committed=false
+
+cleanup_bundle_build() {
+    rm -rf "${pip_tmp}"
+    if [ -n "${active_site_packages_stage}" ] && [ -d "${active_site_packages_stage}" ]; then
+        rm -rf "${active_site_packages_stage}"
+    fi
+    if ${site_packages_swapped} && ! ${bundle_build_committed}; then
+        # A later build step or the smoke gate failed. Put the last complete
+        # runtime back instead of leaving a half-built Hermes installation.
+        rm -rf "${active_site_packages_target}"
+        if [ -n "${active_site_packages_backup}" ] && [ -d "${active_site_packages_backup}" ]; then
+            mv "${active_site_packages_backup}" "${active_site_packages_target}"
+        fi
+    elif [ -n "${active_site_packages_backup}" ] && [ -d "${active_site_packages_backup}" ]; then
+        rm -rf "${active_site_packages_backup}"
+    fi
+}
+trap cleanup_bundle_build EXIT
 
 # Step 1: build the hermes-agent wheel once from our snapshotted source.
 # Reused across arches (it's pure-Python).
@@ -270,11 +306,7 @@ fi
 hermes_runtime_patch_stamp="none"
 if [ -d "${HERMES_RUNTIME_PATCHES_DIR}" ]; then
     "${SCRIPT_DIR}/apply-hermes-patches.sh" --check
-    hermes_runtime_patch_stamp="$(
-        for patch_name in "${HERMES_PATCHES[@]}"; do
-            shasum -a 256 "${HERMES_RUNTIME_PATCHES_DIR}/${patch_name}"
-        done | shasum -a 256 | awk '{print $1}'
-    )"
+    hermes_runtime_patch_stamp="$(hermes_runtime_patch_stamp "${HERMES_RUNTIME_PATCHES_DIR}")"
 fi
 expected_stamp="${HERMES_REF}|${HERMES_EXTRAS}|${HERMES_EXTRA_PINS[*]}|${PYTHON_VERSION}|patches:${hermes_runtime_patch_stamp}"
 
@@ -291,8 +323,11 @@ for arch in "${SUPPORTED_ARCHES[@]}"; do
     fi
 
     echo "[bundle] installing hermes-agent[${HERMES_EXTRAS}] into ${arch} venv"
-    rm -rf "${target}"
-    mkdir -p "${target}/site-packages" "${target}/bin"
+    # Assemble beside the live cache. Nothing below mutates the current
+    # runtime until every install, patch, and executable check has passed.
+    staged_target="$(mktemp -d "${SITE_PACKAGES_DIR}/.${arch}.staging.XXXXXX")"
+    active_site_packages_stage="${staged_target}"
+    mkdir -p "${staged_target}/site-packages" "${staged_target}/bin"
 
     arch_python="${PYTHON_DIR}/${arch}/python/bin/python3.11"
     if [ ! -x "${arch_python}" ]; then
@@ -336,15 +371,15 @@ for arch in "${SUPPORTED_ARCHES[@]}"; do
         echo "[bundle] ERROR: expected venv site-packages at ${venv_site}" >&2
         exit 1
     fi
-    rsync -a --delete "${venv_site}/" "${target}/site-packages/"
+    rsync -a --delete "${venv_site}/" "${staged_target}/site-packages/"
 
     if [ -d "${HERMES_RUNTIME_PATCHES_DIR}" ]; then
-        "${SCRIPT_DIR}/apply-hermes-patches.sh" "${target}/site-packages"
+        "${SCRIPT_DIR}/apply-hermes-patches.sh" "${staged_target}/site-packages"
     fi
 
     # Drop __pycache__ — Python regenerates these at runtime and Apple gets
     # noisy about per-build path differences inside .pyc magic numbers.
-    find "${target}/site-packages" -type d -name '__pycache__' -prune -exec rm -rf {} +
+    find "${staged_target}/site-packages" -type d -name '__pycache__' -prune -exec rm -rf {} +
 
     # Copy bin/hermes (the pip-generated console-script). Its shebang points
     # at the *temporary* venv's python and would break after copy; we don't
@@ -354,12 +389,39 @@ for arch in "${SUPPORTED_ARCHES[@]}"; do
         echo "[bundle] ERROR: expected venv bin/hermes at ${venv_tmp}/bin/hermes" >&2
         exit 1
     fi
-    cp "${venv_tmp}/bin/hermes" "${target}/bin/hermes"
-    chmod +x "${target}/bin/hermes"
+    cp "${venv_tmp}/bin/hermes" "${staged_target}/bin/hermes"
+    chmod +x "${staged_target}/bin/hermes"
 
-    sp_count=$(find "${target}/site-packages" -maxdepth 1 -mindepth 1 | wc -l | tr -d ' ')
+    sp_count=$(find "${staged_target}/site-packages" -maxdepth 1 -mindepth 1 | wc -l | tr -d ' ')
     echo "[bundle] site-packages (${arch}): ${sp_count} top-level entries"
-    echo "${expected_stamp}" > "${stamp}"
+    echo "${expected_stamp}" > "${staged_target}/.stamp"
+
+    # SUPPORTED_ARCHES is currently arm64-only. Retain the previous cache
+    # until the end-of-build smoke gate passes, so any later failure rolls
+    # back automatically in cleanup_bundle_build.
+    active_site_packages_target="${target}"
+    active_site_packages_backup="${SITE_PACKAGES_DIR}/.${arch}.previous.$$"
+    if [ -e "${active_site_packages_backup}" ]; then
+        echo "[bundle] ERROR: rollback path already exists: ${active_site_packages_backup}" >&2
+        exit 1
+    fi
+    if [ -e "${target}" ]; then
+        mv "${target}" "${active_site_packages_backup}"
+    else
+        active_site_packages_backup=""
+    fi
+    # Mark the rollback active before the rename so an interrupt in the tiny
+    # swap window restores the previous directory instead of deleting it.
+    site_packages_swapped=true
+    if ! mv "${staged_target}" "${target}"; then
+        if [ -n "${active_site_packages_backup}" ] && [ -d "${active_site_packages_backup}" ]; then
+            mv "${active_site_packages_backup}" "${target}"
+            active_site_packages_backup=""
+        fi
+        site_packages_swapped=false
+        exit 1
+    fi
+    active_site_packages_stage=""
 done
 
 # Wipe any stale arch dirs from previous (multi-arch) runs.
@@ -460,4 +522,10 @@ if [ "${VERSO_SKIP_BUNDLE_SMOKE:-0}" = "1" ]; then
     echo "[bundle] WARNING: skipping bundle smoke test (VERSO_SKIP_BUNDLE_SMOKE=1)"
 else
     "${SCRIPT_DIR}/smoke-test-hermes-bundle.sh"
+fi
+
+bundle_build_committed=true
+if [ -n "${active_site_packages_backup}" ] && [ -d "${active_site_packages_backup}" ]; then
+    rm -rf "${active_site_packages_backup}"
+    active_site_packages_backup=""
 fi

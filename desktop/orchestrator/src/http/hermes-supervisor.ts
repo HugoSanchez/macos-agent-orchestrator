@@ -14,7 +14,7 @@ import { CustomConnectorKeychain } from './keychain.ts';
 import { fetchRegisteredToolNames, hermesGatewayAuthHeaders } from './hermes-gateway-client.ts';
 import {
   HermesManagedProfile,
-  getManagedHermesHome,
+  getVersoHermesHome,
   getTemplateHermesHome,
 } from './hermes-managed-profile.ts';
 import {
@@ -113,7 +113,7 @@ export class HermesSupervisor {
   constructor(options: HermesSupervisorOptions = {}) {
     this.config = options.config ?? getHermesGatewayConfig();
     this.launch = options.launch ?? getHermesLaunchConfig();
-    this.runtimeMode = options.runtimeMode ?? 'managed';
+    this.runtimeMode = options.runtimeMode ?? 'local';
     this.memoryToolsMode = options.memoryToolsMode ?? 'full';
     this.customConnectorsStore = options.customConnectorsStore ?? new CustomConnectorsStore();
     this.customConnectorKeychain = options.customConnectorKeychain ?? new CustomConnectorKeychain();
@@ -122,7 +122,7 @@ export class HermesSupervisor {
     this.managedEndpointSelected = this.hasExplicitBaseUrl;
     this.manualMode = isManagedDisabled();
     this.templateHermesHome = getTemplateHermesHome();
-    this.managedHermesHome = getManagedHermesHome(this.templateHermesHome);
+    this.managedHermesHome = getVersoHermesHome(this.templateHermesHome, this.runtimeMode);
     this.managedProfile = new HermesManagedProfile({
       templateHome: this.templateHermesHome,
       managedHome: this.managedHermesHome,
@@ -175,8 +175,13 @@ export class HermesSupervisor {
    */
   invoke(args: readonly string[]): { command: string; args: string[]; env: Record<string, string> } | null {
     if (!this.launch.command) return null;
-    const bundled = getBundledHermesInvocation();
-    if (bundled) {
+    if (isBundledRuntime()) {
+      const bundled = getBundledHermesInvocation();
+      // A partially built or corrupted bundle must never fall through to the
+      // Debug invocation below. launch.command is the Python interpreter in
+      // bundled mode, so passing bare Hermes arguments would make Python try
+      // to open a local file named `auth`, `gateway`, etc.
+      if (!bundled) return null;
       return {
         command: bundled.python,
         args: [bundled.hermesScript, ...args],

@@ -49,9 +49,9 @@ password.
 #    ./scripts/smoke-test-hermes-bundle.sh
 ./scripts/build-runtime-bundles.sh
 
-# 2) Build the signed Release .app.
-DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
-  xcodebuild -project verso.xcodeproj -scheme verso -configuration Release build
+# 2) Build the signed managed Release .app. Ordinary Release builds default
+#    to local mode; this wrapper embeds and verifies the product profile.
+./scripts/build-managed-release.sh
 
 # 3) Notarize + staple.
 ./scripts/notarize-app.sh
@@ -85,6 +85,7 @@ even offline.
 | `smoke-test-hermes-bundle.sh` | Automatically at the end of every bundle build (or manually) | Boots the bundled gateway with a throwaway home, asserts a streaming `/v1/responses` returns 200 + SSE (no model creds needed), records a `.smoke-pass` marker keyed to the bundle stamp |
 | `copy-runtime-bundles.sh` | Xcode Run Script phase (Release only) | `rsync desktop/runtime-bundles/* verso.app/Contents/Resources/` |
 | `sign-bundle-binaries.sh` | Xcode Run Script phase (Release only) | Signs every Mach-O under `Resources/` with Developer ID + hardened runtime |
+| `build-managed-release.sh` | Manually for an official release | Builds Release with `managed` embedded and verifies all managed service/update identifiers |
 | `notarize-app.sh` | Manually, after Release build | Ditto-zips → submits to Apple → staples ticket |
 
 CI (`.github/workflows/ci.yml`) runs on every PR: the orchestrator vitest
@@ -103,6 +104,7 @@ RESOURCES="$RELEASE_APP/Contents/Resources"
 WORK=$(mktemp -d)
 
 HOME="$WORK/home" PATH="/usr/bin:/bin" \
+  VERSO_RUNTIME_MODE=managed \
   VERSO_BUNDLED_PYTHON_DIR="$RESOURCES/python" \
   VERSO_BUNDLED_SITE_PACKAGES_DIR="$RESOURCES/site-packages" \
   VERSO_BUNDLED_DEFAULTS="$RESOURCES/hermes-defaults" \

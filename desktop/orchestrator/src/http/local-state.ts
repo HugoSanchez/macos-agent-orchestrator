@@ -3,10 +3,12 @@ import { existsSync, mkdirSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { readJsonFileOr, writeJsonFileAtomic } from './atomic-json-file.ts';
+import { readRuntimeMode, type RuntimeMode } from '../integrations/runtime-mode.ts';
 
 export type LocalStateMode =
   | 'disabled'
   | 'signed_out'
+  | 'runtime_scoped'
   | 'legacy_owned'
   | 'account_scoped';
 
@@ -22,6 +24,13 @@ export interface LocalStateSnapshot {
     connectionsStore: string | null;
     composioToolsRefreshMarker: string | null;
     hermesHome: string | null;
+    memoryDatabase: string | null;
+    customConnectorsStore: string | null;
+    customConnectorIcons: string | null;
+    composioToolUsageStore: string | null;
+    ingestionStore: string | null;
+    browserSettings: string | null;
+    browserDataRoot: string | null;
     legacyOwnerMarker: string;
   };
 }
@@ -35,6 +44,7 @@ interface LocalStateOwnerMarker {
 interface ResolveOptions {
   homeDir?: string;
   now?: Date;
+  runtimeMode?: RuntimeMode;
 }
 
 interface ResolvedLocalState extends LocalStateSnapshot {
@@ -79,6 +89,9 @@ export function applyLocalStateIsolation(
       mkdirSync(path.join(resolved.paths.hermesHome, 'home'), { recursive: true });
     }
   }
+  if (resolved.paths.memoryDatabase) {
+    mkdirSync(path.dirname(resolved.paths.memoryDatabase), { recursive: true });
+  }
 
   return stripInternal(resolved);
 }
@@ -90,6 +103,7 @@ export function resolveLocalState(
   const homeDir = options.homeDir ?? os.homedir();
   const roots = buildLocalStateRoots(env, homeDir);
   const userId = env.VERSO_MANAGED_USER_ID?.trim() || '';
+  const runtimeMode = options.runtimeMode ?? readRuntimeMode(env);
   const accountHash = userId ? hashUserId(userId) : null;
   const enabled = isLocalStateIsolationEnabled(env);
   const owner = readOwnerMarker(roots.ownerMarkerPath);
@@ -106,6 +120,13 @@ export function resolveLocalState(
       connectionsStore: null,
       composioToolsRefreshMarker: null,
       hermesHome: null,
+      memoryDatabase: null,
+      customConnectorsStore: null,
+      customConnectorIcons: null,
+      composioToolUsageStore: null,
+      ingestionStore: null,
+      browserSettings: null,
+      browserDataRoot: null,
       legacyOwnerMarker: roots.ownerMarkerPath,
     },
   };
@@ -116,6 +137,47 @@ export function resolveLocalState(
       mode: 'disabled',
       envUpdates: {},
       shouldCreateAccountHermesHome: false,
+      shouldClaimLegacyOwner: false,
+    };
+  }
+
+  if (runtimeMode !== 'managed') {
+    const runtimeRoot = path.join(roots.appSupportRoot, 'runtime', runtimeMode);
+    const paths = {
+      root: roots.appSupportRoot,
+      chatStore: env.VERSO_CHAT_STORE_PATH?.trim()
+        || path.join(runtimeRoot, 'chat-sessions.sqlite'),
+      connectionsStore: env.VERSO_CONNECTIONS_STORE_PATH?.trim()
+        || path.join(runtimeRoot, 'connections.json'),
+      composioToolsRefreshMarker: env.VERSO_COMPOSIO_TOOLS_REFRESH_MARKER_PATH?.trim()
+        || path.join(runtimeRoot, 'composio-tools-refresh.marker'),
+      hermesHome: env.VERSO_HERMES_HOME?.trim()
+        || path.join(runtimeRoot, 'hermes-home'),
+      memoryDatabase: env.VERSO_MEMORY_DB_PATH?.trim()
+        || path.join(runtimeRoot, 'memory', 'verso-memory.db'),
+      customConnectorsStore: env.VERSO_CUSTOM_CONNECTORS_STORE_PATH?.trim()
+        || path.join(runtimeRoot, 'custom-connectors.json'),
+      customConnectorIcons: env.VERSO_CUSTOM_CONNECTOR_ICONS_DIR?.trim()
+        || path.join(runtimeRoot, 'custom-connector-icons'),
+      composioToolUsageStore: env.VERSO_COMPOSIO_TOOL_USAGE_STORE_PATH?.trim()
+        || path.join(runtimeRoot, 'composio-tool-usage.sqlite'),
+      ingestionStore: env.VERSO_INGESTION_STORE_PATH?.trim()
+        || path.join(runtimeRoot, 'ingestion.sqlite'),
+      browserSettings: env.VERSO_BROWSER_SETTINGS_PATH?.trim()
+        || path.join(runtimeRoot, 'browser-settings.json'),
+      browserDataRoot: env.VERSO_BROWSER_DATA_ROOT?.trim()
+        || path.join(runtimeRoot, 'browser'),
+      legacyOwnerMarker: roots.ownerMarkerPath,
+    };
+    return {
+      enabled,
+      mode: 'runtime_scoped',
+      accountHash: null,
+      legacyOwnerHash: owner?.ownerHash ?? null,
+      legacyDataDetected,
+      paths,
+      envUpdates: envUpdatesFor(paths),
+      shouldCreateAccountHermesHome: true,
       shouldClaimLegacyOwner: false,
     };
   }
@@ -141,6 +203,13 @@ export function resolveLocalState(
       connectionsStore: roots.legacyConnectionsStorePath,
       composioToolsRefreshMarker: roots.legacyComposioMarkerPath,
       hermesHome: roots.legacyHermesHome,
+      memoryDatabase: null,
+      customConnectorsStore: null,
+      customConnectorIcons: null,
+      composioToolUsageStore: null,
+      ingestionStore: null,
+      browserSettings: null,
+      browserDataRoot: null,
       legacyOwnerMarker: roots.ownerMarkerPath,
     };
     return {
@@ -163,6 +232,13 @@ export function resolveLocalState(
     connectionsStore: path.join(accountRoot, 'connections.json'),
     composioToolsRefreshMarker: path.join(accountRoot, 'composio-tools-refresh.marker'),
     hermesHome: path.join(accountRoot, 'hermes-home'),
+    memoryDatabase: null,
+    customConnectorsStore: null,
+    customConnectorIcons: null,
+    composioToolUsageStore: null,
+    ingestionStore: null,
+    browserSettings: null,
+    browserDataRoot: null,
     legacyOwnerMarker: roots.ownerMarkerPath,
   };
 
@@ -228,6 +304,13 @@ function envUpdatesFor(paths: {
   connectionsStore: string | null;
   composioToolsRefreshMarker: string | null;
   hermesHome: string | null;
+  memoryDatabase: string | null;
+  customConnectorsStore: string | null;
+  customConnectorIcons: string | null;
+  composioToolUsageStore: string | null;
+  ingestionStore: string | null;
+  browserSettings: string | null;
+  browserDataRoot: string | null;
 }): Record<string, string> {
   const updates: Record<string, string> = {};
   if (paths.chatStore) updates.VERSO_CHAT_STORE_PATH = paths.chatStore;
@@ -236,6 +319,15 @@ function envUpdatesFor(paths: {
     updates.VERSO_COMPOSIO_TOOLS_REFRESH_MARKER_PATH = paths.composioToolsRefreshMarker;
   }
   if (paths.hermesHome) updates.VERSO_HERMES_HOME = paths.hermesHome;
+  if (paths.memoryDatabase) updates.VERSO_MEMORY_DB_PATH = paths.memoryDatabase;
+  if (paths.customConnectorsStore) updates.VERSO_CUSTOM_CONNECTORS_STORE_PATH = paths.customConnectorsStore;
+  if (paths.customConnectorIcons) updates.VERSO_CUSTOM_CONNECTOR_ICONS_DIR = paths.customConnectorIcons;
+  if (paths.composioToolUsageStore) {
+    updates.VERSO_COMPOSIO_TOOL_USAGE_STORE_PATH = paths.composioToolUsageStore;
+  }
+  if (paths.ingestionStore) updates.VERSO_INGESTION_STORE_PATH = paths.ingestionStore;
+  if (paths.browserSettings) updates.VERSO_BROWSER_SETTINGS_PATH = paths.browserSettings;
+  if (paths.browserDataRoot) updates.VERSO_BROWSER_DATA_ROOT = paths.browserDataRoot;
   return updates;
 }
 

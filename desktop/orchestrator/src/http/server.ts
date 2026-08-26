@@ -42,7 +42,7 @@ import type { MemoryProvider } from './memory-provider.ts';
 import { ComposioBridgeService } from '../integrations/composio-bridge.ts';
 import { ConnectionsService } from '../integrations/composio.ts';
 import { ManagedBackendClient } from '../integrations/managed-backend-client.ts';
-import { readRuntimeMode } from '../integrations/runtime-mode.ts';
+import { readRuntimeMode, type RuntimeMode } from '../integrations/runtime-mode.ts';
 import { buildManagedAccountRoutes } from './managed-account.ts';
 import { AnthropicAuthService, CodexAuthService, buildModelAuthRoutes } from './model-auth.ts';
 import { ANTHROPIC_CHAT_MODELS, CODEX_CHAT_MODELS, VALID_CHAT_MODELS } from './model-catalog.ts';
@@ -60,6 +60,7 @@ import {
 const STARTUP_MANIFEST_REFRESH_WAIT_MS = 20_000;
 
 function buildRoutes(
+  runtimeMode: RuntimeMode,
   store: ChatStore,
   chatRequests: ChatRequestRegistry,
   hermes: HermesSupervisor,
@@ -80,6 +81,7 @@ function buildRoutes(
         status: 'ok',
         timestamp: Date.now(),
         runtime: {
+          mode: runtimeMode,
           pid: process.pid,
           cwd: process.cwd(),
           node: process.version,
@@ -105,11 +107,11 @@ export async function startServer(opts: { port?: number; authSecret?: string | n
   port: number;
   close: () => Promise<void>;
 }> {
-  const localState = applyLocalStateIsolation();
+  const runtimeMode = readRuntimeMode();
+  const localState = applyLocalStateIsolation(process.env, { runtimeMode });
   const store = new ChatStore();
   const chatRequests = new ChatRequestRegistry();
-  const runtimeMode = readRuntimeMode();
-  const managedBackend = new ManagedBackendClient();
+  const managedBackend = new ManagedBackendClient({ runtimeMode });
   const customConnectorsStore = new CustomConnectorsStore();
   const customConnectorKeychain = new CustomConnectorKeychain();
   const browserSettings = new BrowserSettingsStore();
@@ -211,7 +213,7 @@ export async function startServer(opts: { port?: number; authSecret?: string | n
   // user's intent forward: if any channel was on, turn the single stream on.
   migrateSlackToSingleStream(ingestionStore, sourceIngestion);
   // Point the skills scanner at the same Hermes home Hermes itself uses
-  // (profile-aware, e.g. ~/.hermes/profiles/verso/skills). Without this it
+  // (profile-aware, e.g. the runtime-scoped Hermes home's skills directory). Without this it
   // falls back to the legacy ~/.hermes/skills path and misses any skills
   // that only live under the active profile.
   setSkillsDir(path.join(hermes.hermesHome, 'skills'));
@@ -228,7 +230,7 @@ export async function startServer(opts: { port?: number; authSecret?: string | n
     async () => (await codexAuth.getStatus()).connected,
   );
   const routes = [
-    ...buildRoutes(store, chatRequests, hermes, memoryExtraction, managedBackend, composioBridge, localState, memoryProvider, connectionsStore),
+    ...buildRoutes(runtimeMode, store, chatRequests, hermes, memoryExtraction, managedBackend, composioBridge, localState, memoryProvider, connectionsStore),
     ...buildMemoryRoutes(memoryProvider),
     ...buildComposioBridgeRoutes(composioBridge),
     ...buildDraftsRoutes(composioBridge, store),

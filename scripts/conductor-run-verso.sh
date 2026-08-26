@@ -10,6 +10,15 @@ cd "${WORKSPACE_PATH}"
 
 export DEVELOPER_DIR="/Applications/Xcode.app/Contents/Developer"
 
+VERSO_RUN_PROFILE="${VERSO_RUN_PROFILE:-managed}"
+case "${VERSO_RUN_PROFILE}" in
+    managed|local|byo) ;;
+    *)
+        echo "[conductor-run] ERROR: unsupported VERSO_RUN_PROFILE=${VERSO_RUN_PROFILE}" >&2
+        exit 1
+        ;;
+esac
+
 # A past debugging session left stale VERSO_* overrides in the launchd
 # environment, silently pointing Debug builds at an old Release bundle in
 # Xcode DerivedData — the perennial "hermes fails to load after every
@@ -26,14 +35,22 @@ unset VERSO_BUNDLED_PYTHON_DIR VERSO_BUNDLED_SITE_PACKAGES_DIR \
       VERSO_HERMES_API_SERVER_KEY VERSO_HERMES_MANAGED \
       VERSO_SIDECAR_AUTH_SECRET VERSO_PARENT_PID ORCHESTRATOR_PATH \
       VERSO_MANAGED_SESSION_TOKEN VERSO_MANAGED_SESSION_EXPIRES_AT \
-      VERSO_MANAGED_USER_ID
+      VERSO_MANAGED_USER_ID VERSO_RUNTIME_MODE \
+      VERSO_BROWSER_DATA_ROOT VERSO_BROWSER_SETTINGS_PATH \
+      VERSO_COMPOSIO_TOOL_USAGE_STORE_PATH VERSO_CUSTOM_CONNECTOR_ICONS_DIR \
+      VERSO_CUSTOM_CONNECTORS_STORE_PATH VERSO_INGESTION_STORE_PATH
 
-# Conductor's normal Run button is for exercising the product, not a local
-# frontend/backend stack. Use the deployed services, which own the Privy
-# configuration and the managed session API. A developer who needs to test
-# local services can still launch from Xcode with explicit scheme variables.
-export VERSO_FRONTEND_URL="https://www.itsverso.xyz/login"
-export VERSO_BACKEND_URL="https://verso-backend-2lg3.onrender.com"
+export VERSO_RUNTIME_MODE="${VERSO_RUN_PROFILE}"
+if [ "${VERSO_RUN_PROFILE}" = "managed" ]; then
+    # Product development uses the deployed services, which own the Privy
+    # configuration and managed session API.
+    export VERSO_FRONTEND_URL="https://www.itsverso.xyz/login"
+    export VERSO_BACKEND_URL="https://verso-backend-2lg3.onrender.com"
+else
+    # Community/BYO runs must remain inert even if launchd inherited a stale
+    # production URL from a previous managed debugging session.
+    export VERSO_BACKEND_URL="off"
+fi
 
 # Keep a durable Conductor-specific profile and the shared memory corpus. Do
 # not reuse the primary app profile here: it can intentionally hold a
@@ -41,9 +58,14 @@ export VERSO_BACKEND_URL="https://verso-backend-2lg3.onrender.com"
 # not silently replace a working Anthropic configuration with it. This profile
 # survives rebuilds and is shared by this repository's nonconcurrent
 # workspaces, while staying isolated from the installed app's account state.
-CONDUCTOR_HERMES_HOME="${HOME}/Library/Application Support/Verso/conductor-hermes-home"
+if [ "${VERSO_RUN_PROFILE}" = "managed" ]; then
+    CONDUCTOR_HERMES_HOME="${HOME}/Library/Application Support/Verso/conductor-hermes-home"
+else
+    CONDUCTOR_HERMES_HOME="${HOME}/Library/Application Support/Verso/conductor-${VERSO_RUN_PROFILE}-hermes-home"
+fi
 LEGACY_WORKSPACE_HERMES_HOME="${WORKSPACE_PATH}/.hermes-dev-home"
-if [ ! -f "${CONDUCTOR_HERMES_HOME}/config.yaml" ] \
+if [ "${VERSO_RUN_PROFILE}" = "managed" ] \
+    && [ ! -f "${CONDUCTOR_HERMES_HOME}/config.yaml" ] \
     && [ -f "${LEGACY_WORKSPACE_HERMES_HOME}/config.yaml" ]; then
     echo "[conductor-run] migrating existing workspace Hermes profile"
     mkdir -p "${CONDUCTOR_HERMES_HOME}"
@@ -57,7 +79,9 @@ fi
 # could overwrite this profile's selected provider and endpoint).
 PRIMARY_HERMES_HOME="${HOME}/Library/Application Support/Verso/hermes-home"
 PROFILE_MIGRATION_MARKER="${CONDUCTOR_HERMES_HOME}/.conductor-capabilities-v1"
-if [ ! -f "${PROFILE_MIGRATION_MARKER}" ] && [ -d "${PRIMARY_HERMES_HOME}" ]; then
+if [ "${VERSO_RUN_PROFILE}" = "managed" ] \
+    && [ ! -f "${PROFILE_MIGRATION_MARKER}" ] \
+    && [ -d "${PRIMARY_HERMES_HOME}" ]; then
     echo "[conductor-run] restoring installed-app capabilities in Conductor profile"
     CONDUCTOR_HERMES_HOME="${CONDUCTOR_HERMES_HOME}" \
         PRIMARY_HERMES_HOME="${PRIMARY_HERMES_HOME}" node <<'NODE'
@@ -93,8 +117,12 @@ NODE
     touch "${PROFILE_MIGRATION_MARKER}"
 fi
 export VERSO_HERMES_HOME="${CONDUCTOR_HERMES_HOME}"
-export VERSO_MEMORY_DB_PATH="${HOME}/Library/Application Support/Verso/memory/verso-memory.db"
-echo "[conductor-run] using persistent Conductor Hermes profile: ${VERSO_HERMES_HOME}"
+if [ "${VERSO_RUN_PROFILE}" = "managed" ]; then
+    export VERSO_MEMORY_DB_PATH="${HOME}/Library/Application Support/Verso/memory/verso-memory.db"
+else
+    export VERSO_MEMORY_DB_PATH="${HOME}/Library/Application Support/Verso/runtime/${VERSO_RUN_PROFILE}/memory/verso-memory.db"
+fi
+echo "[conductor-run] profile=${VERSO_RUN_PROFILE} hermes=${VERSO_HERMES_HOME}"
 
 if [ ! -d "${DEVELOPER_DIR}" ]; then
     echo "[conductor-run] ERROR: Xcode not found at ${DEVELOPER_DIR}" >&2

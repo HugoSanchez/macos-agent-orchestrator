@@ -13,7 +13,8 @@ interface BrowserSettings {
 }
 
 function defaultStorePath(): string {
-  return path.join(os.homedir(), 'Library', 'Application Support', 'verso', 'browser-settings.json');
+  return process.env.VERSO_BROWSER_SETTINGS_PATH?.trim()
+    || path.join(os.homedir(), 'Library', 'Application Support', 'verso', 'browser-settings.json');
 }
 
 function decode(value: unknown): BrowserSettings {

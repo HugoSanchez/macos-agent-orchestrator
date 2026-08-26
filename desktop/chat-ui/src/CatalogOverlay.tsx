@@ -6,6 +6,7 @@ import type { CustomConnectorView, ToolkitView } from './types';
 interface Props {
   isOpen: boolean;
   refreshToken: number;
+  connectingToolkitSlugs: ReadonlySet<string>;
   onClose: () => void;
   onConnect: (toolkit: ToolkitView) => void;
   onCustomConnectorAdded?: (connector: CustomConnectorView) => void;
@@ -17,7 +18,14 @@ const SEARCH_DEBOUNCE_MS = 250;
 const SCROLL_THRESHOLD_PX = 240;
 const MIN_SEARCH_CHARS = 3;
 
-export function CatalogOverlay({ isOpen, refreshToken, onClose, onConnect, onCustomConnectorAdded }: Props) {
+export function CatalogOverlay({
+  isOpen,
+  refreshToken,
+  connectingToolkitSlugs,
+  onClose,
+  onConnect,
+  onCustomConnectorAdded,
+}: Props) {
   const [searchInput, setSearchInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [toolkits, setToolkits] = useState<ToolkitView[]>([]);
@@ -209,7 +217,12 @@ export function CatalogOverlay({ isOpen, refreshToken, onClose, onConnect, onCus
             </div>
           )}
           {toolkits.map((toolkit) => (
-            <CatalogRow key={toolkit.slug} toolkit={toolkit} onConnect={onConnect} />
+            <CatalogRow
+              key={toolkit.slug}
+              toolkit={toolkit}
+              isConnecting={connectingToolkitSlugs.has(toolkit.slug)}
+              onConnect={onConnect}
+            />
           ))}
           {canFetchMore && isFetchingMore && (
             <div className="catalog-overlay-loading-more">Loading more…</div>
@@ -274,9 +287,11 @@ function friendlyError(err: unknown): string {
 
 function CatalogRow({
   toolkit,
+  isConnecting,
   onConnect,
 }: {
   toolkit: ToolkitView;
+  isConnecting: boolean;
   onConnect: (toolkit: ToolkitView) => void;
 }) {
   const displayName = displayToolkitName(toolkit.name);
@@ -298,13 +313,14 @@ function CatalogRow({
       <div className="catalog-row-name">{displayName}</div>
       <button
         type="button"
-        className={`catalog-row-pill is-${toolkit.connected ? 'connected' : 'pending'}`}
-        disabled={toolkit.connected}
+        className={`catalog-row-pill is-${toolkit.connected ? 'connected' : isConnecting ? 'connecting' : 'pending'}`}
+        disabled={toolkit.connected || isConnecting}
+        aria-busy={isConnecting}
         onClick={() => {
-          if (!toolkit.connected) onConnect(toolkit);
+          if (!toolkit.connected && !isConnecting) onConnect(toolkit);
         }}
       >
-        {toolkit.connected ? 'Connected' : 'Connect'}
+        {toolkit.connected ? 'Connected' : isConnecting ? 'Connecting' : 'Connect'}
       </button>
     </div>
   );

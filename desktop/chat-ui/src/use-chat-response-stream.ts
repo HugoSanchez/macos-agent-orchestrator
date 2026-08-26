@@ -103,7 +103,7 @@ export function useChatResponseStream(options: UseChatResponseStreamOptions) {
           () => {
             flushEvents();
             updateSessionMessages(sessionId, (messages) => messages.map((message) => (
-              message.id === assistantId
+              message.id === assistantId && message.isStreaming
                 ? { ...message, isStreaming: false, endedAt: Date.now() }
                 : message
             )));

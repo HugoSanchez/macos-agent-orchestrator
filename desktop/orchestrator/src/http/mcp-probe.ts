@@ -158,7 +158,9 @@ export async function resolveConnectorIcon(originUrl: URL, icons: unknown[] | nu
       const fetched = await fetchIcon(candidate.url, candidate.withToken ? opts.token : null);
       if (!fetched) continue;
       const ext = iconExtension(fetched.contentType);
-      const dir = opts.iconDir ?? path.join(os.homedir(), 'Library', 'Application Support', 'verso', 'custom-connector-icons');
+      const dir = opts.iconDir
+        ?? process.env.VERSO_CUSTOM_CONNECTOR_ICONS_DIR?.trim()
+        ?? path.join(os.homedir(), 'Library', 'Application Support', 'verso', 'custom-connector-icons');
       mkdirSync(dir, { recursive: true });
       const filename = `${createHash('sha256').update(candidate.url.toString()).digest('hex').slice(0, 24)}${ext}`;
       const filePath = path.join(dir, filename);

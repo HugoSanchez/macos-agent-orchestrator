@@ -47,15 +47,27 @@ describe('Chat HTTP Endpoints', () => {
     expect(body.hasActiveRequest).toBe(false);
   });
 
-  it('reports composio tool bridge as unauthenticated when no managed session is loaded', async () => {
+  it('reports the managed Composio bridge as unavailable in local mode', async () => {
     const { status, body } = await fetchJson('/composio/tools/execute', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ toolSlug: 'GMAIL_SEND_EMAIL', arguments: {} }),
     });
-    expect(status).toBe(401);
+    expect(status).toBe(503);
     expect(body.error).toBe('request_failed');
-    expect(body.message).toMatch(/session/i);
+    expect(body.message).toMatch(/backend/i);
+  });
+
+  it('hides managed connection actions in local mode without a remote request', async () => {
+    const { status, body } = await fetchJson('/connections/toolkits?limit=100');
+
+    expect(status).toBe(200);
+    expect(body).toMatchObject({
+      available: false,
+      configured: false,
+      toolkits: [],
+      nextCursor: null,
+    });
   });
 
   it('creates and reads a session', async () => {

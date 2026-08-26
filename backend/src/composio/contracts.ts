@@ -20,6 +20,18 @@ export interface BridgeConnectionView {
   status: ConnectionStatus;
 }
 
+export type ProviderRevocationStatus = 'revoked' | 'already_absent' | 'manual_action_required';
+
+/**
+ * Result of a disconnect after the provider-revocation attempt. Contains no
+ * provider payload, credentials, or user data; safe to return to clients.
+ */
+export interface DisconnectConnectionResult {
+  connectedAccountId: string;
+  composioAccountDeleted: true;
+  providerRevocation: ProviderRevocationStatus;
+}
+
 export interface BridgeToolkitView {
   slug: string;
   name: string;

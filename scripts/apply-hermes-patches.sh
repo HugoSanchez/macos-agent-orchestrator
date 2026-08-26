@@ -10,7 +10,10 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 source "${SCRIPT_DIR}/runtime-config.sh"
 
 patch_dir="${REPO_ROOT}/desktop/runtime-patches/hermes-agent"
-listed_patch_names="$(printf '%s\n' "${HERMES_PATCHES[@]}" | LC_ALL=C sort)"
+listed_patch_names="$({
+    printf '%s\n' "${HERMES_PATCHES[@]}"
+    printf '%s\n' "${HERMES_SOURCE_TEST_PATCHES[@]}"
+} | LC_ALL=C sort)"
 actual_patch_names="$(find "${patch_dir}" -maxdepth 1 -type f -name '*.patch' -exec basename {} \; | LC_ALL=C sort)"
 if [ "${listed_patch_names}" != "${actual_patch_names}" ]; then
     echo "[hermes-patches] ERROR: runtime-config.sh patch inventory does not match ${patch_dir}" >&2
@@ -20,7 +23,8 @@ fi
 
 target_root="${1:-}"
 if [ "${target_root}" = "--check" ]; then
-    echo "[hermes-patches] inventory verified (${#HERMES_PATCHES[@]} patches)"
+    total_patch_count=$(( ${#HERMES_PATCHES[@]} + ${#HERMES_SOURCE_TEST_PATCHES[@]} ))
+    echo "[hermes-patches] inventory verified (${total_patch_count} patches)"
     exit 0
 fi
 if [ -z "${target_root}" ] || [ ! -d "${target_root}" ]; then
@@ -33,3 +37,13 @@ for patch_name in "${HERMES_PATCHES[@]}"; do
     echo "[hermes-patches] applying ${patch_name}"
     patch -d "${target_root}" -p1 --batch < "${patch_file}"
 done
+
+if [ -d "${target_root}/tests" ]; then
+    for patch_name in "${HERMES_SOURCE_TEST_PATCHES[@]}"; do
+        patch_file="${patch_dir}/${patch_name}"
+        echo "[hermes-patches] applying source tests ${patch_name}"
+        patch -d "${target_root}" -p1 --batch < "${patch_file}"
+    done
+else
+    echo "[hermes-patches] source tests absent; skipping ${#HERMES_SOURCE_TEST_PATCHES[@]} test-only patch(es)"
+fi

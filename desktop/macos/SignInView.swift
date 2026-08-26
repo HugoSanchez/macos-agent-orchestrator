@@ -44,6 +44,7 @@ private struct SignInPalette {
 
 struct SignInView: View {
     @ObservedObject var managedSessionStore: ManagedSessionStore
+    let frontendURL: String?
     // Match the shell's theme source (defaults to dark) so the sign-in screen
     // reads as the same app before a session exists.
     @AppStorage("isDarkMode") private var isDarkMode = true
@@ -132,24 +133,12 @@ struct SignInView: View {
     private func signIn() {
         errorMessage = nil
 
-        let configured = ProcessInfo.processInfo.environment["VERSO_FRONTEND_URL"]?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        let raw = (configured?.isEmpty == false ? configured! : Self.defaultFrontendURL)
-        guard let url = Self.freshPrivySessionURL(from: raw) else {
+        guard let frontendURL, let url = Self.freshPrivySessionURL(from: frontendURL) else {
             errorMessage = "Sign-in URL is not configured."
             return
         }
 
         NSWorkspace.shared.open(url)
-    }
-
-    /// The native app normally signs in through the deployed frontend, which
-    /// carries the Privy public configuration. This applies to Debug too:
-    /// Cmd+R and Conductor Run should work without separately running a local
-    /// Next server and provisioning its secrets. `VERSO_FRONTEND_URL` remains
-    /// an explicit override for local frontend development.
-    private static var defaultFrontendURL: String {
-        return "https://www.itsverso.xyz/login"
     }
 
     private static func freshPrivySessionURL(from raw: String) -> URL? {

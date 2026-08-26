@@ -84,6 +84,77 @@ final class SidebarAPIClientTests: XCTestCase {
         XCTAssertEqual(crons.first?.running, true)
     }
 
+    func testDisconnectConnectionSendsDeleteAndDecodesResult() async throws {
+        let transport = SidebarStubTransport { request in
+            XCTAssertEqual(request.url?.path, "/connections/ca_1")
+            XCTAssertEqual(request.httpMethod, "DELETE")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "X-Verso-Sidecar-Token"), "secret")
+            return try Self.response(
+                for: request,
+                body: #"{"disconnect":{"connectedAccountId":"ca_1","composioAccountDeleted":true,"providerRevocation":"revoked"}}"#
+            )
+        }
+        let client = SidebarAPIClient(
+            baseURL: URL(string: "http://127.0.0.1:4242")!,
+            authToken: "secret",
+            transport: transport
+        )
+
+        let result = try await client.disconnectConnection(id: "ca_1")
+
+        XCTAssertEqual(
+            result,
+            SidebarDisconnectResult(
+                connectedAccountId: "ca_1",
+                composioAccountDeleted: true,
+                providerRevocation: .revoked
+            )
+        )
+    }
+
+    func testDisconnectConnectionDecodesEveryRevocationStatus() async throws {
+        let cases: [(String, SidebarProviderRevocation)] = [
+            ("revoked", .revoked),
+            ("already_absent", .alreadyAbsent),
+            ("manual_action_required", .manualActionRequired),
+        ]
+        for (raw, expected) in cases {
+            let transport = SidebarStubTransport { request in
+                try Self.response(
+                    for: request,
+                    body: #"{"disconnect":{"connectedAccountId":"ca_1","composioAccountDeleted":true,"providerRevocation":"\#(raw)"}}"#
+                )
+            }
+            let client = SidebarAPIClient(
+                baseURL: URL(string: "http://127.0.0.1:4242")!,
+                authToken: "secret",
+                transport: transport
+            )
+
+            let result = try await client.disconnectConnection(id: "ca_1")
+
+            XCTAssertEqual(result.providerRevocation, expected, raw)
+        }
+    }
+
+    func testDisconnectConnectionNeverUpgradesUnknownStatusToRevoked() async throws {
+        let transport = SidebarStubTransport { request in
+            try Self.response(
+                for: request,
+                body: #"{"disconnect":{"connectedAccountId":"ca_1","composioAccountDeleted":true,"providerRevocation":"future_status"}}"#
+            )
+        }
+        let client = SidebarAPIClient(
+            baseURL: URL(string: "http://127.0.0.1:4242")!,
+            authToken: "secret",
+            transport: transport
+        )
+
+        let result = try await client.disconnectConnection(id: "ca_1")
+
+        XCTAssertEqual(result.providerRevocation, .manualActionRequired)
+    }
+
     private static func response(
         for request: URLRequest,
         statusCode: Int = 200,

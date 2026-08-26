@@ -2,7 +2,7 @@
   "name": "verso-sidecar",
   "version": "0.1.0",
   "description": "Thin local Hermes sidecar for the verso macOS app",
-  "license": "MIT",
+  "license": "AGPL-3.0-only",
   "type": "module",
   "main": "src/index.ts",
   "scripts": {
@@ -18,6 +18,10 @@
     "agent-browser": "0.34.0",
     "dotenv": "^16.6.1",
     "yaml": "^2.8.3"
+  },
+  "overrides": {
+    "adm-zip": "0.6.0",
+    "sharp": "0.35.3"
   },
   "devDependencies": {
     "@types/node": "^25.6.0",

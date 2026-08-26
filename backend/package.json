@@ -2,7 +2,7 @@
   "name": "verso-backend",
   "version": "0.1.0",
   "description": "Remote API backend for managed verso users",
-  "license": "MIT",
+  "license": "AGPL-3.0-only",
   "type": "module",
   "main": "src/index.ts",
   "scripts": {
@@ -27,7 +27,6 @@
     "zod": "^4.1.12"
   },
   "devDependencies": {
-    "@modelcontextprotocol/sdk": "^1.29.0",
     "@types/node": "^25.6.0",
     "drizzle-kit": "^0.31.10",
     "tsx": "^4.21.0",

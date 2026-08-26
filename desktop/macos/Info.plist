@@ -34,15 +34,21 @@
 	<key>LSMinimumSystemVersion</key>
 	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
 	<key>NSHumanReadableCopyright</key>
-	<string></string>
+	<string>Copyright © 2026 Hugo Sanchez. Licensed under AGPL-3.0-only.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>VersoDefaultRuntimeMode</key>
+	<string>$(VERSO_DEFAULT_RUNTIME_MODE)</string>
+	<key>VersoManagedBackendURL</key>
+	<string>$(VERSO_MANAGED_BACKEND_URL)</string>
+	<key>VersoManagedFrontendURL</key>
+	<string>$(VERSO_MANAGED_FRONTEND_URL)</string>
 	<key>SentryDSN</key>
-	<string>https://1bd0670957f6aadd9420cc8994242648@o4511489974468608.ingest.de.sentry.io/4511489980039248</string>
+	<string>$(VERSO_SENTRY_DSN)</string>
 	<key>SUFeedURL</key>
-	<string>https://www.itsverso.xyz/appcast.xml</string>
+	<string>$(VERSO_SPARKLE_FEED_URL)</string>
 	<key>SUPublicEDKey</key>
-	<string>GpEYWMJ6pQkdx7GsHJLM4YZGsqcLik5BX0jhqm1yJuc=</string>
+	<string>$(VERSO_SPARKLE_PUBLIC_ED_KEY)</string>
 	<key>SUEnableAutomaticChecks</key>
 	<true/>
 	<key>SUScheduledCheckInterval</key>

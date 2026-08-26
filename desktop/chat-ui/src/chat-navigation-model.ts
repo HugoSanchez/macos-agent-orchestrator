@@ -1,4 +1,5 @@
-import type { ShellCommand } from './shell-protocol';
+import type { ShellCommand, ShellState } from './shell-protocol';
+import type { ChatModel } from './types';
 
 export type ChatPage =
   | { kind: 'chat' }
@@ -14,6 +15,31 @@ export interface ChatNavigationState {
   catalog: ChatCatalog;
   activeSkillName: string | null;
   activeCronName: string | null;
+}
+
+export interface ShellSessionSelection {
+  id: string | null;
+  persistedModel: ChatModel | null | undefined;
+  shouldHydrate: boolean;
+}
+
+/**
+ * Resolve every piece of UI state owned by the shell's session selection.
+ * The persisted model must still be returned when the message cache already
+ * points at this session: model state and message hydration can initialize at
+ * different times when the app starts or a WebView is recreated.
+ */
+export function resolveShellSessionSelection(
+  shellState: ShellState,
+  hydratedSessionId: string | null,
+): ShellSessionSelection {
+  const id = shellState.selectedSessionId;
+  const session = id ? shellState.sessions.find((candidate) => candidate.id === id) : undefined;
+  return {
+    id,
+    persistedModel: session?.model,
+    shouldHydrate: id !== hydratedSessionId,
+  };
 }
 
 export type ChatNavigationAction =

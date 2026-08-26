@@ -4,9 +4,11 @@
 # ───────────────────────
 # Xcode Run Script build phase. Runs at the end of the verso target build.
 #
-#   • Debug builds: no-op. SidecarManager.swift falls back to the developer's
-#     system `node` and `desktop/orchestrator/`, so daily Cmd+R in Xcode keeps
-#     working without bundling.
+#   • All builds: copy Verso and third-party legal notices into the app.
+#
+#   • Debug builds: skip runtime components. SidecarManager.swift falls back to
+#     the developer's system `node` and `desktop/orchestrator/`, so daily Cmd+R
+#     in Xcode keeps working without bundling.
 #
 #   • Release builds: rsyncs desktop/runtime-bundles/ into the .app's
 #     Resources/ directory so the shipping bundle contains everything it needs
@@ -24,20 +26,35 @@
 
 set -euo pipefail
 
-if [ "${CONFIGURATION:-}" != "Release" ]; then
-    echo "[copy-bundles] config=${CONFIGURATION:-unknown}, skipping"
-    exit 0
-fi
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 BUNDLE_SRC="${REPO_ROOT}/desktop/runtime-bundles"
 RESOURCES_DST="${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Resources"
+LEGAL_DST="${RESOURCES_DST}/Legal"
+
+for legal_path in LICENSE THIRD_PARTY_NOTICES.md LICENSES; do
+    if [ ! -e "${REPO_ROOT}/${legal_path}" ]; then
+        echo "error: required legal notice is missing: ${REPO_ROOT}/${legal_path}" >&2
+        exit 1
+    fi
+done
+
+mkdir -p "${LEGAL_DST}/ThirdParty"
+cp "${REPO_ROOT}/LICENSE" "${LEGAL_DST}/Verso-AGPL-3.0-only.txt"
+cp "${REPO_ROOT}/THIRD_PARTY_NOTICES.md" "${LEGAL_DST}/THIRD_PARTY_NOTICES.md"
+rsync -a --delete "${REPO_ROOT}/LICENSES/" "${LEGAL_DST}/ThirdParty/"
+
+if [ "${CONFIGURATION:-}" != "Release" ]; then
+    echo "[copy-bundles] copied legal notices; config=${CONFIGURATION:-unknown}, skipping runtime components"
+    exit 0
+fi
 
 required_paths=(
     "${BUNDLE_SRC}/node/bin"
+    "${BUNDLE_SRC}/node/LICENSE"
     "${BUNDLE_SRC}/orchestrator/node_modules"
     "${BUNDLE_SRC}/python/arm64/python/bin"
+    "${BUNDLE_SRC}/python/arm64/python/lib/python3.11/LICENSE.txt"
     "${BUNDLE_SRC}/site-packages/arm64/site-packages"
     "${BUNDLE_SRC}/site-packages/arm64/bin/hermes"
     "${BUNDLE_SRC}/hermes-defaults"

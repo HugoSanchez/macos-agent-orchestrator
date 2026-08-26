@@ -127,6 +127,32 @@ final class SidecarManagedSessionPolicyTests: XCTestCase {
         XCTAssertEqual(store.currentSession?.token, "fresh-token")
     }
 
+    @MainActor
+    func testDisabledStoreNeverTouchesManagedPersistenceOrCallbacks() async throws {
+        let recorder = ManagedSessionPersistenceRecorder()
+        let store = ManagedSessionStore(persistence: .init(
+            load: {
+                recorder.loadCount += 1
+                return nil
+            },
+            write: { _ in recorder.writeCount += 1 },
+            delete: { recorder.deleteCount += 1 }
+        ), isEnabled: false)
+        let callback = try XCTUnwrap(URL(string:
+            "verso-dev://auth/callback?session_token=token&expires_at=2099-01-01T00%3A00%3A00Z&user_id=user"
+        ))
+
+        store.handleCallbackURL(callback)
+        store.clearSession()
+        await Task.yield()
+
+        XCTAssertFalse(store.isRestoringPersistedSession)
+        XCTAssertNil(store.currentSession)
+        XCTAssertEqual(recorder.loadCount, 0)
+        XCTAssertEqual(recorder.writeCount, 0)
+        XCTAssertEqual(recorder.deleteCount, 0)
+    }
+
     private func managedSession(userId: String, expiresAt: String) -> ManagedAppSession {
         ManagedAppSession(
             token: "token-\(userId)",
@@ -148,5 +174,7 @@ final class SidecarManagedSessionPolicyTests: XCTestCase {
 }
 
 private final class ManagedSessionPersistenceRecorder {
+    var loadCount = 0
+    var writeCount = 0
     var deleteCount = 0
 }

@@ -15,7 +15,7 @@ import YAML from 'yaml';
 import type { RuntimeMode } from '../integrations/runtime-mode.ts';
 import { getBundledHermesInvocation, getBundledPython } from './runtime-bootstrap.ts';
 import { isMemoryEnabled } from './lexical-provider.ts';
-import { applyMemorySoulSection } from './memory-soul.ts';
+import { applyMemorySoulSection, applySecuritySoulSection } from './memory-soul.ts';
 import { computePinnedToolNames } from './hermes-pinned-tools.ts';
 import { ANTHROPIC_CHAT_MODELS, CODEX_CHAT_MODELS } from './model-catalog.ts';
 import { readAnthropicKeyFromEnvFile } from './model-auth.ts';
@@ -98,6 +98,7 @@ export class HermesManagedProfile {
     seedHermesHomeFile(this.templateHome, this.managedHome, 'SOUL.md');
     seedHermesHomeFile(this.templateHome, this.managedHome, 'memories/MEMORY.md');
     seedHermesHomeFile(this.templateHome, this.managedHome, 'memories/USER.md');
+    this.syncManagedSoulSections(isMemoryEnabled() && this.memoryToolsMode !== 'none');
     this.syncVersoSkill();
     this.configureManagedMcpServers(orchestratorBaseUrl);
     this.configureBrowserRuntime();
@@ -347,21 +348,21 @@ export class HermesManagedProfile {
         includeMemoryTools: memoryToolsActive,
       }),
     };
-    this.syncMemorySoulSection(memoryToolsActive);
     config.mcp_servers = mcpServers;
     config.tools = tools;
     writeFileSync(configPath, YAML.stringify(config), 'utf8');
   }
 
-  private syncMemorySoulSection(enabled: boolean): void {
+  private syncManagedSoulSections(memoryEnabled: boolean): void {
     const soulPath = join(this.managedHome, 'SOUL.md');
     try {
       const current = existsSync(soulPath) ? readFileSync(soulPath, 'utf8') : '';
-      const next = applyMemorySoulSection(current, enabled);
+      const secured = applySecuritySoulSection(current);
+      const next = applyMemorySoulSection(secured, memoryEnabled);
       if (next !== current) writeFileSync(soulPath, next, 'utf8');
     } catch (error: unknown) {
       console.warn(
-        `[memory] SOUL.md memory section sync failed: ${error instanceof Error ? error.message : String(error)}`,
+        `[profile] SOUL.md managed section sync failed: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
   }
@@ -373,10 +374,11 @@ export function getTemplateHermesHome(): string {
     || join(os.homedir(), '.hermes');
 }
 
-export function getManagedHermesHome(templateHome: string): string {
+export function getVersoHermesHome(templateHome: string, runtimeMode: RuntimeMode): string {
   const override = process.env.VERSO_HERMES_HOME?.trim();
   if (override) return override;
-  return join(resolveHermesRoot(templateHome), 'profiles', 'verso');
+  const profileName = runtimeMode === 'managed' ? 'verso' : `verso-${runtimeMode}`;
+  return join(resolveHermesRoot(templateHome), 'profiles', profileName);
 }
 
 function resolveHermesRoot(home: string): string {

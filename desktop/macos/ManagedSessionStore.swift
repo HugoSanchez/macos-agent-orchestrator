@@ -70,17 +70,23 @@ final class ManagedSessionStore: ObservableObject {
 
     @Published private(set) var currentSession: ManagedAppSession?
     @Published private(set) var latestEvent: ManagedSessionEvent?
-    @Published private(set) var isRestoringPersistedSession = true
+    @Published private(set) var isRestoringPersistedSession: Bool
     private var sessionLoadGeneration = 0
     private let persistence: Persistence
+    private let isEnabled: Bool
 
-    init(persistence: Persistence = .keychain) {
+    init(persistence: Persistence = .keychain, isEnabled: Bool = true) {
         self.persistence = persistence
+        self.isEnabled = isEnabled
         self.currentSession = nil
-        restorePersistedSession()
+        self.isRestoringPersistedSession = isEnabled
+        if isEnabled {
+            restorePersistedSession()
+        }
     }
 
     func handleCallbackURL(_ url: URL) {
+        guard isEnabled else { return }
         guard Self.supportedCallbackSchemes.contains(url.scheme?.lowercased() ?? "") else { return }
         guard url.host?.lowercased() == "auth", url.path == "/callback" else {
             latestEvent = ManagedSessionEvent(id: UUID(), message: "Ignored unsupported auth callback URL.", isError: true)
@@ -112,6 +118,7 @@ final class ManagedSessionStore: ObservableObject {
     }
 
     func clearSession(notify: Bool = true) {
+        guard isEnabled else { return }
         sessionLoadGeneration += 1
         currentSession = nil
         completeInitialRestoration()
@@ -122,6 +129,7 @@ final class ManagedSessionStore: ObservableObject {
     }
 
     private func persist(_ session: ManagedAppSession) {
+        guard isEnabled else { return }
         guard let data = try? JSONEncoder().encode(session) else { return }
         persistence.write(data)
     }

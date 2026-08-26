@@ -25,9 +25,8 @@ export function buildConnectionsRoutes(connections: ConnectionsService): Route[]
 
     route('DELETE', '/connections/:id', async (_req, res, params) => {
       try {
-        await connections.deleteConnection(params.id);
-        res.writeHead(204);
-        res.end();
+        const disconnect = await connections.deleteConnection(params.id);
+        json(res, 200, { disconnect });
       } catch (error: unknown) {
         handleHttpError(res, error);
       }
@@ -35,6 +34,14 @@ export function buildConnectionsRoutes(connections: ConnectionsService): Route[]
 
     route('GET', '/connections/toolkits', async (_req, res, params) => {
       try {
+        if (!connections.configured) {
+          return json(res, 200, {
+            available: false,
+            configured: false,
+            toolkits: [],
+            nextCursor: null,
+          });
+        }
         const query = typeof params.query === 'string' ? params.query : undefined;
         const cursor = typeof params.cursor === 'string' && params.cursor.length > 0
           ? params.cursor

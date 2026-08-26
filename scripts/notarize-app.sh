@@ -38,8 +38,7 @@ PROFILE="${VERSO_NOTARY_PROFILE:-Verso}"
 if [ ! -d "${APP_PATH}" ]; then
     echo "error: app bundle not found at ${APP_PATH}" >&2
     echo "       hint: build the Release configuration first:" >&2
-    echo "         DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild \\" >&2
-    echo "             -project verso.xcodeproj -scheme verso -configuration Release build" >&2
+    echo "         ./scripts/build-managed-release.sh" >&2
     exit 1
 fi
 
