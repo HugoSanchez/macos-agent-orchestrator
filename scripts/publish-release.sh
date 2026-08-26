@@ -29,7 +29,7 @@
 #
 # Optional env:
 #   VERSO_SPARKLE_KEY_FILE   default: /tmp/verso-edkey.txt
-#   VERSO_RELEASE_URL_PREFIX default: https://github.com/HugoSanchez/huacamayo/releases/download/
+#   VERSO_RELEASE_URL_PREFIX default: https://github.com/HugoSanchez/macos-agent-orchestrator/releases/download/
 #                            Each DMG ends up at <prefix>v<version>/<dmg-filename>
 #                            so you must create the matching GitHub Release tag.
 #   VERSO_APPCAST_INCLUDE_DELTAS default: 0
@@ -42,7 +42,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 DIST_DIR="${REPO_ROOT}/dist"
 
 KEY_FILE="${VERSO_SPARKLE_KEY_FILE:-/tmp/verso-edkey.txt}"
-URL_PREFIX="${VERSO_RELEASE_URL_PREFIX:-https://github.com/HugoSanchez/huacamayo/releases/download/}"
+URL_PREFIX="${VERSO_RELEASE_URL_PREFIX:-https://github.com/HugoSanchez/macos-agent-orchestrator/releases/download/}"
 INCLUDE_DELTAS="${VERSO_APPCAST_INCLUDE_DELTAS:-0}"
 
 if [ ! -d "${DIST_DIR}" ] || ! ls "${DIST_DIR}"/verso-*.dmg >/dev/null 2>&1; then

@@ -128,7 +128,7 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
 
 ## Repo
 
-This repo is `huacamayo`. verso is the product.
+This repo is `macos-agent-orchestrator`. verso is the product.
 
 ## License
 
