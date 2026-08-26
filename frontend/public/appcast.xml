@@ -9,7 +9,7 @@
             <sparkle:shortVersionString>1.0.21</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <enclosure url="https://github.com/HugoSanchez/huacamayo/releases/download/v1.0.21/verso-1.0.21.dmg" length="362656741" type="application/octet-stream" sparkle:edSignature="6kgSdnqhFkk30cWHWN5n7WcrxrskdF8z8bE4TJsKQRcUDmhlHFZiPhz1nd9Hy9ckxVXCyi+b/coLiJO84FP5BA=="/>
+            <enclosure url="https://github.com/HugoSanchez/macos-agent-orchestrator/releases/download/v1.0.21/verso-1.0.21.dmg" length="362656741" type="application/octet-stream" sparkle:edSignature="6kgSdnqhFkk30cWHWN5n7WcrxrskdF8z8bE4TJsKQRcUDmhlHFZiPhz1nd9Hy9ckxVXCyi+b/coLiJO84FP5BA=="/>
         </item>
         <item>
             <title>1.0.20</title>
@@ -18,7 +18,7 @@
             <sparkle:shortVersionString>1.0.20</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <enclosure url="https://github.com/HugoSanchez/huacamayo/releases/download/v1.0.20/verso-1.0.20.dmg" length="325215007" type="application/octet-stream" sparkle:edSignature="0cdCMBsue4OUDJnuSFPa/v/TiLagKdAoWTeUgL8EG4GY5eesG6CNN4ype3joCYgtKZyiWqk/oI1tRv+LJL6WAA=="/>
+            <enclosure url="https://github.com/HugoSanchez/macos-agent-orchestrator/releases/download/v1.0.20/verso-1.0.20.dmg" length="325215007" type="application/octet-stream" sparkle:edSignature="0cdCMBsue4OUDJnuSFPa/v/TiLagKdAoWTeUgL8EG4GY5eesG6CNN4ype3joCYgtKZyiWqk/oI1tRv+LJL6WAA=="/>
         </item>
         <item>
             <title>1.0.19</title>
@@ -27,7 +27,7 @@
             <sparkle:shortVersionString>1.0.19</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <enclosure url="https://github.com/HugoSanchez/huacamayo/releases/download/v1.0.19/verso-1.0.19.dmg" length="322671339" type="application/octet-stream" sparkle:edSignature="GsdaHRHJseAhutWek1VdeJEpzaH2578ZcRFFmDsT7OKxzhPy8ujUoEZvxBp0NndKgUJgkcxGEwVveiVZkTLWAA=="/>
+            <enclosure url="https://github.com/HugoSanchez/macos-agent-orchestrator/releases/download/v1.0.19/verso-1.0.19.dmg" length="322671339" type="application/octet-stream" sparkle:edSignature="GsdaHRHJseAhutWek1VdeJEpzaH2578ZcRFFmDsT7OKxzhPy8ujUoEZvxBp0NndKgUJgkcxGEwVveiVZkTLWAA=="/>
         </item>
     </channel>
 </rss>

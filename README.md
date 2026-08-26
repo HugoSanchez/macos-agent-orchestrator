@@ -1,6 +1,6 @@
 # Verso
 
-Verso is a native macOS app for chatting with a local [Hermes Agent](https://github.com/NousResearch/hermes-agent). The SwiftUI shell, local Node sidecar, and embedded React chat interface live in this repository.
+Verso is a native macOS agent orchestrator built with [Hermes Agent](https://github.com/NousResearch/hermes-agent). The SwiftUI shell, local Node sidecar, and embedded React chat interface live in this repository.
 
 Source builds default to `local` mode. They do not require a Verso account and do not use Verso's hosted backend, Sentry project, or update feed. You bring your own model access through Codex OAuth or an Anthropic API key.
 
@@ -346,6 +346,10 @@ Before the first public release, follow this README verbatim on a Mac that has n
 - [ ] Confirm all created data is under the documented local state root
 - [ ] Run once with stale managed backend/session environment variables and confirm they are ignored
 - [ ] Record every missing prerequisite, unclear instruction, warning, and first-run delay before calling the quickstart verified
+
+## Repo
+
+This repo is `macos-agent-orchestrator`. verso is the product.
 
 ## License
 
