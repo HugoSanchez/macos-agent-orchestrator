@@ -32,7 +32,7 @@ const activityRows = [
 ] as const;
 
 const GITHUB_URL = 'https://github.com/HugoSanchez/macos-agent-orchestrator';
-const DOWNLOAD_URL = `${GITHUB_URL}/releases/download/v1.0.21/verso-1.0.21.dmg`;
+const DOWNLOAD_URL = `${GITHUB_URL}/releases/download/v1.0.22/verso-1.0.22.dmg`;
 
 // Flip on once there are real testimonials to show.
 const SHOW_TESTIMONIALS = false;
