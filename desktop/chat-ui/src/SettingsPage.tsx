@@ -270,18 +270,20 @@ function IngestionSection() {
     }
   }
 
+  const connectedSources = sources?.filter((source) => source.connected) ?? null;
+
   // Still loading and nothing to report yet — don't flash an empty section.
   if (sources === null && !error) return null;
-  if (sources !== null && sources.length === 0) return null;
+  if (connectedSources !== null && connectedSources.length === 0 && !error) return null;
 
   return (
     <section className="settings-section">
       <div className="ingestion-header">
-        <h2>Ingestion</h2>
-        <p className="settings-footnote">Let Verso automatically remember from your connected apps.</p>
+        <h2>App memory</h2>
+        <p className="settings-footnote">Choose which connected apps Verso remembers from.</p>
       </div>
       {error ? <p className="settings-footnote codex-error">{error}</p> : null}
-      {sources?.map((source) => {
+      {connectedSources?.map((source) => {
         const on = source.enabled;
         return (
           <div className="settings-row" key={source.source}>
@@ -292,10 +294,7 @@ function IngestionSection() {
                 <span className="catalog-row-logo-fallback" aria-hidden="true">{source.displayName.charAt(0)}</span>
               )}
               <span className="ingestion-source-text">
-                <span>
-                  {source.displayName}
-                  {!source.connected ? <span className="settings-value"> · not connected</span> : null}
-                </span>
+                <span>{source.displayName}</span>
                 {sourceStatus(source) ? (
                   <span className="ingestion-source-status">{sourceStatus(source)}</span>
                 ) : null}
@@ -305,7 +304,7 @@ function IngestionSection() {
               className={`skill-row-toggle is-${on ? 'on' : 'off'}`}
               role="switch"
               aria-checked={on}
-              aria-disabled={pending === source.source || (!source.enabled && !source.connected)}
+              aria-disabled={pending === source.source}
               onClick={() => handleToggle(source)}
             >
               <span className="skill-row-toggle-thumb" />

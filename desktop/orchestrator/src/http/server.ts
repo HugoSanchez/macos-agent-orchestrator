@@ -20,10 +20,12 @@ import { hermesHistoryHomeCandidates, readHermesSessionModelFromHomes } from './
 import { MemoryExtractionScheduler } from './memory-extraction.ts';
 import { IngestionStore } from './ingestion-store.ts';
 import { GdriveSource } from './gdrive-source.ts';
+import { isOneDriveIngestionEnabled, OneDriveSource } from './onedrive-source.ts';
 import { GmailSource } from './gmail-source.ts';
 import { GranolaSource } from './granola-source.ts';
 import { ClickupSource } from './clickup-source.ts';
 import { SlackSource } from './slack-source.ts';
+import { TeamsSource } from './teams-source.ts';
 import { ComposioSlackUserDirectory } from './slack-users.ts';
 import { ComposioSlackConversationDirectory } from './slack-conversations.ts';
 import { SourceIngestionScheduler } from './source-ingestion.ts';
@@ -182,9 +184,9 @@ export async function startServer(opts: { port?: number; authSecret?: string | n
   const refreshComposioToolsManifest = () => composioManifest.refresh();
   const initialManifestRefresh = refreshComposioToolsManifest();
   const connections = new ConnectionsService(managedBackend, connectionsStore, refreshComposioToolsManifest);
-  // Automated source ingestion (Gmail, Granola, Slack). Runs whenever memory
-  // is enabled; the per-source toggles in Settings decide what actually gets
-  // ingested (an explicit falsy VERSO_INGESTION_ENABLED is a kill switch).
+  // Automated source ingestion. Runs whenever memory is enabled; the
+  // per-source toggles in Settings decide what actually gets ingested (an
+  // explicit falsy VERSO_INGESTION_ENABLED is a kill switch).
   const ingestionStore = new IngestionStore();
   const sourceIngestion = new SourceIngestionScheduler(
     ingestionStore,
@@ -196,7 +198,9 @@ export async function startServer(opts: { port?: number; authSecret?: string | n
         userDirectory: new ComposioSlackUserDirectory(composioBridge),
         conversationDirectory: new ComposioSlackConversationDirectory(composioBridge),
       }),
+      new TeamsSource(composioBridge),
       new GdriveSource(composioBridge),
+      ...(isOneDriveIngestionEnabled() ? [new OneDriveSource(composioBridge)] : []),
       new ClickupSource(composioBridge),
     ],
     {
@@ -350,6 +354,8 @@ export async function startServer(opts: { port?: number; authSecret?: string | n
 const SOURCE_TOOLKITS: Record<string, string> = {
   granola: 'granola_mcp',
   gdrive: 'googledrive',
+  onedrive: 'one_drive',
+  teams: 'microsoft_teams',
 };
 
 function activeToolkitSlugs(store: ConnectionsStore): string[] {

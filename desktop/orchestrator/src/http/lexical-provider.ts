@@ -3,6 +3,7 @@ import { mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import type { EmbedderLike } from './embedder.ts';
+import type { IngestionDocument } from './ingestion-source.ts';
 import type {
   MemoryDiagnostics,
   MemoryPage,
@@ -475,7 +476,7 @@ export class LexicalMemoryProvider implements MemoryWriteProvider {
   async ingestSourceBatch(batch: {
     source: string;
     stream: string;
-    items: Array<{ sourceRef: string; occurredAt?: string; title?: string; content: string; merge?: boolean }>;
+    items: IngestionDocument[];
   }): Promise<void> {
     for (const item of batch.items) {
       this.upsertDocument({
@@ -486,6 +487,7 @@ export class LexicalMemoryProvider implements MemoryWriteProvider {
         content: item.content,
         occurredAt: item.occurredAt ?? null,
         merge: item.merge ?? false,
+        mergeOrder: item.mergeOrder ?? null,
       });
     }
   }
@@ -509,6 +511,7 @@ export class LexicalMemoryProvider implements MemoryWriteProvider {
     content: string;
     occurredAt: string | null;
     merge: boolean;
+    mergeOrder?: 'chronological' | null;
   }): void {
     const now = new Date().toISOString();
     const db = this.requireDb();
@@ -528,7 +531,9 @@ export class LexicalMemoryProvider implements MemoryWriteProvider {
         `).run(
           doc.stream,
           doc.title,
-          mergeContent(existing.content, doc.content),
+          doc.mergeOrder === 'chronological'
+            ? mergeChronologicalContent(existing.content, doc.content)
+            : mergeContent(existing.content, doc.content),
           laterIso(existing.occurred_at, doc.occurredAt),
           now,
           doc.source,
@@ -705,6 +710,14 @@ function mergeContent(existing: string, addition: string): string {
   const merged = existing ? `${existing}\n${addition}` : addition;
   if (merged.length <= MAX_MERGED_DOC_CHARS) return merged;
   return `…[earlier truncated]\n${merged.slice(merged.length - MAX_MERGED_DOC_CHARS)}`;
+}
+
+/** Sort one-line bucket entries after every merge. */
+function mergeChronologicalContent(existing: string, addition: string): string {
+  return mergeContent('', [...existing.split('\n'), ...addition.split('\n')]
+    .filter(Boolean)
+    .sort((a, b) => a.localeCompare(b))
+    .join('\n'));
 }
 
 /** The later of two ISO timestamps (lexicographic order works for ISO-8601); tolerates nulls. */

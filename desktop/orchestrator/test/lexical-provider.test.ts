@@ -102,6 +102,33 @@ describe('LexicalMemoryProvider ingestion', () => {
     expect(results).toHaveLength(1);
   });
 
+  it('keeps newest-first provider pages chronological when requested', async () => {
+    const base = { source: 'teams', stream: '' };
+    await provider.ingestSourceBatch({
+      ...base,
+      items: [
+        { sourceRef: 'chat:one#2026-07-01', content: '[10:20] Alice: later', merge: true, mergeOrder: 'chronological' },
+        { sourceRef: 'chat:one#2026-07-01', content: '[10:10] Bob: middle', merge: true, mergeOrder: 'chronological' },
+      ],
+    });
+    await provider.ingestSourceBatch({
+      ...base,
+      items: [
+        { sourceRef: 'chat:one#2026-07-01', content: '[09:40] Alice: earlier', merge: true, mergeOrder: 'chronological' },
+        { sourceRef: 'chat:one#2026-07-01', content: '[10:30] Bob: newest', merge: true, mergeOrder: 'chronological' },
+      ],
+    });
+
+    const [hit] = await provider.search('earlier middle later newest', 1);
+    const page = await provider.getPage(hit.slug!);
+    expect(page?.content).toBe([
+      '[09:40] Alice: earlier',
+      '[10:10] Bob: middle',
+      '[10:20] Alice: later',
+      '[10:30] Bob: newest',
+    ].join('\n'));
+  });
+
   it('reads raw documents via doc:<id> slugs', async () => {
     await provider.ingestChatSegment(segment);
     const [hit] = await provider.search('Sarah Chen', 1);

@@ -1,5 +1,5 @@
 import { IngestionStore, type IngestionSourceState } from './ingestion-store.ts';
-import type { SourceAdapter } from './ingestion-source.ts';
+import type { IngestionDocument, SourceAdapter } from './ingestion-source.ts';
 import type { MemoryProvider } from './memory-provider.ts';
 
 const DEFAULT_POLL_INTERVAL_MS = 30 * 1000;
@@ -40,7 +40,7 @@ export type IngestionRunner = (
   payload: {
     source: string;
     stream: string;
-    items: Array<{ sourceRef: string; occurredAt: string; title?: string; content: string; merge?: boolean }>;
+    items: Array<IngestionDocument & { occurredAt: string }>;
   },
 ) => Promise<void>;
 
@@ -300,6 +300,7 @@ export class SourceIngestionScheduler {
             ...(item.title ? { title: item.title } : {}),
             content: item.content,
             ...(item.merge ? { merge: true } : {}),
+            ...(item.mergeOrder ? { mergeOrder: item.mergeOrder } : {}),
           })),
         });
         this.store.markItemsProcessed(claim.source, claim.stream, newRefs, now);

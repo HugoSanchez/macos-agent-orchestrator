@@ -105,7 +105,16 @@ export function buildConnectionsRoutes(connections: ConnectionsService): Route[]
 
     route('GET', '/connections/callback', async (_req, res, params) => {
       const status = typeof params.status === 'string' ? params.status.toLowerCase() : '';
-      const isFailed = status === 'failed';
+      const connectedAccountId = callbackConnectedAccountId(params);
+      const activeDespiteFailedRedirect = status === 'failed' && connectedAccountId
+        ? (await connections.listConnections()).some((connection) => (
+            connection.connectedAccountId === connectedAccountId && connection.status === 'active'
+          ))
+        : false;
+      // Composio occasionally redirects with `status=failed` after the
+      // connected account has already reached ACTIVE. The managed account
+      // state is authoritative; don't show a false failure for that exact id.
+      const isFailed = status === 'failed' && !activeDespiteFailedRedirect;
       const title = isFailed ? 'Connection failed' : 'Connection complete';
       const message = isFailed
         ? 'The connection did not complete. You can return to verso and try again.'
@@ -129,6 +138,11 @@ export function buildConnectionsRoutes(connections: ConnectionsService): Route[]
       res.end(font);
     }),
   ];
+}
+
+function callbackConnectedAccountId(params: Record<string, string | string[]>): string {
+  const value = params.connected_account_id ?? params.connectedAccountId;
+  return typeof value === 'string' ? value.trim() : '';
 }
 
 function requestBaseUrl(req: IncomingMessage): string {

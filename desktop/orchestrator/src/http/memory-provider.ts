@@ -1,4 +1,5 @@
 import type { ChatMessageRecord } from './chat-store.ts';
+import type { IngestionDocument } from './ingestion-source.ts';
 
 export type MemoryBackend = 'lexical';
 
@@ -64,7 +65,7 @@ export interface MemoryProvider {
   ingestSourceBatch(batch: {
     source: string;
     stream: string;
-    items: Array<{ sourceRef: string; occurredAt?: string; title?: string; content: string; merge?: boolean }>;
+    items: IngestionDocument[];
   }): Promise<void>;
 
   /** Delete passive documents for one connected source. Curated pages are never affected. */

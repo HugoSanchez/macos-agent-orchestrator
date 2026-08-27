@@ -13,9 +13,24 @@ export interface IngestionBridge {
   ): Promise<{ data: unknown; error: string | null; logId: string | null }>;
 }
 
-export interface IngestionItem {
-  /** Stable unique id for dedup (e.g. Gmail messageId). */
+export interface IngestionDocument {
+  /** Stable target id in the memory store (e.g. Gmail messageId). */
   sourceRef: string;
+  /** ISO timestamp of the item, for citations. */
+  occurredAt?: string;
+  /** Optional display title, stored (and FTS-indexed) alongside the content. */
+  title?: string;
+  /** Detector-ready text for this item. */
+  content: string;
+  /** Append to the target row instead of replacing it. */
+  merge?: boolean;
+  /** Keep one-line bucket entries ordered by their leading timestamp. */
+  mergeOrder?: 'chronological';
+}
+
+export interface IngestionItem extends IngestionDocument {
+  /** ISO timestamp of the item, for citations. Empty string if unknown. */
+  occurredAt: string;
   /**
    * Versioned dedup key for sources whose items legitimately re-enter after
    * edits (e.g. Drive `<fileId>:<modifiedTime>`). The scheduler tracks
@@ -26,20 +41,6 @@ export interface IngestionItem {
   dedupRef?: string;
   /** Monotonic position used to advance the cursor and to sort a page (e.g. epoch ms). */
   cursorValue: number;
-  /** ISO timestamp of the item, for citations. Empty string if unknown. */
-  occurredAt: string;
-  /** Optional display title, stored (and FTS-indexed) alongside the content. */
-  title?: string;
-  /** Detector-ready text for this item. */
-  content: string;
-  /**
-   * Append to the target row (keyed by sourceRef) instead of replacing it. Used
-   * by sources whose sourceRef is a coarse bucket that many items share — e.g.
-   * Slack messages grouped into one per-(channel, day) document. Each item still
-   * carries a unique `dedupRef` so it's ingested exactly once; the store then
-   * merges its content into the shared row. Omit for replace semantics.
-   */
-  merge?: boolean;
 }
 
 export interface IngestionFetchResult {

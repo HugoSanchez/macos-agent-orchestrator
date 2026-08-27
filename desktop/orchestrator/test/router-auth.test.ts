@@ -112,6 +112,39 @@ describe('sidecar router auth boundary', () => {
     expect(Number(font.headers['content-length'])).toBeGreaterThan(100_000);
   });
 
+  it('reconciles a failed callback with the exact active connected account', async () => {
+    const connections = {
+      listConnections: async () => [{
+        connectedAccountId: 'ca_active',
+        toolkitSlug: 'one_drive',
+        toolkitName: 'OneDrive',
+        logoUrl: null,
+        status: 'active',
+      }],
+    } as unknown as ConnectionsService;
+
+    const callback = await request(
+      '/connections/callback?status=failed&connected_account_id=ca_active',
+      { routes: buildConnectionsRoutes(connections) },
+    );
+
+    expect(callback.body).toContain('Connection complete');
+    expect(callback.body).not.toContain('Connection failed');
+  });
+
+  it('keeps a failed callback failed when its account is not active', async () => {
+    const connections = {
+      listConnections: async () => [],
+    } as unknown as ConnectionsService;
+
+    const callback = await request(
+      '/connections/callback?status=failed&connected_account_id=ca_failed',
+      { routes: buildConnectionsRoutes(connections) },
+    );
+
+    expect(callback.body).toContain('Connection failed');
+  });
+
   it('rejects malformed, foreign, and DNS-rebinding Host headers before public routes', async () => {
     for (const host of [
       'evil.example:4123',
