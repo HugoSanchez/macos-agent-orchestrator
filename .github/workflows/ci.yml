@@ -194,6 +194,8 @@ jobs:
           source scripts/lib/smoke-gateway-checks.sh
           SMOKE_PORT=18977 SMOKE_API_KEY="$API_SERVER_KEY" SMOKE_PID="$GW"
           SMOKE_LOG="$RUNNER_TEMP/gateway.log" SMOKE_HOME="$HERMES_HOME" SMOKE_TMP="$RUNNER_TEMP"
+          SMOKE_PYTHON=python SMOKE_PYTHONPATH=""
           smoke_wait_for_gateway 120
           smoke_assert_streaming_responses "ci-smoke-1"
+          smoke_assert_runtime_capabilities
           smoke_assert_mcp_oauth_routes

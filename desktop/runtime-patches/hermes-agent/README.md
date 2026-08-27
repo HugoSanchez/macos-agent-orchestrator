@@ -29,7 +29,10 @@ gateway and exercises streaming plus the MCP OAuth routes.
    for Verso's general personal-assistant surface.
 7. `verso-web-routing.patch` — keeps read-only extraction available without
    provider credentials, routes known public URLs away from browser automation,
-   and makes browser-driving opt-in for cron jobs.
+   and makes browser-driving opt-in for cron jobs. Verso also bundles the
+   optional DDGS dependency. The shared runtime smoke check treats the full
+   API-server tool surface and credential-free baseline as a bundle contract,
+   so incomplete self-contained Release builds fail before packaging.
 8. `verso-request-overrides.patch` — supports per-request model and reasoning
    effort selected in the chat UI. It depends on patch 1.
 9. `verso-tool-search-pinned.patch` — keeps essential tools visible when
