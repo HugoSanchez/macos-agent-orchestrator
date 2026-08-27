@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { ClickupSource } from '../src/http/clickup-source.ts';
-import type { IngestionBridge } from '../src/http/ingestion-source.ts';
+import { ClickupSource } from '../src/memory/ingestion/sources/clickup-source.ts';
+import type { IngestionBridge } from '../src/memory/ingestion/ingestion-source.ts';
 
 interface Call {
   toolSlug: string;

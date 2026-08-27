@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import http from 'node:http';
-import { HermesSupervisor } from '../src/http/hermes-supervisor.ts';
+import { HermesSupervisor } from '../src/hermes/hermes-supervisor.ts';
 
 describe('Hermes gateway ownership probes', () => {
   const envSnapshot = {

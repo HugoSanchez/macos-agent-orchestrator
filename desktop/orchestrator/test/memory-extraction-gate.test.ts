@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { MemoryExtractionScheduler } from '../src/http/memory-extraction.ts';
-import type { ChatStore } from '../src/http/chat-store.ts';
-import type { MemoryProvider } from '../src/http/memory-provider.ts';
+import { MemoryExtractionScheduler } from '../src/memory/memory-extraction.ts';
+import type { ChatStore } from '../src/chat/chat-store.ts';
+import type { MemoryProvider } from '../src/memory/memory-provider.ts';
 
 /**
  * The extraction gate defers claiming while the provider can't accept writes

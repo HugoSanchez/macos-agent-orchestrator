@@ -164,7 +164,7 @@ In `desktop/orchestrator/src/integrations/composio.ts`:
 - Delete/tombstone the local connection only after the managed backend reports `composioAccountDeleted: true`.
 - Preserve the existing backend-`404` stale-local-row cleanup behavior and synthesize `already_absent` for that path.
 
-In `desktop/orchestrator/src/http/connections.ts`:
+In `desktop/orchestrator/src/connections/connections.ts`:
 
 - Return `200 { disconnect: result }` rather than `204`.
 
@@ -255,7 +255,7 @@ Do not test by disconnecting a real user's production account.
 - `backend/test/composio-routes.test.ts`
 - `desktop/orchestrator/src/integrations/composio-bridge-client.ts`
 - `desktop/orchestrator/src/integrations/composio.ts`
-- `desktop/orchestrator/src/http/connections.ts`
+- `desktop/orchestrator/src/connections/connections.ts`
 - relevant orchestrator route/service tests
 - `desktop/macos/SidebarAPIClient.swift`
 - `desktop/macos/SidebarStore.swift`

@@ -6,7 +6,7 @@ import {
   ComposioToolUsageStore,
   nativeNameForComposioToolSlug,
   type ComposioNativeToolManifest,
-} from '../src/http/composio-tool-usage-store.ts';
+} from '../src/connections/composio-tool-usage-store.ts';
 
 describe('ComposioToolUsageStore', () => {
   let tempRoot = '';

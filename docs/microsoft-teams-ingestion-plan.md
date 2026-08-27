@@ -15,7 +15,7 @@ Implementation was completed and fixture-tested without a licensed Microsoft 365
 
 ## Existing behavior that defines parity
 
-The canonical reference is `desktop/orchestrator/src/http/slack-source.ts`, together with its user and conversation directories and tests.
+The canonical reference is `desktop/orchestrator/src/memory/ingestion/sources/slack-source.ts`, together with its user and conversation directories and tests.
 
 | Slack behavior today | Required Teams equivalent |
 | --- | --- |
@@ -118,7 +118,7 @@ Product decision (2026-08-27): register Teams for every user before licensed liv
 
 Add:
 
-- `desktop/orchestrator/src/http/teams-source.ts`
+- `desktop/orchestrator/src/memory/ingestion/sources/teams-source.ts`
 - `desktop/orchestrator/test/teams-source.test.ts`
 
 Keep response normalization, cursor parsing, target discovery, HTML-to-text conversion, and name fallbacks in `teams-source.ts` until the file becomes difficult to reason about. Split only clear, independently testable helpers such as a directory into `teams-users.ts` or `teams-conversations.ts` if the final implementation justifies it.

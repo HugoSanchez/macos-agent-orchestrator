@@ -3,9 +3,9 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { ServerResponse } from 'node:http';
-import type { EmbedderLike, EmbedderState } from '../src/http/embedder.ts';
-import { buildFtsMatchExpression, isChatCaptureEnabled, LexicalMemoryProvider } from '../src/http/lexical-provider.ts';
-import { buildMemoryRoutes } from '../src/http/memory-routes.ts';
+import type { EmbedderLike, EmbedderState } from '../src/memory/embedder.ts';
+import { buildFtsMatchExpression, isChatCaptureEnabled, LexicalMemoryProvider } from '../src/memory/lexical-provider.ts';
+import { buildMemoryRoutes } from '../src/memory/memory-routes.ts';
 import type { Route } from '../src/http/router.ts';
 
 let tempRoot = '';

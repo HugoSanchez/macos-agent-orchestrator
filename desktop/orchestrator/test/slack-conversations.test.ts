@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { ComposioSlackConversationDirectory, collectImPeers } from '../src/http/slack-conversations.ts';
-import type { IngestionBridge } from '../src/http/ingestion-source.ts';
+import { ComposioSlackConversationDirectory, collectImPeers } from '../src/memory/ingestion/sources/slack-conversations.ts';
+import type { IngestionBridge } from '../src/memory/ingestion/ingestion-source.ts';
 
 function mkBridge(handler: (slug: string, args: Record<string, unknown>) => { data: unknown; error: string | null; logId: string | null }) {
   const calls: Array<{ slug: string; args: Record<string, unknown> }> = [];

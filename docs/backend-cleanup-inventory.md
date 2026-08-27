@@ -83,8 +83,8 @@ desktop app will keep calling dead endpoints.
 | `desktop/orchestrator/src/http/llm-proxy.ts` | Delete | Remove `/llm/v1/*` proxy routes. | The proxy is the custom-provider path that broke Hermes behavior. |
 | `desktop/orchestrator/src/http/server.ts` | Keep, simplify | Stop registering `buildLlmProxyRoutes`. | Keeps chat, managed account, connections, skills, and Composio bridge routes. |
 | `desktop/orchestrator/src/integrations/managed-backend-client.ts` | Keep, simplify | Keep session/account/auth and Composio support; remove `getRuntimeConfig`, `getUsageSummary`, `forwardChatCompletion`, and `streamInference`. | Backend client should not expose backend model proxy methods. |
-| `desktop/orchestrator/src/http/managed-account.ts` | Keep, simplify | Remove usage/runtime-config calls or replace them with plain account status. | Account page can show signed-in state without model spend. |
-| `desktop/orchestrator/src/http/hermes-supervisor.ts` | Keep, simplify | Remove explicit custom-provider override path once `/llm/v1` is gone. Keep auth-store sync and managed profile preservation. | Hermes should preserve Codex model config. |
+| `desktop/orchestrator/src/account/managed-account.ts` | Keep, simplify | Remove usage/runtime-config calls or replace them with plain account status. | Account page can show signed-in state without model spend. |
+| `desktop/orchestrator/src/hermes/hermes-supervisor.ts` | Keep, simplify | Remove explicit custom-provider override path once `/llm/v1` is gone. Keep auth-store sync and managed profile preservation. | Hermes should preserve Codex model config. |
 | `desktop/orchestrator/scripts/validate-llm-proxy.ts` | Delete | Remove with proxy. | Experiment-only validation. |
 | `desktop/orchestrator/test/llm-proxy.test.ts` | Delete | Remove with proxy. | Proxy tests become obsolete. |
 | `desktop/orchestrator/test/managed-backend-client.test.ts` | Keep, update | Remove tests for usage/runtime-config/inference methods. | Keep auth/session behavior coverage. |
@@ -93,9 +93,9 @@ desktop app will keep calling dead endpoints.
 ## Historical Dependency Notes
 
 - `/v1/runtime-config` was called by `ManagedBackendClient.getRuntimeConfig`,
-  then surfaced through `desktop/orchestrator/src/http/managed-account.ts`.
+  then surfaced through `desktop/orchestrator/src/account/managed-account.ts`.
 - `/v1/usage/summary` was called by `ManagedBackendClient.getUsageSummary`,
-  then surfaced through `desktop/orchestrator/src/http/managed-account.ts`.
+  then surfaced through `desktop/orchestrator/src/account/managed-account.ts`.
 - `/v1/chat/completions` was used by the desktop `/llm/v1` proxy via
   `ManagedBackendClient.forwardChatCompletion` and `streamInference`.
 - The old `/v1/composio/session` and `/composio/session` hosted MCP session

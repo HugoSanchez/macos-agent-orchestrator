@@ -2,7 +2,7 @@ import { mkdtempSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ConnectionsStore, type ConnectionRecord } from '../src/http/connections-store.ts';
+import { ConnectionsStore, type ConnectionRecord } from '../src/connections/connections-store.ts';
 import { ManagedBackendClient } from '../src/integrations/managed-backend-client.ts';
 import { ConnectionsService } from '../src/integrations/composio.ts';
 

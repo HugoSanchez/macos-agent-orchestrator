@@ -6,8 +6,8 @@ import {
   ConnectionsStore,
   type ConnectionRecord,
   type ConnectionRequestRecord,
-} from '../src/http/connections-store.ts';
-import { CustomConnectorsStore } from '../src/http/custom-connectors-store.ts';
+} from '../src/connections/connections-store.ts';
+import { CustomConnectorsStore } from '../src/connections/custom-connectors-store.ts';
 
 const connection: ConnectionRecord = {
   connectedAccountId: 'account-1',

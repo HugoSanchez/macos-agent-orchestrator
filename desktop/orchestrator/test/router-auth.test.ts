@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildConnectionsRoutes, renderCallbackPage } from '../src/http/connections.ts';
+import { buildConnectionsRoutes, renderCallbackPage } from '../src/connections/connections.ts';
 import { dispatch, json, route, type Route } from '../src/http/router.ts';
 import { HttpError, type ConnectionsService } from '../src/integrations/composio.ts';
 

@@ -1,8 +1,8 @@
 # OneDrive ingestion implementation plan
 
-Status: approved, implemented, and live-QA'd against a personal OneDrive account; work/school shared-item QA pending  
-Prepared: 2026-08-27  
-Scope: Composio-backed passive memory ingestion  
+Status: implemented, enabled, and live-QA'd against a personal OneDrive account; work/school shared-item QA pending
+Prepared: 2026-08-27
+Scope: Composio-backed passive memory ingestion
 Parity target: the existing Google Drive source
 
 ## Objective
@@ -21,16 +21,16 @@ Use the current Composio `one_drive` toolkit version `20260817_00`:
 
 The authenticated input schemas, finite response paths, scope limitation, and download contract are frozen in `.context/onedrive-tool-contract.md`. The tools are current and read-only. Composio advertises managed OAuth, preserving the existing one-click connection flow.
 
-## Adapter and release gate
+## Adapter and registration
 
 Add:
 
-- `desktop/orchestrator/src/http/onedrive-source.ts`
+- `desktop/orchestrator/src/memory/ingestion/sources/onedrive-source.ts`
 - `desktop/orchestrator/test/onedrive-source.test.ts`
 
 Register `new OneDriveSource(composioBridge)` beside `GdriveSource`. Use source slug `onedrive`, display name `OneDrive`, logo slug `one_drive`, and map `onedrive` to toolkit `one_drive` in `SOURCE_TOOLKITS`.
 
-Registration is gated by `VERSO_ONEDRIVE_INGESTION_ENABLED`, defaulting to false. The flag is removed only after live OAuth, scope, payload, download, and Word-conversion QA. Once enabled, no bespoke UI is needed: App memory already filters to connected sources and ingestion remains opt-in per user.
+Register OneDrive for all users. No bespoke UI is needed: App memory already filters to connected sources, so only users with an active OneDrive connection see the row, and ingestion remains opt-in through its per-user toggle.
 
 ## Cursor and polling state machine
 
@@ -128,7 +128,7 @@ Use an injected fake bridge, byte fetcher, and document converter. Cover:
 13. The byte fetcher enforces timeout, status, redirect protocol, `Content-Length`, and streaming 10 MiB limits.
 14. Provider over-return is replayed across five-item batches without skipping records; pages above the hard provider cap fail closed.
 15. Every Composio call uses `{ recordUsage: false }`.
-16. Registration stays absent by default and appears only when `VERSO_ONEDRIVE_INGESTION_ENABLED=true`.
+16. Registration is available globally while App memory shows it only for connected users.
 
 Run the focused OneDrive tests and orchestrator typecheck during implementation. Run the full orchestrator suite before handoff because registration and shared ingestion types are touched.
 
@@ -142,7 +142,7 @@ Completed on 2026-08-27 against a connected personal Microsoft account:
 - The durable delta cursor completed a second no-change cycle with zero duplicate items.
 - Personal-account shared search returned Microsoft's documented-in-payload MSA unsupported error and completed as an empty shared phase.
 
-Still required before enabling for everyone: inspect the granted consent scopes and run the shared scan/download path with a work/school account.
+Still required for complete work/school parity: inspect the granted consent scopes and run the shared scan/download path with a work/school account.
 
 Use one connected personal or work/school OneDrive account containing:
 
@@ -155,8 +155,8 @@ Verify OAuth returns to Verso; inspect the granted scopes; confirm the finite pr
 
 ## Acceptance criteria
 
-- The implementation compiles and passes focused/full orchestrator tests while remaining unavailable under the default release flag.
-- When explicitly enabled, a connected OneDrive account receives the standard App memory toggle with no Azure setup.
+- The implementation compiles and passes focused/full orchestrator tests.
+- A connected OneDrive account receives the standard App memory toggle with no Azure setup.
 - The primary drive uses durable delta polling; explicit token expiry safely re-enumerates without dropping older current files.
 - Work/school shared-with-me files have a separate resumable scan. Personal-account Microsoft Search and SharePoint-site shares remain explicitly out of scope.
 - Every batch is capped at five and every identity is drive-qualified.

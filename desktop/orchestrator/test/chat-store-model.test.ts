@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { ChatStore } from '../src/http/chat-store.ts';
+import { ChatStore } from '../src/chat/chat-store.ts';
 
 describe('ChatStore session model migration', () => {
   const directories: string[] = [];

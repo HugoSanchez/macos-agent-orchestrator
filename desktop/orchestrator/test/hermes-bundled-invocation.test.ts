@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { HermesSupervisor } from '../src/http/hermes-supervisor.ts';
+import { HermesSupervisor } from '../src/hermes/hermes-supervisor.ts';
 
 describe('Hermes bundled subcommand invocation', () => {
   const envNames = [

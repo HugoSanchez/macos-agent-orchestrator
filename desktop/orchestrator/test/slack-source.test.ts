@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { SlackSource, parseSlackCursor, extractMatches, extractNextCursor } from '../src/http/slack-source.ts';
-import type { IngestionBridge } from '../src/http/ingestion-source.ts';
-import type { SlackUserDirectory } from '../src/http/slack-users.ts';
-import type { SlackConversationDirectory } from '../src/http/slack-conversations.ts';
+import { SlackSource, parseSlackCursor, extractMatches, extractNextCursor } from '../src/memory/ingestion/sources/slack-source.ts';
+import type { IngestionBridge } from '../src/memory/ingestion/ingestion-source.ts';
+import type { SlackUserDirectory } from '../src/memory/ingestion/sources/slack-users.ts';
+import type { SlackConversationDirectory } from '../src/memory/ingestion/sources/slack-conversations.ts';
 
 interface Call { slug: string; args: Record<string, unknown>; opts?: { recordUsage?: boolean }; }
 

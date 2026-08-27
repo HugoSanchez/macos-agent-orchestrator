@@ -5,6 +5,6 @@
  */
 
 export { startServer } from './http/server.ts';
-export { buildChatRoutes } from './http/chat.ts';
-export { ChatStore, type ChatMessageRecord, type ChatSessionRecord, type ChatSessionSummary } from './http/chat-store.ts';
-export { HermesSupervisor, getHermesGatewayConfig, type HermesRuntimeSnapshot } from './http/hermes-supervisor.ts';
+export { buildChatRoutes } from './chat/chat.ts';
+export { ChatStore, type ChatMessageRecord, type ChatSessionRecord, type ChatSessionSummary } from './chat/chat-store.ts';
+export { HermesSupervisor, getHermesGatewayConfig, type HermesRuntimeSnapshot } from './hermes/hermes-supervisor.ts';

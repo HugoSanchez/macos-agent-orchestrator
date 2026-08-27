@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { startServer } from '../src/http/server.ts';
-import { getHermesGatewayConfig } from '../src/http/hermes-supervisor.ts';
+import { getHermesGatewayConfig } from '../src/hermes/hermes-supervisor.ts';
 
 describe('Crons orchestrator routes', () => {
   let server: http.Server | null = null;

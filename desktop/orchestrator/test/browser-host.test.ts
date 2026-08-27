@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
-import { BrowserHost } from '../src/http/browser-host.ts';
+import { BrowserHost } from '../src/browser/browser-host.ts';
 
 const FAKE_CHROME = fileURLToPath(new URL('./fixtures/fake-chrome.mjs', import.meta.url));
 

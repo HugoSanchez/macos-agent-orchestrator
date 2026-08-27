@@ -5,8 +5,8 @@ import {
   normalizeTeamsHtml,
   parseTeamsCursor,
   type TeamsCursorV1,
-} from '../src/http/teams-source.ts';
-import type { IngestionBridge } from '../src/http/ingestion-source.ts';
+} from '../src/memory/ingestion/sources/teams-source.ts';
+import type { IngestionBridge } from '../src/memory/ingestion/ingestion-source.ts';
 
 interface Call {
   slug: string;

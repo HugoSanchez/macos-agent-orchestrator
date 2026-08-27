@@ -110,7 +110,7 @@ if [ ! -x "${NODE_BIN}" ]; then
     exit 1
 fi
 pinned_names="$("${NODE_BIN}" --experimental-strip-types --no-warnings -e "
-import('${REPO_ROOT}/desktop/orchestrator/src/http/hermes-pinned-tools.ts').then((m) => {
+import('${REPO_ROOT}/desktop/orchestrator/src/hermes/hermes-pinned-tools.ts').then((m) => {
   console.log(m.computePinnedToolNames('/nonexistent-manifest', { includeMemoryTools: true }).join('\n'));
 });")"
 
@@ -123,7 +123,7 @@ done <<< "${expected_names}"
 
 if [ -n "${missing}" ]; then
     echo "[smoke] FAIL: bundle registers core tools under names the orchestrator does not pin:${missing}" >&2
-    echo "[smoke] update PIN_PREFIXES in desktop/orchestrator/src/http/hermes-pinned-tools.ts" >&2
+    echo "[smoke] update PIN_PREFIXES in desktop/orchestrator/src/hermes/hermes-pinned-tools.ts" >&2
     exit 1
 fi
 echo "[smoke] PASS: all core pins match the bundle's MCP naming convention"

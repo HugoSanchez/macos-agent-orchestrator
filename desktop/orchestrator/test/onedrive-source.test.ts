@@ -1,11 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { IngestionBridge } from '../src/http/ingestion-source.ts';
+import type { IngestionBridge } from '../src/memory/ingestion/ingestion-source.ts';
 import {
   fetchOneDriveBytes,
-  isOneDriveIngestionEnabled,
   OneDriveSource,
   type OneDriveCursorV1,
-} from '../src/http/onedrive-source.ts';
+} from '../src/memory/ingestion/sources/onedrive-source.ts';
 
 interface Call {
   toolSlug: string;
@@ -88,7 +87,7 @@ function parsed(resultCursor: string): OneDriveCursorV1 {
 }
 
 describe('OneDriveSource', () => {
-  it('seeds a bounded 30-day cursor and is release-gated by default', () => {
+  it('seeds a bounded 30-day cursor', () => {
     const adapter = source(fakeBridge().bridge);
     const seeded = parsed(adapter.seedCursor(NOW, adapter.seedLookbackMs!));
 
@@ -103,8 +102,6 @@ describe('OneDriveSource', () => {
       consumedPageIds: [],
     });
     expect(adapter.maxItemsPerBatch).toBe(5);
-    expect(isOneDriveIngestionEnabled({})).toBe(false);
-    expect(isOneDriveIngestionEnabled({ VERSO_ONEDRIVE_INGESTION_ENABLED: ' TRUE ' })).toBe(true);
   });
 
   it('rejects malformed, oversized, and inconsistent cursors', async () => {

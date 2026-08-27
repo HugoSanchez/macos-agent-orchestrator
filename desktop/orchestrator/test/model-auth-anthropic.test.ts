@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { AnthropicAuthService, AnthropicAuthError, readAnthropicKeyFromEnvFile } from '../src/http/model-auth.ts';
-import type { HermesSupervisor } from '../src/http/hermes-supervisor.ts';
+import { AnthropicAuthService, AnthropicAuthError, readAnthropicKeyFromEnvFile } from '../src/models/model-auth.ts';
+import type { HermesSupervisor } from '../src/hermes/hermes-supervisor.ts';
 
 /**
  * The service shells into the bundled Hermes python to persist the key.

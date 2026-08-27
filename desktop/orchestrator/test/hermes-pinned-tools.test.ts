@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { computePinnedToolNames, findInertCorePins } from '../src/http/hermes-pinned-tools.ts';
+import { computePinnedToolNames, findInertCorePins } from '../src/hermes/hermes-pinned-tools.ts';
 
 // Every pin is emitted in both Hermes wire forms: ≤0.18 `mcp_verso_<tool>`
 // and 0.19+ `mcp__verso__<tool>`.

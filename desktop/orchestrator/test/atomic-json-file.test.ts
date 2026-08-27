@@ -10,7 +10,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { Worker } from 'node:worker_threads';
 import { describe, expect, it } from 'vitest';
-import { readJsonFileOr, writeJsonFileAtomic } from '../src/http/atomic-json-file.ts';
+import { readJsonFileOr, writeJsonFileAtomic } from '../src/shared/atomic-json-file.ts';
 
 describe('atomic JSON files', () => {
   it('returns a fresh fallback for missing, corrupt, and rejected documents', () => {
@@ -69,7 +69,7 @@ describe('atomic JSON files', () => {
     const tempDir = mkdtempSync(path.join(os.tmpdir(), 'verso-atomic-json-'));
     const filePath = path.join(tempDir, 'state.json');
     const workerPath = path.join(tempDir, 'writer.mjs');
-    const moduleUrl = new URL('../src/http/atomic-json-file.ts', import.meta.url).href;
+    const moduleUrl = new URL('../src/shared/atomic-json-file.ts', import.meta.url).href;
     writeFileSync(workerPath, [
       "import { workerData } from 'node:worker_threads';",
       'const { writeJsonFileAtomic } = await import(workerData.moduleUrl);',

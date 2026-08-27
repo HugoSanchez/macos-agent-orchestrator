@@ -11,7 +11,7 @@ import {
   type ConnectionRecord,
   type ConnectionRequestRecord,
   type ConnectionRequestStatus,
-} from '../http/connections-store.ts';
+} from '../connections/connections-store.ts';
 
 export interface ConnectionRequestView {
   id: string;

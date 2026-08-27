@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyMemorySoulSection } from '../src/http/memory-soul.ts';
+import { applyMemorySoulSection } from '../src/memory/memory-soul.ts';
 import { ManagedBackendClient } from '../src/integrations/managed-backend-client.ts';
 import {
   ComposioBridgeHttpError,

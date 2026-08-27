@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import os from 'node:os';
 import path from 'node:path';
 import YAML from 'yaml';
-import { HermesSupervisor } from '../src/http/hermes-supervisor.ts';
+import { HermesSupervisor } from '../src/hermes/hermes-supervisor.ts';
 
 /**
  * Verifies that HermesSupervisor's managed-mode seeding preserves Hermes'
