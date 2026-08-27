@@ -3,6 +3,15 @@
     <channel>
         <title>verso</title>
         <item>
+            <title>1.0.23</title>
+            <pubDate>Thu, 27 Aug 2026 15:29:31 +0200</pubDate>
+            <sparkle:version>24</sparkle:version>
+            <sparkle:shortVersionString>1.0.23</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <enclosure url="https://github.com/HugoSanchez/macos-agent-orchestrator/releases/download/v1.0.23/verso-1.0.23.dmg" length="383969069" type="application/octet-stream" sparkle:edSignature="bGX4SI9LD+/tI17N3Pk26dCF8hVVlXfRjgGOYDEr66QYdf6RraIzcbdRheXoG2FiynP09ybwgvcxqiA+uQuFDA=="/>
+        </item>
+        <item>
             <title>1.0.22</title>
             <pubDate>Wed, 26 Aug 2026 17:59:52 +0200</pubDate>
             <sparkle:version>23</sparkle:version>
