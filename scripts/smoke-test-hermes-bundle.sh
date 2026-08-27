@@ -77,10 +77,12 @@ GATEWAY_PID=$!
 
 SMOKE_PORT="${PORT}" SMOKE_API_KEY="${API_KEY}" SMOKE_PID="${GATEWAY_PID}"
 SMOKE_LOG="${LOG_FILE}" SMOKE_HOME="${HOME_DIR}" SMOKE_TMP="${HOME_DIR}"
+SMOKE_PYTHON="${PYTHON_BIN}" SMOKE_PYTHONPATH="${SITE_PACKAGES}"
 smoke_wait_for_gateway 90
 echo "[smoke] gateway ready; sending streaming /v1/responses request"
 
 smoke_assert_streaming_responses "smoke-test-1"
+smoke_assert_runtime_capabilities
 smoke_assert_mcp_oauth_routes
 
 # ── Pin-liveness contract ────────────────────────────────────────────────
