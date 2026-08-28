@@ -1,5 +1,5 @@
 # smoke-gateway-checks.sh — shared assertions for the Hermes gateway smoke
-# harnesses: scripts/smoke-test-hermes-bundle.sh (shipped bundle) and the
+# harnesses: scripts/qa/smoke-hermes-bundle.sh (shipped bundle) and the
 # hermes-runtime-smoke job in .github/workflows/ci.yml (pinned ref). Both
 # apply the same runtime patches, so they must assert the same contract —
 # this file is that contract, in one place.
@@ -74,6 +74,94 @@ smoke_assert_streaming_responses() {  # $1: conversation id
     terminal="$(grep -Eo "^event: response\.(completed|failed)" "${response_file}" | tail -1)"
     echo "[smoke] PASS: HTTP 200, SSE stream terminated with ${terminal#event: }"
     echo "[smoke] (response.failed is expected without model credentials — the handler is healthy either way)"
+}
+
+# Verso is self-contained and cannot lazy-install missing pieces after release.
+# Keep this small list as the product's bundle contract: every API-server tool
+# must register, and credential-free baseline capabilities must be advertised
+# from a virgin home. Provider-specific tools may remain gated until configured.
+smoke_assert_runtime_capabilities() {
+    local python_bin="${SMOKE_PYTHON:-python3}"
+    local python_path="${SMOKE_PYTHONPATH:-}"
+    echo "[smoke] checking bundled runtime capability contract"
+
+    if ! HERMES_HOME="${SMOKE_HOME}" PYTHONPATH="${python_path}" "${python_bin}" -m pip check; then
+        smoke_fail "bundled Python dependency graph is inconsistent"
+        return 1
+    fi
+
+    if ! HERMES_HOME="${SMOKE_HOME}" PYTHONPATH="${python_path}" "${python_bin}" - <<'PYEOF'
+import importlib.util
+
+import model_tools  # noqa: F401 — discovers built-in tools and plugins
+from agent.web_search_registry import get_active_search_provider, get_provider
+from toolsets import resolve_toolset
+from tools import web_tools
+from tools.registry import registry
+
+# Verso-owned manifest. This intentionally does not include every optional
+# Hermes provider dependency; it covers the complete tool surface Verso ships
+# plus the credential-free capabilities a fresh install promises.
+required_imports = {"ddgs"}
+required_registered_tools = {
+    "web_search", "web_extract",
+    "terminal", "process",
+    "read_file", "write_file", "patch", "search_files",
+    "vision_analyze", "image_generate",
+    "skills_list", "skill_view", "skill_manage",
+    "browser_navigate", "browser_snapshot", "browser_click",
+    "browser_type", "browser_scroll", "browser_back", "browser_press",
+    "browser_get_images", "browser_vision", "browser_console",
+    "browser_cdp", "browser_dialog",
+    "todo", "memory", "session_search",
+    "execute_code", "delegate_task", "cronjob",
+    "ha_list_entities", "ha_get_state", "ha_list_services", "ha_call_service",
+}
+required_available_tools = {
+    "web_search", "web_extract",
+    "terminal", "process",
+    "read_file", "write_file", "patch", "search_files",
+    "skills_list", "skill_view", "skill_manage",
+    "todo", "memory", "session_search",
+    "execute_code", "delegate_task",
+}
+
+missing_imports = sorted(name for name in required_imports if importlib.util.find_spec(name) is None)
+assert not missing_imports, f"missing required Python imports: {missing_imports}"
+
+declared_api_tools = set(resolve_toolset("hermes-api-server"))
+assert required_registered_tools == declared_api_tools, (
+    "Hermes API-server toolset changed; review and update the Verso bundle contract: "
+    f"added={sorted(declared_api_tools - required_registered_tools)}, "
+    f"removed={sorted(required_registered_tools - declared_api_tools)}"
+)
+
+registered = set(registry.get_all_tool_names())
+missing_registered = sorted(required_registered_tools - registered)
+assert not missing_registered, f"required tools did not register: {missing_registered}"
+
+available = {
+    definition["function"]["name"]
+    for definition in registry.get_definitions(required_available_tools, quiet=True)
+}
+missing_available = sorted(required_available_tools - available)
+assert not missing_available, f"required baseline tools are unavailable: {missing_available}"
+
+web_tools._ensure_web_plugins_loaded()
+provider = get_active_search_provider()
+ddgs_provider = get_provider("ddgs")
+
+assert ddgs_provider is not None, "DDGS provider is not registered"
+assert ddgs_provider.is_available(), "DDGS provider is not available"
+assert provider is not None, "no active web-search provider"
+assert web_tools.check_web_api_key(), "web_search availability check returned false"
+PYEOF
+    then
+        smoke_fail "bundled runtime capability contract failed"
+        return 1
+    fi
+
+    echo "[smoke] PASS: dependencies, registered tools, and baseline capabilities are complete"
 }
 
 # MCP OAuth routes added by verso-gateway-mcp-oauth.patch. A mis-anchored or

@@ -98,7 +98,7 @@ tail -n 200 "$HOME/Library/Logs/verso/sidecar.log"
 If the embedded chat interface looks stale after a UI change, rebuild it:
 
 ```sh
-./scripts/build-chat-ui.sh
+./scripts/build/build-chat-ui.sh
 ```
 
 ## Development
@@ -129,7 +129,7 @@ Official builds use a pinned, bundled Hermes runtime. Rebuild it only when you
 change the runtime or need to reproduce a release build:
 
 ```sh
-./scripts/build-runtime-bundles.sh
+./scripts/build/build-runtime-bundles.sh
 ```
 
 Release and notarization instructions are in

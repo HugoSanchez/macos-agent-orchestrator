@@ -6,8 +6,8 @@ middleware: Hermes owns `API_SERVER_KEY`; Verso only launches it and forwards
 that same runtime key to the local client.
 
 The authoritative commit, dependency pins, and ordered patch inventory live in
-[`scripts/runtime-config.sh`](../../../scripts/runtime-config.sh). Both the
-release builder and CI call `scripts/apply-hermes-patches.sh`, which refuses to
+[`scripts/lib/runtime-config.sh`](../../../scripts/lib/runtime-config.sh). Both the
+release builder and CI call `scripts/build/apply-hermes-patches.sh`, which refuses to
 run when an unlisted patch is present. After applying the set, CI boots the
 gateway and exercises streaming plus the MCP OAuth routes.
 
@@ -29,7 +29,10 @@ gateway and exercises streaming plus the MCP OAuth routes.
    for Verso's general personal-assistant surface.
 7. `verso-web-routing.patch` — keeps read-only extraction available without
    provider credentials, routes known public URLs away from browser automation,
-   and makes browser-driving opt-in for cron jobs.
+   and makes browser-driving opt-in for cron jobs. Verso also bundles the
+   optional DDGS dependency. The shared runtime smoke check treats the full
+   API-server tool surface and credential-free baseline as a bundle contract,
+   so incomplete self-contained Release builds fail before packaging.
 8. `verso-request-overrides.patch` — supports per-request model and reasoning
    effort selected in the chat UI. It depends on patch 1.
 9. `verso-tool-search-pinned.patch` — keeps essential tools visible when
@@ -41,7 +44,7 @@ skips it for release `site-packages` trees because wheels do not ship `tests/`.
 
 ## Updating Hermes
 
-1. Change `HERMES_REF` in `scripts/runtime-config.sh`.
+1. Change `HERMES_REF` in `scripts/lib/runtime-config.sh`.
 2. Rebase every patch against that exact commit; remove patches whose behavior
    has landed upstream.
 3. Run the Hermes runtime-smoke CI job or build the runtime bundle locally.

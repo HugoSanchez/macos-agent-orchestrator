@@ -140,7 +140,7 @@ EOF
     exit 1
 fi
 
-"${WORKSPACE_PATH}/scripts/conductor-setup.sh"
+"${WORKSPACE_PATH}/scripts/conductor/setup.sh"
 
 xcodebuild \
     -project "${WORKSPACE_PATH}/verso.xcodeproj" \

@@ -3,7 +3,7 @@
 # select managed explicitly. This does not launch the app or contact services.
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "${REPO_ROOT}"
 
 export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
@@ -34,9 +34,9 @@ if [ "${managed_mode}" != "managed" ]; then
     exit 1
 fi
 
-grep -q 'VERSO_RUN_PROFILE=local ./scripts/conductor-run-verso.sh' .conductor/settings.toml \
+grep -q 'VERSO_RUN_PROFILE=local ./scripts/conductor/run-verso.sh' .conductor/settings.toml \
     || { echo 'runtime-profiles: shared Conductor action is not local' >&2; exit 1; }
-grep -q 'VERSO_DEFAULT_RUNTIME_MODE=managed' scripts/build-managed-release.sh \
+grep -q 'VERSO_DEFAULT_RUNTIME_MODE=managed' scripts/release/build-managed.sh \
     || { echo 'runtime-profiles: managed release wrapper is not explicit' >&2; exit 1; }
 
 echo "runtime-profiles: passed"

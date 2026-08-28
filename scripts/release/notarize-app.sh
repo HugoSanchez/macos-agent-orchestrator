@@ -7,9 +7,9 @@
 # does not build — it just notarizes what's already on disk.
 #
 # Usage:
-#   ./scripts/notarize-app.sh [/path/to/verso.app]
+#   ./scripts/release/notarize-app.sh [/path/to/verso.app]
 #
-# If no path is given we use the standard Xcode Release output path.
+# If no path is given we use the release pipeline's canonical output path.
 #
 # One-time setup before this script will work:
 #   1. Generate an app-specific password at https://appleid.apple.com → Sign-In
@@ -31,14 +31,16 @@
 
 set -euo pipefail
 
-DEFAULT_APP="${HOME}/Library/Developer/Xcode/DerivedData/verso-atniuskgwblnkdhajoplsblizihs/Build/Products/Release/verso.app"
-APP_PATH="${1:-${DEFAULT_APP}}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=../lib/release-paths.sh
+source "${SCRIPT_DIR}/../lib/release-paths.sh"
+APP_PATH="${1:-${VERSO_RELEASE_APP}}"
 PROFILE="${VERSO_NOTARY_PROFILE:-Verso}"
 
 if [ ! -d "${APP_PATH}" ]; then
     echo "error: app bundle not found at ${APP_PATH}" >&2
     echo "       hint: build the Release configuration first:" >&2
-    echo "         ./scripts/build-managed-release.sh" >&2
+    echo "         ./scripts/release/build-managed.sh" >&2
     exit 1
 fi
 
@@ -53,8 +55,8 @@ fi
 # We re-sign here, deepest-first, then re-seal each containing bundle so
 # CodeResources manifests reflect the new inner signatures. Finally we
 # re-sign the outer .app because the framework's signature changed.
-IDENTITY="Developer ID Application: Hugo Sanchez (2T2JL5F698)"
-ENTITLEMENTS="$(cd "$(dirname "$0")/.." && pwd)/desktop/macos/verso.entitlements"
+IDENTITY="${VERSO_CODESIGN_IDENTITY:-Developer ID Application: Hugo Sanchez (2T2JL5F698)}"
+ENTITLEMENTS="${VERSO_RELEASE_ROOT}/desktop/macos/verso.entitlements"
 SPARKLE="${APP_PATH}/Contents/Frameworks/Sparkle.framework"
 
 if [ -d "${SPARKLE}" ]; then

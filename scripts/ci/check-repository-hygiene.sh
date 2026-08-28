@@ -4,7 +4,7 @@
 # time keeps the public Git history small and safe.
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$REPO_ROOT"
 
 MAX_TRACKED_BYTES=$((5 * 1024 * 1024))

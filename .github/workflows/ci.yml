@@ -13,9 +13,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Check tracked repository contents
-        run: bash scripts/check-repository-hygiene.sh
+        run: bash scripts/ci/check-repository-hygiene.sh
       - name: Check license metadata and notices
-        run: bash scripts/check-licensing.sh
+        run: bash scripts/ci/check-licensing.sh
 
   secret-scan:
     name: Secret scan
@@ -40,7 +40,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Check color literals live in the design tokens / palette
-        run: bash scripts/check-style-tokens.sh
+        run: bash scripts/ci/check-style-tokens.sh
 
   orchestrator-tests:
     name: Orchestrator tests + typecheck
@@ -105,7 +105,7 @@ jobs:
         working-directory: desktop/chat-ui
         run: npm run typecheck
       - name: Build embedded WebView assets
-        run: scripts/build-chat-ui.sh
+        run: scripts/build/build-chat-ui.sh
       - name: Verify embedded WebView assets are current
         run: git diff --exit-code -- desktop/macos/chat-ui
 
@@ -132,11 +132,11 @@ jobs:
           -derivedDataPath "$RUNNER_TEMP/verso-derived-data"
           CODE_SIGNING_ALLOWED=NO
       - name: Verify source and managed runtime profiles
-        run: scripts/check-runtime-profiles.sh
+        run: scripts/ci/check-runtime-profiles.sh
 
   # Boots Hermes at the pinned ref with all Verso runtime patches applied and
   # runs the shared assertions from scripts/lib/smoke-gateway-checks.sh — the
-  # same checks scripts/smoke-test-hermes-bundle.sh runs against the macOS
+  # same checks scripts/qa/smoke-hermes-bundle.sh runs against the macOS
   # bundle, minus the bundled interpreter. Catches the failure class of 1.0.15:
   # a regenerated patch that applies cleanly and byte-compiles but lands on
   # the wrong call site and crashes every chat request at runtime.
@@ -154,7 +154,7 @@ jobs:
       - name: Read shared Hermes runtime configuration
         id: pin
         run: |
-          source scripts/runtime-config.sh
+          source scripts/lib/runtime-config.sh
           printf 'ref=%s\n' "$HERMES_REF" >> "$GITHUB_OUTPUT"
           printf 'repo=%s\n' "$HERMES_REPO" >> "$GITHUB_OUTPUT"
           printf 'extras=%s\n' "$HERMES_EXTRAS" >> "$GITHUB_OUTPUT"
@@ -170,7 +170,7 @@ jobs:
           git checkout -q FETCH_HEAD
 
       - name: Apply Verso runtime patches (build order)
-        run: scripts/apply-hermes-patches.sh hermes-src
+        run: scripts/build/apply-hermes-patches.sh hermes-src
 
       - name: Install patched Hermes
         run: |
@@ -194,6 +194,8 @@ jobs:
           source scripts/lib/smoke-gateway-checks.sh
           SMOKE_PORT=18977 SMOKE_API_KEY="$API_SERVER_KEY" SMOKE_PID="$GW"
           SMOKE_LOG="$RUNNER_TEMP/gateway.log" SMOKE_HOME="$HERMES_HOME" SMOKE_TMP="$RUNNER_TEMP"
+          SMOKE_PYTHON=python SMOKE_PYTHONPATH=""
           smoke_wait_for_gateway 120
           smoke_assert_streaming_responses "ci-smoke-1"
+          smoke_assert_runtime_capabilities
           smoke_assert_mcp_oauth_routes

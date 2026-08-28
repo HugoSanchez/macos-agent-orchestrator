@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
 #
-# publish-release.sh
-# ──────────────────
-# Build (or refresh) the signed appcast.xml that Sparkle reads to decide
-# whether a Verso install is out of date. Run AFTER make-dmg.sh has
-# produced a new DMG in ./dist/.
+# generate-appcast.sh
+# ───────────────────
+# Build the signed appcast.xml that Sparkle reads for updates. Run after
+# make-dmg.sh has produced a new DMG in ./dist/.
 #
 # Sparkle's `generate_appcast` tool walks a directory of DMGs, signs each
 # one with the EdDSA private key, and emits/updates appcast.xml so it
@@ -21,7 +20,7 @@
 # Usage:
 #   1. Open 1Password, copy the Verso Sparkle EdDSA private key
 #   2. pbpaste > /tmp/verso-edkey.txt
-#   3. ./scripts/publish-release.sh
+#   3. ./scripts/release/generate-appcast.sh
 #   4. The script shreds /tmp/verso-edkey.txt when done
 #
 # Output:
@@ -38,8 +37,9 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-DIST_DIR="${REPO_ROOT}/dist"
+# shellcheck source=../lib/release-paths.sh
+source "${SCRIPT_DIR}/../lib/release-paths.sh"
+DIST_DIR="${VERSO_RELEASE_DIST}"
 
 KEY_FILE="${VERSO_SPARKLE_KEY_FILE:-/tmp/verso-edkey.txt}"
 URL_PREFIX="${VERSO_RELEASE_URL_PREFIX:-https://github.com/HugoSanchez/macos-agent-orchestrator/releases/download/}"
@@ -47,7 +47,7 @@ INCLUDE_DELTAS="${VERSO_APPCAST_INCLUDE_DELTAS:-0}"
 
 if [ ! -d "${DIST_DIR}" ] || ! ls "${DIST_DIR}"/verso-*.dmg >/dev/null 2>&1; then
     echo "error: no DMGs found in ${DIST_DIR}" >&2
-    echo "       run ./scripts/make-dmg.sh first" >&2
+    echo "       run ./scripts/release/make-dmg.sh first" >&2
     exit 1
 fi
 
@@ -59,43 +59,28 @@ if [ ! -s "${KEY_FILE}" ]; then
     exit 1
 fi
 
-# Find the generate_appcast tool. It ships with Sparkle via SPM; the
-# DerivedData path encodes Verso's project hash so it's stable per-checkout.
-GENERATE_APPCAST="$(find "${HOME}/Library/Developer/Xcode/DerivedData" \
+# Find the generate_appcast tool downloaded by the canonical release build.
+# Restricting this search prevents a different checkout's Sparkle binary from
+# being selected just because it happened to be returned first by find(1).
+GENERATE_APPCAST="$(find "${VERSO_RELEASE_DERIVED_DATA}" \
     -name generate_appcast -type f -not -path '*old_dsa*' 2>/dev/null | head -1)"
 
 if [ -z "${GENERATE_APPCAST}" ] || [ ! -x "${GENERATE_APPCAST}" ]; then
-    echo "error: generate_appcast not found in DerivedData" >&2
-    echo "       open verso.xcodeproj in Xcode at least once so SPM downloads Sparkle's tools" >&2
+    echo "error: generate_appcast not found under ${VERSO_RELEASE_DERIVED_DATA}" >&2
+    echo "       run ./scripts/release/build-managed.sh so SPM downloads Sparkle's tools" >&2
     exit 1
 fi
 
 # Shred the key file on exit no matter what.
 trap 'if [ -f "${KEY_FILE}" ]; then rm -P "${KEY_FILE}" 2>/dev/null || rm -f "${KEY_FILE}"; fi' EXIT
 
-echo "[publish] using generate_appcast at ${GENERATE_APPCAST}"
-echo "[publish] signing DMGs in ${DIST_DIR}"
-echo "[publish] release URL prefix: ${URL_PREFIX}"
-echo "[publish] include delta updates: ${INCLUDE_DELTAS}"
+echo "[appcast] using generate_appcast at ${GENERATE_APPCAST}"
+echo "[appcast] signing DMGs in ${DIST_DIR}"
+echo "[appcast] release URL prefix: ${URL_PREFIX}"
+echo "[appcast] include delta updates: ${INCLUDE_DELTAS}"
 
-# generate_appcast scans the directory, emits appcast.xml. --download-url-prefix
-# is appended to each DMG's filename to produce the <enclosure url> entry.
-# We append the GitHub release tag (vX.Y) to the prefix per-DMG via the
-# stub trick: pass prefix as-is, then post-process to insert the tag.
-#
-# Actually generate_appcast 2.x has --link <url> for the per-channel link
-# but no per-DMG tag interpolation. The simplest fix is to use one release
-# tag per DMG version: the convention `vX.Y/verso-X.Y.dmg` works because
-# we pass prefix=https://.../releases/download/ and generate_appcast appends
-# `verso-X.Y.dmg` → final URL becomes
-# https://.../releases/download/verso-X.Y.dmg — which is WRONG (missing the
-# tag).
-#
-# Workaround: structure the GitHub release so the asset is uploaded to a
-# tag whose name matches the bare DMG filename ("verso-1.0.dmg" as the
-# tag). Ugly. Alternative: post-process the generated XML.
-#
-# Going with post-process: cheaper than fighting Sparkle's URL model.
+# Sparkle appends each artifact filename to the prefix. GitHub also needs a
+# per-version tag in the URL, which we insert below after generation.
 
 "${GENERATE_APPCAST}" \
     --ed-key-file "${KEY_FILE}" \
@@ -144,7 +129,7 @@ if sys.argv[3] != "1":
 open(path, 'w').write(fixed)
 PY
 
-echo "[publish] appcast written to ${APPCAST}"
+echo "[appcast] appcast written to ${APPCAST}"
 echo ""
 echo "Next steps:"
 echo "  1. Create a GitHub release: gh release create v<version> dist/verso-<version>.dmg"

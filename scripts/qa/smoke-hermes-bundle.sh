@@ -18,12 +18,12 @@
 # before the stream starts.
 #
 # Run after build-runtime-bundles.sh, before archiving a Release build:
-#   ./scripts/build-runtime-bundles.sh && ./scripts/smoke-test-hermes-bundle.sh
+#   ./scripts/build/build-runtime-bundles.sh && ./scripts/qa/smoke-hermes-bundle.sh
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 BUNDLE_DIR="${REPO_ROOT}/desktop/runtime-bundles"
 
 ARCH="arm64"
@@ -34,7 +34,7 @@ DEFAULTS_DIR="${BUNDLE_DIR}/hermes-defaults"
 
 for path in "${PYTHON_BIN}" "${SITE_PACKAGES}" "${HERMES_SCRIPT}" "${DEFAULTS_DIR}/config.yaml"; do
     if [ ! -e "${path}" ]; then
-        echo "[smoke] ERROR: missing ${path} — run ./scripts/build-runtime-bundles.sh first" >&2
+        echo "[smoke] ERROR: missing ${path} — run ./scripts/build/build-runtime-bundles.sh first" >&2
         exit 1
     fi
 done
@@ -45,8 +45,8 @@ HOME_DIR="$(mktemp -d /tmp/verso-smoke-hermes-home.XXXXXX)"
 LOG_FILE="${HOME_DIR}/smoke-gateway.log"
 GATEWAY_PID=""
 
-# shellcheck source=lib/smoke-gateway-checks.sh
-source "${SCRIPT_DIR}/lib/smoke-gateway-checks.sh"
+# shellcheck source=../lib/smoke-gateway-checks.sh
+source "${REPO_ROOT}/scripts/lib/smoke-gateway-checks.sh"
 
 cleanup() {
     if [ -n "${GATEWAY_PID}" ] && kill -0 "${GATEWAY_PID}" 2>/dev/null; then
@@ -77,10 +77,12 @@ GATEWAY_PID=$!
 
 SMOKE_PORT="${PORT}" SMOKE_API_KEY="${API_KEY}" SMOKE_PID="${GATEWAY_PID}"
 SMOKE_LOG="${LOG_FILE}" SMOKE_HOME="${HOME_DIR}" SMOKE_TMP="${HOME_DIR}"
+SMOKE_PYTHON="${PYTHON_BIN}" SMOKE_PYTHONPATH="${SITE_PACKAGES}"
 smoke_wait_for_gateway 90
 echo "[smoke] gateway ready; sending streaming /v1/responses request"
 
 smoke_assert_streaming_responses "smoke-test-1"
+smoke_assert_runtime_capabilities
 smoke_assert_mcp_oauth_routes
 
 # ── Pin-liveness contract ────────────────────────────────────────────────
@@ -106,7 +108,7 @@ PYEOF
 
 NODE_BIN="${BUNDLE_DIR}/node/bin/node"
 if [ ! -x "${NODE_BIN}" ]; then
-    echo "[smoke] ERROR: missing ${NODE_BIN} — run ./scripts/build-runtime-bundles.sh first" >&2
+    echo "[smoke] ERROR: missing ${NODE_BIN} — run ./scripts/build/build-runtime-bundles.sh first" >&2
     exit 1
 fi
 pinned_names="$("${NODE_BIN}" --experimental-strip-types --no-warnings -e "

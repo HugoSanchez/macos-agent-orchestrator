@@ -2,7 +2,7 @@
 # Keep Verso's declared license and shipped third-party notices from drifting.
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "${REPO_ROOT}"
 
 fail() {
@@ -58,11 +58,11 @@ for notice_file in "${notice_files[@]}"; do
     [ -s "${notice_file}" ] || fail "missing third-party notice: ${notice_file}"
 done
 
-grep -q 'LEGAL_DST=' scripts/copy-runtime-bundles.sh \
+grep -q 'LEGAL_DST=' scripts/build/copy-runtime-bundles.sh \
     || fail "app build does not configure a legal-notices destination"
-grep -q 'Verso-AGPL-3.0-only.txt' scripts/copy-runtime-bundles.sh \
+grep -q 'Verso-AGPL-3.0-only.txt' scripts/build/copy-runtime-bundles.sh \
     || fail "app build does not copy the Verso license"
-grep -q 'node/LICENSE' scripts/copy-runtime-bundles.sh \
+grep -q 'node/LICENSE' scripts/build/copy-runtime-bundles.sh \
     || fail "Release bundle does not require the Node.js license"
 
 echo "licensing: passed"

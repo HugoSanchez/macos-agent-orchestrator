@@ -9,7 +9,11 @@ PYTHON_VERSION="3.11.15"
 HERMES_REPO="https://github.com/NousResearch/hermes-agent.git"
 HERMES_REF="3ef6bbd201263d354fd83ec55b3c306ded2eb72a"
 HERMES_EXTRAS="mcp,cli,cron"
-HERMES_EXTRA_PINS=("aiohttp==3.13.3")
+# aiohttp serves the loopback API gateway. DDGS is Hermes' bundled, no-key
+# search provider; its provider module ships in the base wheel, but the Python
+# dependency is intentionally optional upstream. Verso must include it because
+# Release builds are self-contained and cannot lazy-install packages later.
+HERMES_EXTRA_PINS=("aiohttp==3.13.3" "ddgs==9.14.4")
 
 # Application order is part of the contract: request overrides build on the
 # reasoning callback introduced by the first patch. Every .patch file in the

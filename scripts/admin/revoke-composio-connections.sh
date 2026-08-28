@@ -3,7 +3,7 @@
 # Revoke and delete specific Composio connected accounts.
 #
 # Usage:
-#   COMPOSIO_API_KEY=... ./scripts/revoke-composio-connections.sh ca_abc ca_def
+#   COMPOSIO_API_KEY=... ./scripts/admin/revoke-composio-connections.sh ca_abc ca_def
 #
 # The script first asks Composio to revoke OAuth tokens at the upstream
 # provider, then deletes the connected account record from Composio.
@@ -23,10 +23,10 @@ API_KEY="${COMPOSIO_API_KEY:-}"
 usage() {
     cat >&2 <<'EOF'
 Usage:
-  COMPOSIO_API_KEY=... ./scripts/revoke-composio-connections.sh <connected-account-id> [...]
+  COMPOSIO_API_KEY=... ./scripts/admin/revoke-composio-connections.sh <connected-account-id> [...]
 
 Example:
-  COMPOSIO_API_KEY=ak_... ./scripts/revoke-composio-connections.sh ca_abc123 ca_def456
+  COMPOSIO_API_KEY=ak_... ./scripts/admin/revoke-composio-connections.sh ca_abc123 ca_def456
 
 Notes:
   - Use full connected account IDs from the Composio dashboard.

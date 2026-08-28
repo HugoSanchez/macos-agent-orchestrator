@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
-import styles from './triage-preview.module.css';
+import styles from './landing-page.module.css';
 
 const sessions = [
   ['New chat', '3m', '12 messages'],
@@ -70,7 +70,7 @@ export default function TriagePreviewPage() {
       <nav className={styles.nav}>
         <div className={styles.navInner}>
           <Link href="/" className={styles.brand}>
-            verso.
+            elio.
           </Link>
         </div>
       </nav>
@@ -79,11 +79,9 @@ export default function TriagePreviewPage() {
         <div className={styles.heroInner}>
           <div className={styles.heroTop}>
             <div className={styles.heroText}>
-              <h1>A free, open-source, agent orchestrator for knowledge work.</h1>
+              <h1>A free, open-source, agent orchestrator to get things done.</h1>
               <p>
-                Verso connects to your apps, remembers what&rsquo;s going on around you, and gets
-                shit done &mdash; frontier AI without the setup it usually takes. Built on Hermes.
-                Free to use, yours to inspect.
+                Verso makes it easy to cohordinate AI agents that help you get shit done. Built on Hermes Agent.
               </p>
               <div className={styles.heroActions}>
                 <a className={styles.primaryButton} href={DOWNLOAD_URL} download>

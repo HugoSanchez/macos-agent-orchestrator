@@ -21,11 +21,11 @@
 #      UpdateToastUserDriver.swift are exempt files (documented mode-independent
 #      surfaces) and are not scanned.
 #
-# Run locally:  bash scripts/check-style-tokens.sh
+# Run locally:  bash scripts/ci/check-style-tokens.sh
 set -uo pipefail
 
 # Resolve repo root from this script's location so it runs from anywhere.
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
 
 CHAT_UI="desktop/chat-ui/src"

@@ -7,8 +7,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=runtime-config.sh
-source "${SCRIPT_DIR}/runtime-config.sh"
+# shellcheck source=../lib/runtime-config.sh
+source "${SCRIPT_DIR}/../lib/runtime-config.sh"
 
 WORKSPACE_PATH="${CONDUCTOR_WORKSPACE_PATH:-$(pwd)}"
 ROOT_PATH="${CONDUCTOR_ROOT_PATH:-${WORKSPACE_PATH}}"
@@ -37,7 +37,7 @@ for path in "${required_paths[@]}"; do
   ${path}
 
 Repair from the repository root:
-  ./scripts/build-runtime-bundles.sh
+  ./scripts/build/build-runtime-bundles.sh
 
 This project keeps desktop/runtime-bundles gitignored because it is large.
 Conductor workspaces reuse the validated root-local bundle instead of copying it.
@@ -55,7 +55,7 @@ if [ "${actual_runtime_stamp}" != "${expected_runtime_stamp}" ]; then
 [conductor-setup] ERROR: shared Hermes runtime is stale for this workspace.
 
 Rebuild from this workspace, then run Verso again:
-  ./scripts/build-runtime-bundles.sh
+  ./scripts/build/build-runtime-bundles.sh
 EOF
     exit 1
 fi
@@ -65,10 +65,10 @@ if ! cmp -s "${ROOT_BUNDLE}/site-packages/arm64/.stamp" "${ROOT_BUNDLE}/site-pac
 [conductor-setup] ERROR: runtime bundle smoke marker does not match its stamp.
 
 Repair from the repository root:
-  ./scripts/smoke-test-hermes-bundle.sh
+  ./scripts/qa/smoke-hermes-bundle.sh
 
 If the bundle was intentionally rebuilt, run:
-  ./scripts/build-runtime-bundles.sh
+  ./scripts/build/build-runtime-bundles.sh
 EOF
     exit 1
 fi

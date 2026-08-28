@@ -11,12 +11,12 @@
 #   brew install create-dmg
 #
 # Usage:
-#   ./scripts/make-dmg.sh                       # uses default Release path
-#   ./scripts/make-dmg.sh /path/to/verso.app    # custom path
+#   ./scripts/release/make-dmg.sh                       # uses default Release path
+#   ./scripts/release/make-dmg.sh /path/to/verso.app    # custom path
 #
 # Optional env:
 #   VERSO_NOTARY_PROFILE default: Verso
-#   VERSO_NOTARIZE_DMG   default: 1; set to 0 for local-only unsigned testing
+#   VERSO_NOTARIZE_DMG   default: 1; set to 0 to skip notarizing the DMG
 #
 # Output:
 #   ./dist/verso-<MARKETING_VERSION>.dmg
@@ -26,8 +26,10 @@
 
 set -euo pipefail
 
-DEFAULT_APP="${HOME}/Library/Developer/Xcode/DerivedData/verso-atniuskgwblnkdhajoplsblizihs/Build/Products/Release/verso.app"
-APP_PATH="${1:-${DEFAULT_APP}}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=../lib/release-paths.sh
+source "${SCRIPT_DIR}/../lib/release-paths.sh"
+APP_PATH="${1:-${VERSO_RELEASE_APP}}"
 
 if [ ! -d "${APP_PATH}" ]; then
     echo "error: app bundle not found at ${APP_PATH}" >&2
@@ -54,13 +56,12 @@ fi
 # a friend from downloading a DMG that pops a Gatekeeper warning.
 echo "[make-dmg] verifying notarization staple"
 if ! xcrun stapler validate "${APP_PATH}" >/dev/null 2>&1; then
-    echo "error: ${APP_PATH} is not stapled. Run ./scripts/notarize-app.sh first." >&2
+    echo "error: ${APP_PATH} is not stapled. Run ./scripts/release/notarize-app.sh first." >&2
     exit 1
 fi
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-DIST_DIR="${REPO_ROOT}/dist"
+REPO_ROOT="${VERSO_RELEASE_ROOT}"
+DIST_DIR="${VERSO_RELEASE_DIST}"
 DMG_PATH="${DIST_DIR}/verso-${VERSION}.dmg"
 
 # ── Smoke gate ──────────────────────────────────────────────────────────────
@@ -88,7 +89,7 @@ for marker in \
 done
 if [ "${smoke_ok}" != "true" ]; then
     echo "error: no smoke pass recorded for the Hermes bundle inside this .app." >&2
-    echo "       Run ./scripts/smoke-test-hermes-bundle.sh (it must PASS) and retry." >&2
+    echo "       Run ./scripts/qa/smoke-hermes-bundle.sh (it must PASS) and retry." >&2
     echo "       If the repo bundle was rebuilt since this .app was built, rebuild the" >&2
     echo "       Release .app too — the packaged bytes must be the smoke-tested bytes." >&2
     exit 1
@@ -144,14 +145,14 @@ create-dmg \
 
 # Sign the DMG itself with Developer ID before submitting it for notarization.
 echo "[make-dmg] signing DMG"
-IDENTITY="Developer ID Application: Hugo Sanchez (2T2JL5F698)"
+IDENTITY="${VERSO_CODESIGN_IDENTITY:-Developer ID Application: Hugo Sanchez (2T2JL5F698)}"
 /usr/bin/codesign --force --sign "${IDENTITY}" --timestamp "${DMG_PATH}"
 
 if [ "${VERSO_NOTARIZE_DMG:-1}" = "1" ]; then
     PROFILE="${VERSO_NOTARY_PROFILE:-Verso}"
     if ! xcrun notarytool history --keychain-profile "${PROFILE}" --output-format json >/dev/null 2>&1; then
         echo "error: notarytool profile '${PROFILE}' not found in keychain" >&2
-        echo "       run the one-time setup from scripts/notarize-app.sh" >&2
+        echo "       run the one-time setup from scripts/release/notarize-app.sh" >&2
         exit 1
     fi
 

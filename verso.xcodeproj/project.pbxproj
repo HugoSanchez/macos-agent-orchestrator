@@ -315,7 +315,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "\"$SRCROOT/scripts/build-chat-ui.sh\"\n";
+			shellScript = "\"$SRCROOT/scripts/build/build-chat-ui.sh\"\n";
 		};
 		A100000B0000000000000002 /* Bundle Runtime Components */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -330,7 +330,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "\"$SRCROOT/scripts/copy-runtime-bundles.sh\"\n";
+			shellScript = "\"$SRCROOT/scripts/build/copy-runtime-bundles.sh\"\n";
 		};
 		A100000B0000000000000003 /* Sign Embedded Binaries */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -345,7 +345,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "\"$SRCROOT/scripts/sign-bundle-binaries.sh\"\n";
+			shellScript = "\"$SRCROOT/scripts/build/sign-bundle-binaries.sh\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
