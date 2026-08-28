@@ -1,5 +1,7 @@
 # Xcode
 build/
+!scripts/build/
+!scripts/build/**
 DerivedData*/
 *.profraw
 *.profdata
