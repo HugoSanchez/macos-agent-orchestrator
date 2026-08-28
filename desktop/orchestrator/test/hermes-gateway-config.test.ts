@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { getHermesGatewayConfig } from '../src/http/hermes-supervisor.ts';
+import { getHermesGatewayConfig } from '../src/hermes/hermes-supervisor.ts';
 
 describe('Hermes gateway config', () => {
   const envSnapshot = {

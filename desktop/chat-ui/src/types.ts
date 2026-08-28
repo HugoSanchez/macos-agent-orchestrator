@@ -236,7 +236,7 @@ export const REASONING_EFFORT_LABELS: Record<ReasoningEffort, string> = {
 // that serves them (Codex OAuth vs Anthropic API key). Order defines the
 // click-to-cycle sequence. Sent per message as `model` and applied by the
 // gateway over its config.yaml default (validated server-side too; the
-// orchestrator mirror lives in src/http/model-catalog.ts). The selector
+// orchestrator mirror lives in src/models/model-catalog.ts). The selector
 // only cycles models whose provider is connected.
 export const CODEX_CHAT_MODELS = ['gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini'] as const;
 export const ANTHROPIC_CHAT_MODELS = ['claude-opus-4-8', 'claude-fable-5', 'claude-sonnet-5', 'claude-haiku-4-5'] as const;

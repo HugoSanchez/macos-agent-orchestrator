@@ -3,9 +3,9 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'nod
 import os from 'node:os';
 import path from 'node:path';
 import YAML from 'yaml';
-import { HermesManagedProfile } from '../src/http/hermes-managed-profile.ts';
-import { CustomConnectorsStore } from '../src/http/custom-connectors-store.ts';
-import { ANTHROPIC_CHAT_MODELS, CODEX_CHAT_MODELS } from '../src/http/model-catalog.ts';
+import { HermesManagedProfile } from '../src/hermes/hermes-managed-profile.ts';
+import { CustomConnectorsStore } from '../src/connections/custom-connectors-store.ts';
+import { ANTHROPIC_CHAT_MODELS, CODEX_CHAT_MODELS } from '../src/models/model-catalog.ts';
 
 /**
  * The managed-profile transaction reconciles api_server model_routes with

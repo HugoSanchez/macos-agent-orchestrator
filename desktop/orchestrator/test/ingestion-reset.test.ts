@@ -2,10 +2,10 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { IngestionStore } from '../src/http/ingestion-store.ts';
-import { SourceIngestionScheduler } from '../src/http/source-ingestion.ts';
-import type { IngestionFetchResult, SourceAdapter } from '../src/http/ingestion-source.ts';
-import type { MemoryProvider } from '../src/http/memory-provider.ts';
+import { IngestionStore } from '../src/memory/ingestion/ingestion-store.ts';
+import { SourceIngestionScheduler } from '../src/memory/ingestion/source-ingestion.ts';
+import type { IngestionFetchResult, SourceAdapter } from '../src/memory/ingestion/ingestion-source.ts';
+import type { MemoryProvider } from '../src/memory/memory-provider.ts';
 
 class EmptyAdapter implements SourceAdapter {
   readonly source = 'clickup';

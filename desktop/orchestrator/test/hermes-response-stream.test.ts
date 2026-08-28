@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { ChatAttachment } from '../src/http/attachments.ts';
+import type { ChatAttachment } from '../src/chat/attachments.ts';
 import {
   HermesHttpError,
   buildHermesRequestBody,
@@ -7,8 +7,8 @@ import {
   parseSseFrame,
   shouldRetryWithoutCursor,
   streamHermesConversation,
-} from '../src/http/hermes-response-stream.ts';
-import type { HermesGatewayConfig } from '../src/http/hermes-supervisor.ts';
+} from '../src/hermes/hermes-response-stream.ts';
+import type { HermesGatewayConfig } from '../src/hermes/hermes-supervisor.ts';
 
 const config: HermesGatewayConfig = {
   baseUrl: 'http://hermes.test',

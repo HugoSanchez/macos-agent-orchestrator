@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-const runnerPath = fileURLToPath(new URL('../src/http/hermes-child-runner.mjs', import.meta.url));
+const runnerPath = fileURLToPath(new URL('../src/hermes/hermes-child-runner.mjs', import.meta.url));
 
 describe('Hermes child runner shutdown', () => {
   it('coalesces duplicate shutdown signals and waits for Hermes to exit', async () => {

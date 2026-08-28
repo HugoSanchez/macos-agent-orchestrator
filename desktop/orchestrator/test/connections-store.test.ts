@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { ConnectionsStore, type ConnectionRecord } from '../src/http/connections-store.ts';
+import { ConnectionsStore, type ConnectionRecord } from '../src/connections/connections-store.ts';
 
 function fixtureConnection(overrides: Partial<ConnectionRecord> = {}): ConnectionRecord {
   return {

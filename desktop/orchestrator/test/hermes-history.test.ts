@@ -7,8 +7,8 @@ import {
   mapHermesRowsToChatMessages,
   readHermesSessionModel,
   readHermesSessionModelFromHomes,
-} from '../src/http/hermes-history.ts';
-import type { ChatMessageRecord } from '../src/http/chat-store.ts';
+} from '../src/chat/hermes-history.ts';
+import type { ChatMessageRecord } from '../src/chat/chat-store.ts';
 
 describe('Hermes history mapper', () => {
   const directories: string[] = [];

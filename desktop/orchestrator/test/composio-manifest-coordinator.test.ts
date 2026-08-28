@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, test, vi } from 'vitest';
-import { ComposioManifestCoordinator } from '../src/http/composio-manifest.ts';
+import { ComposioManifestCoordinator } from '../src/connections/composio-manifest.ts';
 
 describe('ComposioManifestCoordinator', () => {
   let tempRoot = '';

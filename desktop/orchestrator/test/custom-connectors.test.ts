@@ -3,17 +3,17 @@ import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync
 import os from 'node:os';
 import path from 'node:path';
 import YAML from 'yaml';
-import { CustomConnectorsStore, sanitizeCustomConnectorSlug } from '../src/http/custom-connectors-store.ts';
-import { CustomConnectorKeychain, type KeychainExec } from '../src/http/keychain.ts';
-import { probeMcpServer } from '../src/http/mcp-probe.ts';
-import { HermesSupervisor } from '../src/http/hermes-supervisor.ts';
-import { countCustomConnectorTools } from '../src/http/hermes-gateway-client.ts';
+import { CustomConnectorsStore, sanitizeCustomConnectorSlug } from '../src/connections/custom-connectors-store.ts';
+import { CustomConnectorKeychain, type KeychainExec } from '../src/connections/keychain.ts';
+import { probeMcpServer } from '../src/connections/mcp-probe.ts';
+import { HermesSupervisor } from '../src/hermes/hermes-supervisor.ts';
+import { countCustomConnectorTools } from '../src/hermes/hermes-gateway-client.ts';
 import {
   CustomConnectorService,
   customConnectorErrorMessage,
   removeHermesOAuthFiles,
   waitForCustomConnectorTools,
-} from '../src/http/custom-connectors.ts';
+} from '../src/connections/custom-connectors.ts';
 
 describe('custom MCP connectors', () => {
   let tempRoot = '';

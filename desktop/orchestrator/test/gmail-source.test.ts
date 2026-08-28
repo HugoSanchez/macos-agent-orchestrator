@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { GmailSource, parseGmailCursor } from '../src/http/gmail-source.ts';
-import type { IngestionBridge } from '../src/http/ingestion-source.ts';
+import { GmailSource, parseGmailCursor } from '../src/memory/ingestion/sources/gmail-source.ts';
+import type { IngestionBridge } from '../src/memory/ingestion/ingestion-source.ts';
 
 interface Call {
   toolSlug: string;

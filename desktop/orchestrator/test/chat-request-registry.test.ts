@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ChatRequestRegistry } from '../src/http/chat-request-registry.ts';
+import { ChatRequestRegistry } from '../src/chat/chat-request-registry.ts';
 
 describe('ChatRequestRegistry', () => {
   it('atomically reserves one request per session while allowing other sessions', () => {

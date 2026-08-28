@@ -1,5 +1,5 @@
 # smoke-gateway-checks.sh — shared assertions for the Hermes gateway smoke
-# harnesses: scripts/smoke-test-hermes-bundle.sh (shipped bundle) and the
+# harnesses: scripts/qa/smoke-hermes-bundle.sh (shipped bundle) and the
 # hermes-runtime-smoke job in .github/workflows/ci.yml (pinned ref). Both
 # apply the same runtime patches, so they must assert the same contract —
 # this file is that contract, in one place.

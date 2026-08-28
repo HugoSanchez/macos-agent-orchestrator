@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { ComposioSlackUserDirectory, isSlackUserId, pickDisplayName } from '../src/http/slack-users.ts';
-import type { IngestionBridge } from '../src/http/ingestion-source.ts';
+import { ComposioSlackUserDirectory, isSlackUserId, pickDisplayName } from '../src/memory/ingestion/sources/slack-users.ts';
+import type { IngestionBridge } from '../src/memory/ingestion/ingestion-source.ts';
 
 type Handler = (slug: string, args: Record<string, unknown>) => { data: unknown; error: string | null; logId: string | null };
 

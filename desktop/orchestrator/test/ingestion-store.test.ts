@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { IngestionStore } from '../src/http/ingestion-store.ts';
+import { IngestionStore } from '../src/memory/ingestion/ingestion-store.ts';
 
 describe('IngestionStore', () => {
   const tempDirs: string[] = [];

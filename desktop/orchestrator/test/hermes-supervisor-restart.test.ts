@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { HermesSupervisor } from '../src/http/hermes-supervisor.ts';
+import { HermesSupervisor } from '../src/hermes/hermes-supervisor.ts';
 
 // Regression coverage for the connector add/remove restart failures:
 //  - concurrent restart() calls used to run two full shutdown+start cycles,

@@ -6,9 +6,9 @@ import { createHash } from 'node:crypto';
 import {
   applyLocalStateIsolation,
   resolveLocalState,
-} from '../src/http/local-state.ts';
-import { ChatStore } from '../src/http/chat-store.ts';
-import { ConnectionsStore } from '../src/http/connections-store.ts';
+} from '../src/app/local-state.ts';
+import { ChatStore } from '../src/chat/chat-store.ts';
+import { ConnectionsStore } from '../src/connections/connections-store.ts';
 import { startServer } from '../src/http/server.ts';
 
 describe('local state isolation', () => {

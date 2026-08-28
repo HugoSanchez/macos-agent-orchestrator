@@ -1,1 +1,1 @@
-export { default } from './triage-preview/page';
+export { default } from './landing-page/page';

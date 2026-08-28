@@ -5,8 +5,8 @@ import {
   parseMeetingList,
   parseMeetingDetails,
   parseTranscript,
-} from '../src/http/granola-source.ts';
-import type { IngestionBridge } from '../src/http/ingestion-source.ts';
+} from '../src/memory/ingestion/sources/granola-source.ts';
+import type { IngestionBridge } from '../src/memory/ingestion/ingestion-source.ts';
 
 interface Call { slug: string; args: Record<string, unknown>; opts?: { recordUsage?: boolean }; }
 

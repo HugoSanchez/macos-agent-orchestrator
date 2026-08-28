@@ -36,7 +36,7 @@ that uses them:
   in the skill directories.
 
 Source and build provenance for the pinned runtimes is recorded in
-`scripts/runtime-config.sh` and `scripts/build-runtime-bundles.sh`.
+`scripts/lib/runtime-config.sh` and `scripts/build/build-runtime-bundles.sh`.
 
 This inventory describes components shipped directly by Verso. Package-manager
 lockfiles contain the complete dependency graph for source builds; each package

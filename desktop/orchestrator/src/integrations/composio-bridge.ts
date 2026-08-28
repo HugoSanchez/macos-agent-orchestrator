@@ -12,7 +12,7 @@ import {
   type ComposioNativeToolManifest,
   type ComposioNativeToolManifestTool,
   type ComposioToolUsageStore,
-} from '../http/composio-tool-usage-store.ts';
+} from '../connections/composio-tool-usage-store.ts';
 
 export interface ComposioBridgeSearchToolView extends RemoteBridgeSearchToolResult {}
 export interface ComposioBridgeToolSchemaView extends RemoteBridgeToolSchemaView {}

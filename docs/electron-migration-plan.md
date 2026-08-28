@@ -189,7 +189,7 @@ Electron-shell decision wrong.
 
 ## Phase 2: small platform-neutral deltas
 
-Extend the existing `desktop/orchestrator/src/http/local-state.ts`; do not build
+Extend the existing `desktop/orchestrator/src/app/local-state.ts`; do not build
 a second path abstraction. Electron main sets `VERSO_LOCAL_STATE_ROOT` from OS
 conventions and keeps Chromium's cache/session data separate from Verso's
 domain data.

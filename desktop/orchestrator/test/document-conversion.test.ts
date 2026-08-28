@@ -5,8 +5,8 @@ import {
   buildDocumentContextBlock,
   convertDocumentToMarkdown,
   describeConversionError,
-} from '../src/http/document-conversion.ts';
-import { AttachmentValidationError } from '../src/http/attachments.ts';
+} from '../src/chat/document-conversion.ts';
+import { AttachmentValidationError } from '../src/chat/attachments.ts';
 import { makeMinimalPdf, makeTextlessPdf } from './fixtures/documents.ts';
 
 describe('document conversion', () => {

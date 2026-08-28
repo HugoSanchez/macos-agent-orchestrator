@@ -4,10 +4,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { draftIdForArgs } from '../src/integrations/composio-bridge.ts';
-import { buildDraftsRoutes } from '../src/http/drafts.ts';
+import { buildDraftsRoutes } from '../src/chat/drafts.ts';
 import { dispatch } from '../src/http/router.ts';
-import { ChatStore, type ChatMessageRecord } from '../src/http/chat-store.ts';
-import { applyDraftResolutions } from '../src/http/draft-resolutions.ts';
+import { ChatStore, type ChatMessageRecord } from '../src/chat/chat-store.ts';
+import { applyDraftResolutions } from '../src/chat/draft-resolutions.ts';
 
 describe('Draft resolutions', () => {
   const tempDirs: string[] = [];
