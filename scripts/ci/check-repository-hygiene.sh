@@ -18,6 +18,11 @@ report_failure() {
 is_generated_path() {
   local path="/$1/"
   case "$path" in
+    /scripts/build/*)
+      return 1
+      ;;
+  esac
+  case "$path" in
     */.next/*|*/node_modules/*|*/dist/*|*/build/*|*/DerivedData*/*|*/.supermemory/*|*/.hermes-dev-home/*|*/desktop/runtime-bundles/*)
       return 0
       ;;
