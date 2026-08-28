@@ -70,7 +70,7 @@ export default function TriagePreviewPage() {
       <nav className={styles.nav}>
         <div className={styles.navInner}>
           <Link href="/" className={styles.brand}>
-            elio.
+            verso.
           </Link>
         </div>
       </nav>
@@ -79,9 +79,9 @@ export default function TriagePreviewPage() {
         <div className={styles.heroInner}>
           <div className={styles.heroTop}>
             <div className={styles.heroText}>
-              <h1>A free, open-source, agent orchestrator to get things done.</h1>
+              <h1>A free, open-source, agent orchestrator that gets things done.</h1>
               <p>
-                Verso makes it easy to cohordinate AI agents that help you get shit done. Built on Hermes Agent.
+                Verso is an easy and intuitive macOS app that makes it trivial for non-technical folks to leverage the frontier of AI to get things done. Free and open-source. Built on Hermes Agent.
               </p>
               <div className={styles.heroActions}>
                 <a className={styles.primaryButton} href={DOWNLOAD_URL} download>
@@ -266,11 +266,6 @@ export default function TriagePreviewPage() {
 
       <footer className={styles.footer}>
         <div className={styles.footerInner}>
-          <p className={styles.footerNote}>
-            <strong>Fair warning</strong> &mdash; Verso is a personal project, not a funded startup.
-            It runs my own day, every day, but it&rsquo;s early: expect rough edges, occasional
-            bugs, and fast-moving changes. When something breaks, open an issue. Or a pull request.
-          </p>
           <div className={styles.footerRow}>
             <div className={styles.brand}>
               verso.
