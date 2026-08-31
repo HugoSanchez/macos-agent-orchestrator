@@ -22,13 +22,11 @@ const appConnections = [
   ['todoist', 'Todoist'],
 ] as const;
 
-const activityRows = [
-  ['slack', 'wide', 'warning'],
-  ['gmail', 'medium', 'danger'],
-  ['notion', 'long', 'info'],
-  ['todoist', 'short', 'success'],
-  ['googlecalendar', 'medium', 'info'],
-  ['googledrive', 'wide', 'success'],
+const demoActivity = [
+  ['slack', 'Read 32 messages in #board-q3', 'success'],
+  ['gmail', 'Found 2 threads — “Board update”', 'success'],
+  ['notion', 'Opened “Q3 board deck — draft”', 'info'],
+  ['googlecalendar', 'Board call — Thursday, 10:00', 'info'],
 ] as const;
 
 const GITHUB_URL = 'https://github.com/HugoSanchez/macos-agent-orchestrator';
@@ -40,7 +38,7 @@ const SHOW_TESTIMONIALS = false;
 const features = [
   {
     title: 'Memory that stays home.',
-    desc: 'Verso keeps a working memory of what’s around you — meetings, threads, documents — in a plain database on your Mac. Context is what makes an assistant useful. Keeping it local is what makes it yours.',
+    desc: 'Verso keeps a working memory of what’s around you — meetings, threads, documents — in a plain database on your Mac so that it has full context of what you are working on.',
     graphic: 'memory',
   },
   {
@@ -133,8 +131,7 @@ export default function TriagePreviewPage() {
 
       <Divider />
 
-      <section className={`${styles.section} ${styles.sectionRoomy} ${styles.hatched}`}>
-        <DiagonalShade />
+      <section className={`${styles.section} ${styles.sectionRoomy}`}>
         <div className={styles.sectionInner}>
           <div className={styles.split}>
             <div>
@@ -204,15 +201,12 @@ export default function TriagePreviewPage() {
               <p className={styles.eyebrow}>Local by default</p>
               <h2>Integrated memory system. Stored on your Mac.</h2>
               <p className={styles.prose}>
-                When you send a request, it goes to the model provider you chose &mdash; that&rsquo;s
-                how frontier models work, and you should know it. Everything else stays home: your
-                conversations and memory live in a local database on your machine, your credentials
-                in the macOS Keychain.
-              </p>
-              <p className={styles.prose}>
-                There is no Verso server, and no way for anyone &mdash; including the person who
+             Everything is stored on your mac locally; every conversation, every session, tool call or context you added. There is no Verso server, and no way for anyone &mdash; including the person who
                 built it &mdash; to see your data. The code is public, so you don&rsquo;t have to
                 take that on faith.
+              </p>
+              <p className={styles.prose}>
+                
               </p>
             </div>
 
@@ -255,13 +249,16 @@ export default function TriagePreviewPage() {
       <Divider />
 
       <section className={styles.cta}>
-        <h2>Try it out.</h2>
-        <h2>It's yours.</h2>
-        <p>One signed download, your own accounts, five minutes.</p>
-        <a className={styles.secondaryButton} href={DOWNLOAD_URL} download>
-          Download for Mac
-          <ArrowRightIcon />
-        </a>
+        <DiagonalShade />
+        <div className={styles.ctaInner}>
+          <h2>Try it out.</h2>
+          <h2>It's yours.</h2>
+          <p>One signed download, your own accounts, five minutes.</p>
+          <a className={styles.secondaryButton} href={DOWNLOAD_URL} download>
+            Download for Mac
+            <ArrowRightIcon />
+          </a>
+        </div>
       </section>
 
       <footer className={styles.footer}>
@@ -566,12 +563,12 @@ function IssueMockup() {
 
           <div className={styles.silhouetteCanvas}>
             <div className={styles.silhouetteThread}>
-              <div className={styles.silhouettePrompt}>
-                <span />
+              <div className={`${styles.silhouettePrompt} ${styles.demoPrompt}`}>
+                <p className={styles.demoPromptText}>Catch me up on the board conversation.</p>
                 <i />
               </div>
 
-              <div className={styles.silhouetteActivity}>
+              <div className={`${styles.silhouetteActivity} ${styles.demoActivityShell}`}>
                 <div className={styles.silhouetteActivityHead}>
                   <div className={styles.silhouetteLogoRow}>
                     {appConnections.slice(0, 5).map(([logo, name]) => (
@@ -582,15 +579,14 @@ function IssueMockup() {
                 </div>
 
                 <div className={styles.silhouetteRows}>
-                  {activityRows.map(([logo, length, tone], index) => (
+                  {demoActivity.map(([logo, label, tone], index) => (
                     <div
-                      className={styles.silhouetteRow}
-                      data-length={length}
-                      data-selected={index === 1 ? 'true' : undefined}
-                      key={`${logo}-${index}`}
+                      className={`${styles.silhouetteRow} ${styles.demoRow}`}
+                      style={{ animationDelay: `${1.7 + index * 0.35}s` }}
+                      key={logo}
                     >
                       <img src={logoUrl(logo)} alt="" aria-hidden="true" />
-                      <span />
+                      <span className={styles.demoRowText}>{label}</span>
                       <em className={styles[tone]} />
                       <i />
                     </div>
@@ -598,9 +594,13 @@ function IssueMockup() {
                 </div>
               </div>
 
-              <div className={styles.silhouetteAnswer}>
-                <span />
-                <span />
+              <div className={`${styles.silhouetteAnswer} ${styles.demoAnswer}`}>
+                <p className={styles.demoAnswerText}>
+                  You&rsquo;re mostly caught up. Ana shared the Q3 numbers yesterday &mdash;
+                  revenue landed 8% above plan &mdash; and the one open question is the hiring
+                  budget. Marc asked everyone to confirm the two new roles before
+                  Thursday&rsquo;s call.
+                </p>
                 <span />
                 <span />
               </div>
