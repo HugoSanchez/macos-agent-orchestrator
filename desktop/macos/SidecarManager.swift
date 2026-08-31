@@ -332,7 +332,8 @@ final class SidecarManager: ObservableObject {
             session.isExpired ? nil : SidecarManagedSessionSeed(
                 token: session.token,
                 expiresAt: session.expiresAt,
-                userId: session.userId
+                userId: session.userId,
+                deviceId: session.deviceId
             )
         }
         let launchEnvironment = SidecarLaunchEnvironment.make(

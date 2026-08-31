@@ -1,13 +1,14 @@
-import { createHash, randomBytes } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import type { BackendConfig } from '../config.ts';
 import type {
   AppUserRecord,
-  AuthSessionRecord,
   AuthStore,
   AuthenticatedContext,
   DeviceRecord,
   EntitlementRecord,
-  PrivyAuthVerifier,
+  VerifiedWorkOSAccessToken,
+  WorkOSAuthenticationResult,
+  WorkOSAuthProvider,
 } from './types.ts';
 
 export class AuthServiceError extends Error {
@@ -22,169 +23,246 @@ export class AuthServiceError extends Error {
   }
 }
 
-export interface ExchangeAuthInput {
-  privyAccessToken: string;
-  deviceLabel: string;
-  platform: string;
-  email?: string | null;
-  displayName?: string | null;
+export interface MagicAuthRequestContext {
+  ipAddress?: string;
+  userAgent?: string;
 }
 
-export interface ExchangeAuthResult {
-  sessionToken: string;
+export interface VerifyMagicCodeInput extends MagicAuthRequestContext {
+  email: string;
+  code: string;
+  deviceLabel: string;
+  platform: string;
+}
+
+export interface RefreshAuthInput extends MagicAuthRequestContext {
+  refreshToken: string;
+  deviceId: string;
+}
+
+export interface AuthResult {
+  accessToken: string;
+  refreshToken: string;
+  tokenClaims: VerifiedWorkOSAccessToken;
   user: AppUserRecord;
   device: DeviceRecord;
-  session: AuthSessionRecord;
   entitlements: EntitlementRecord[];
 }
+
+type AuthIdentityResult = Omit<AuthResult, 'device'>;
 
 export class AuthService {
   private readonly config: BackendConfig;
   private readonly store: AuthStore;
-  private readonly verifier: PrivyAuthVerifier | null;
+  private readonly provider: WorkOSAuthProvider | null;
 
-  constructor(config: BackendConfig, store: AuthStore, verifier: PrivyAuthVerifier | null) {
+  constructor(config: BackendConfig, store: AuthStore, provider: WorkOSAuthProvider | null) {
     this.config = config;
     this.store = store;
-    this.verifier = verifier;
+    this.provider = provider;
   }
 
-  async exchangePrivyAuth(input: ExchangeAuthInput): Promise<ExchangeAuthResult> {
-    if (!this.config.privyConfigured || !this.verifier) {
-      throw new AuthServiceError(503, 'privy_unconfigured', 'Privy is not configured.');
+  async sendMagicCode(email: string, context: MagicAuthRequestContext = {}): Promise<void> {
+    const provider = this.requireProvider();
+    const normalizedEmail = normalizeEmail(email);
+
+    try {
+      await provider.sendMagicCode({ email: normalizedEmail, ...context });
+    } catch (error) {
+      throw mapProviderError(error, 'Unable to send a sign-in code.');
+    }
+  }
+
+  async verifyMagicCode(input: VerifyMagicCodeInput): Promise<AuthResult> {
+    const provider = this.requireProvider();
+    const email = normalizeEmail(input.email);
+
+    let authenticated: WorkOSAuthenticationResult;
+    try {
+      authenticated = await provider.authenticateMagicCode({
+        email,
+        code: input.code.trim(),
+        ipAddress: input.ipAddress,
+        userAgent: input.userAgent,
+      });
+    } catch (error) {
+      throw mapProviderError(error, 'The email or sign-in code is not valid.', true);
     }
 
-    const accessToken = input.privyAccessToken.trim();
-    if (!accessToken) {
-      throw new AuthServiceError(400, 'missing_token', 'Missing Privy access token.');
+    if (normalizeEmail(authenticated.user.email) !== email) {
+      throw new AuthServiceError(502, 'invalid_provider_response', 'WorkOS returned inconsistent user identity.');
     }
 
-    const claims = await this.verifier.verifyAuthToken(accessToken).catch((error: unknown) => {
-      throw new AuthServiceError(401, 'invalid_privy_token', error instanceof Error ? error.message : 'Invalid Privy access token.');
+    const result = await this.finishAuthentication(authenticated);
+    const device = await this.upsertDevice(result.user.id, input.deviceLabel, input.platform);
+    return { ...result, device };
+  }
+
+  async refreshSession(input: RefreshAuthInput): Promise<AuthResult> {
+    const provider = this.requireProvider();
+    let authenticated: WorkOSAuthenticationResult;
+    try {
+      authenticated = await provider.refreshSession({
+        refreshToken: input.refreshToken.trim(),
+        ipAddress: input.ipAddress,
+        userAgent: input.userAgent,
+      });
+    } catch (error) {
+      throw mapProviderError(error, 'The session can no longer be refreshed.', true);
+    }
+
+    const result = await this.finishAuthentication(authenticated);
+    const device = await this.store.getDeviceById(input.deviceId);
+    if (!device || device.userId !== result.user.id) {
+      throw new AuthServiceError(401, 'invalid_device', 'The session is not bound to this device.');
+    }
+
+    const updatedDevice = { ...device, lastSeenAt: new Date().toISOString() };
+    await this.store.updateDevice(updatedDevice);
+    return { ...result, device: updatedDevice };
+  }
+
+  async authenticateAccessToken(accessToken: string, deviceId: string): Promise<AuthenticatedContext> {
+    const provider = this.requireProvider();
+    const token = accessToken.trim();
+    if (!token) {
+      throw new AuthServiceError(401, 'missing_session', 'Missing access token.');
+    }
+
+    let claims: VerifiedWorkOSAccessToken;
+    try {
+      claims = await provider.verifyAccessToken(token);
+    } catch {
+      throw new AuthServiceError(401, 'invalid_session', 'The session is invalid or expired.');
+    }
+
+    const user = await this.store.getUserByWorkOSUserId(claims.userId);
+    if (!user || !user.email) {
+      throw new AuthServiceError(403, 'account_not_registered', 'This account is not registered with Verso.');
+    }
+
+    const device = await this.store.getDeviceById(deviceId);
+    if (!device || device.userId !== user.id) {
+      throw new AuthServiceError(401, 'invalid_device', 'The session is not bound to this device.');
+    }
+
+    const entitlements = await this.store.listEntitlementsByUserId(user.id);
+    return {
+      user,
+      device,
+      session: sessionFromClaims(claims),
+      entitlements,
+    };
+  }
+
+  async revokeSession(accessToken: string): Promise<void> {
+    const provider = this.requireProvider();
+    let claims: VerifiedWorkOSAccessToken;
+    try {
+      claims = await provider.verifyAccessToken(accessToken.trim());
+    } catch {
+      throw new AuthServiceError(401, 'invalid_session', 'The session is invalid or expired.');
+    }
+
+    try {
+      await provider.revokeSession(claims.sessionId);
+    } catch (error) {
+      throw mapProviderError(error, 'Unable to revoke the session.');
+    }
+  }
+
+  private async finishAuthentication(authenticated: WorkOSAuthenticationResult): Promise<AuthIdentityResult> {
+    if (!authenticated.user.emailVerified) {
+      throw new AuthServiceError(401, 'unverified_email', 'WorkOS did not verify this email address.');
+    }
+
+    const verifiedEmail = normalizeEmail(authenticated.user.email);
+
+    let tokenClaims: VerifiedWorkOSAccessToken;
+    try {
+      tokenClaims = await this.requireProvider().verifyAccessToken(authenticated.accessToken);
+    } catch {
+      throw new AuthServiceError(502, 'invalid_provider_response', 'WorkOS returned an invalid access token.');
+    }
+    if (tokenClaims.userId !== authenticated.user.id) {
+      throw new AuthServiceError(502, 'invalid_provider_response', 'WorkOS returned inconsistent user identity.');
+    }
+
+    const user = await this.upsertVerifiedUser({
+      workosUserId: authenticated.user.id,
+      email: verifiedEmail,
+      displayName: normalizeOptionalString(authenticated.user.displayName),
     });
 
-    const now = new Date();
-    const nowIso = now.toISOString();
+    const entitlements = await this.store.listEntitlementsByUserId(user.id);
+    return {
+      accessToken: authenticated.accessToken,
+      refreshToken: authenticated.refreshToken,
+      tokenClaims,
+      user,
+      entitlements,
+    };
+  }
 
-    let user = await this.store.getUserByPrivyUserId(claims.userId);
-    const normalizedEmail = normalizeOptionalString(input.email);
-    const normalizedDisplayName = normalizeOptionalString(input.displayName);
+  private async upsertVerifiedUser(input: {
+    workosUserId: string;
+    email: string;
+    displayName: string | null;
+  }): Promise<AppUserRecord> {
+    const nowIso = new Date().toISOString();
+    let user = await this.store.getUserByWorkOSUserId(input.workosUserId);
+
+    // Matching pre-WorkOS users by their now-verified email preserves their
+    // existing internal user IDs and connected-app data.
+    user ??= await this.store.getUserByEmail(input.email);
+
     if (!user) {
       user = {
         id: createId('usr'),
-        privyUserId: claims.userId,
-        email: normalizedEmail,
-        displayName: normalizedDisplayName,
+        workosUserId: input.workosUserId,
+        email: input.email,
+        displayName: input.displayName,
         createdAt: nowIso,
         updatedAt: nowIso,
       };
       await this.store.insertUser(user);
       await this.ensureDefaultManagedEntitlement(user.id, nowIso);
-    } else {
-      user = {
-        ...user,
-        email: normalizedEmail ?? user.email,
-        displayName: normalizedDisplayName ?? user.displayName,
-        updatedAt: nowIso,
-      };
-      await this.store.updateUser(user);
+      return user;
     }
 
-    let device = await this.store.getDeviceByUserAndPlatform(user.id, input.deviceLabel, input.platform);
+    user = {
+      ...user,
+      workosUserId: input.workosUserId,
+      email: input.email,
+      displayName: input.displayName ?? user.displayName,
+      updatedAt: nowIso,
+    };
+    await this.store.updateUser(user);
+    await this.ensureDefaultManagedEntitlement(user.id, nowIso);
+    return user;
+  }
+
+  private async upsertDevice(userId: string, rawLabel: string, rawPlatform: string): Promise<DeviceRecord> {
+    const deviceLabel = rawLabel.trim();
+    const platform = rawPlatform.trim();
+    const nowIso = new Date().toISOString();
+    let device = await this.store.getDeviceByUserAndPlatform(userId, deviceLabel, platform);
     if (!device) {
       device = {
         id: createId('dev'),
-        userId: user.id,
-        deviceLabel: input.deviceLabel,
-        platform: input.platform,
+        userId,
+        deviceLabel,
+        platform,
         lastSeenAt: nowIso,
         createdAt: nowIso,
       };
       await this.store.insertDevice(device);
-    } else {
-      device = { ...device, lastSeenAt: nowIso };
-      await this.store.updateDevice(device);
+      return device;
     }
 
-    const sessionToken = createSessionToken();
-    const session: AuthSessionRecord = {
-      id: createId('ses'),
-      userId: user.id,
-      deviceId: device.id,
-      tokenHash: hashSessionToken(sessionToken),
-      issuedAt: nowIso,
-      expiresAt: new Date(now.getTime() + this.config.authSessionLifetimeMs).toISOString(),
-      revokedAt: null,
-    };
-    await this.store.insertAuthSession(session);
-
-    const entitlements = await this.store.listEntitlementsByUserId(user.id);
-    return {
-      sessionToken,
-      user,
-      device,
-      session,
-      entitlements,
-    };
-  }
-
-  /**
-   * Revoke the session this bearer token represents. Idempotent: revoking an
-   * already-revoked session is a no-op (still returns success), so a client
-   * that retries on transient errors doesn't blow up. Expired tokens return
-   * 401 since there is nothing meaningful left to revoke.
-   */
-  async revokeAppSession(sessionToken: string): Promise<void> {
-    const normalized = sessionToken.trim();
-    if (!normalized) {
-      throw new AuthServiceError(401, 'missing_session', 'Missing app session token.');
-    }
-    const tokenHash = hashSessionToken(normalized);
-    const session = await this.store.getAuthSessionByTokenHash(tokenHash);
-    if (!session) {
-      throw new AuthServiceError(401, 'invalid_session', 'Invalid app session token.');
-    }
-    if (session.revokedAt) return; // already revoked — idempotent success
-    await this.store.revokeAuthSession(session.id, new Date().toISOString());
-  }
-
-  async authenticateAppSession(sessionToken: string): Promise<AuthenticatedContext> {
-    const normalized = sessionToken.trim();
-    if (!normalized) {
-      throw new AuthServiceError(401, 'missing_session', 'Missing app session token.');
-    }
-
-    const tokenHash = hashSessionToken(normalized);
-    let session = await this.store.getAuthSessionByTokenHash(tokenHash);
-    if (!session || session.revokedAt) {
-      throw new AuthServiceError(401, 'invalid_session', 'Invalid app session token.');
-    }
-
-    const now = Date.now();
-    const expiresAtMs = Date.parse(session.expiresAt);
-    if (expiresAtMs <= now) {
-      throw new AuthServiceError(401, 'expired_session', 'App session has expired.');
-    }
-
-    // Sliding extension: if the session is past the halfway point of its
-    // lifetime, bump it back to a full lifetime from now. Bounded by the
-    // store; happens on a fraction of requests so DB load stays small.
-    const lifetimeMs = this.config.authSessionLifetimeMs;
-    const remainingMs = expiresAtMs - now;
-    if (remainingMs < lifetimeMs / 2) {
-      const newExpiresAt = new Date(now + lifetimeMs).toISOString();
-      await this.store.extendAuthSession(session.id, newExpiresAt);
-      session = { ...session, expiresAt: newExpiresAt };
-    }
-
-    const user = await this.store.getUserById(session.userId);
-    const device = await this.store.getDeviceById(session.deviceId);
-    if (!user || !device) {
-      throw new AuthServiceError(401, 'invalid_session', 'App session is missing user or device context.');
-    }
-
-    const entitlements = await this.store.listEntitlementsByUserId(user.id);
-    return { user, device, session, entitlements };
+    device = { ...device, lastSeenAt: nowIso };
+    await this.store.updateDevice(device);
+    return device;
   }
 
   private async ensureDefaultManagedEntitlement(userId: string, nowIso: string): Promise<void> {
@@ -203,21 +281,46 @@ export class AuthService {
       updatedAt: nowIso,
     });
   }
+
+  private requireProvider(): WorkOSAuthProvider {
+    if (!this.config.workosConfigured || !this.provider) {
+      throw new AuthServiceError(503, 'workos_unconfigured', 'WorkOS is not configured.');
+    }
+    return this.provider;
+  }
+
 }
 
 function createId(prefix: string): string {
   return `${prefix}_${randomBytes(10).toString('hex')}`;
 }
 
-function createSessionToken(): string {
-  return `v1_${randomBytes(32).toString('hex')}`;
+function sessionFromClaims(claims: VerifiedWorkOSAccessToken) {
+  return {
+    id: claims.sessionId,
+    issuedAt: new Date(claims.issuedAt * 1000).toISOString(),
+    expiresAt: new Date(claims.expiration * 1000).toISOString(),
+  };
 }
 
-function hashSessionToken(sessionToken: string): string {
-  return createHash('sha256').update(sessionToken).digest('hex');
+function normalizeEmail(value: string): string {
+  return value.trim().toLowerCase();
 }
 
 function normalizeOptionalString(value: string | null | undefined): string | null {
   const trimmed = value?.trim();
   return trimmed ? trimmed : null;
+}
+
+function mapProviderError(error: unknown, fallbackMessage: string, invalidCredentials = false): AuthServiceError {
+  const status = typeof error === 'object' && error && 'status' in error
+    ? Number(error.status)
+    : 0;
+  if (status === 429) {
+    return new AuthServiceError(429, 'rate_limited', 'Too many authentication attempts. Please try again later.');
+  }
+  if (invalidCredentials && [400, 401, 404, 422].includes(status)) {
+    return new AuthServiceError(401, 'invalid_code', fallbackMessage);
+  }
+  return new AuthServiceError(502, 'auth_provider_error', fallbackMessage);
 }

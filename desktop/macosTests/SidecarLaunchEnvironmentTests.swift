@@ -44,6 +44,7 @@ final class SidecarLaunchEnvironmentTests: XCTestCase {
                 "VERSO_MANAGED_SESSION_TOKEN": "old-token",
                 "VERSO_MANAGED_SESSION_EXPIRES_AT": "old-expiration",
                 "VERSO_MANAGED_USER_ID": "old-user",
+                "VERSO_MANAGED_DEVICE_ID": "old-device",
             ],
             runtimeConfiguration: configuration(mode: .managed),
             homeDirectory: "/Users/tester",
@@ -52,7 +53,8 @@ final class SidecarLaunchEnvironmentTests: XCTestCase {
             managedSession: SidecarManagedSessionSeed(
                 token: "new-token",
                 expiresAt: "2027-01-01T00:00:00Z",
-                userId: "new-user"
+                userId: "new-user",
+                deviceId: "new-device"
             ),
             authToken: "secret",
             parentProcessIdentifier: 1
@@ -61,6 +63,7 @@ final class SidecarLaunchEnvironmentTests: XCTestCase {
         XCTAssertEqual(environment["VERSO_MANAGED_SESSION_TOKEN"], "new-token")
         XCTAssertEqual(environment["VERSO_MANAGED_SESSION_EXPIRES_AT"], "2027-01-01T00:00:00Z")
         XCTAssertEqual(environment["VERSO_MANAGED_USER_ID"], "new-user")
+        XCTAssertEqual(environment["VERSO_MANAGED_DEVICE_ID"], "new-device")
     }
 
     func testMissingSessionRemovesInheritedManagedIdentity() {
@@ -69,6 +72,7 @@ final class SidecarLaunchEnvironmentTests: XCTestCase {
                 "VERSO_MANAGED_SESSION_TOKEN": "stale-token",
                 "VERSO_MANAGED_SESSION_EXPIRES_AT": "stale-expiration",
                 "VERSO_MANAGED_USER_ID": "stale-user",
+                "VERSO_MANAGED_DEVICE_ID": "stale-device",
             ],
             runtimeConfiguration: configuration(mode: .managed),
             homeDirectory: "/Users/tester",
@@ -82,6 +86,7 @@ final class SidecarLaunchEnvironmentTests: XCTestCase {
         XCTAssertNil(environment["VERSO_MANAGED_SESSION_TOKEN"])
         XCTAssertNil(environment["VERSO_MANAGED_SESSION_EXPIRES_AT"])
         XCTAssertNil(environment["VERSO_MANAGED_USER_ID"])
+        XCTAssertNil(environment["VERSO_MANAGED_DEVICE_ID"])
     }
 
     func testLocalModeForcesManagedServicesOffAndScrubsInheritedIdentity() {
@@ -91,6 +96,7 @@ final class SidecarLaunchEnvironmentTests: XCTestCase {
                 "VERSO_MANAGED_SESSION_TOKEN": "stale-token",
                 "VERSO_MANAGED_SESSION_EXPIRES_AT": "stale-expiration",
                 "VERSO_MANAGED_USER_ID": "stale-user",
+                "VERSO_MANAGED_DEVICE_ID": "stale-device",
             ],
             runtimeConfiguration: configuration(mode: .local),
             homeDirectory: "/Users/tester",
@@ -99,7 +105,8 @@ final class SidecarLaunchEnvironmentTests: XCTestCase {
             managedSession: SidecarManagedSessionSeed(
                 token: "new-token",
                 expiresAt: "2027-01-01T00:00:00Z",
-                userId: "new-user"
+                userId: "new-user",
+                deviceId: "new-device"
             ),
             authToken: "secret",
             parentProcessIdentifier: 1
@@ -110,6 +117,7 @@ final class SidecarLaunchEnvironmentTests: XCTestCase {
         XCTAssertNil(environment["VERSO_MANAGED_SESSION_TOKEN"])
         XCTAssertNil(environment["VERSO_MANAGED_SESSION_EXPIRES_AT"])
         XCTAssertNil(environment["VERSO_MANAGED_USER_ID"])
+        XCTAssertNil(environment["VERSO_MANAGED_DEVICE_ID"])
     }
 
     func testBundledLocalRuntimeUsesRuntimeScopedHermesHome() {
@@ -155,7 +163,6 @@ final class SidecarLaunchEnvironmentTests: XCTestCase {
         VersoRuntimeConfiguration(
             mode: mode,
             managedBackendURL: backendURL,
-            managedFrontendURL: "https://frontend.example/login",
             sentryDSN: nil,
             sparkleFeedURL: nil,
             sparklePublicKey: nil

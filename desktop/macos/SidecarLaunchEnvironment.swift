@@ -4,6 +4,7 @@ struct SidecarManagedSessionSeed: Equatable {
     let token: String
     let expiresAt: String
     let userId: String
+    let deviceId: String
 }
 
 struct SidecarLaunchEnvironment {
@@ -53,12 +54,14 @@ struct SidecarLaunchEnvironment {
             environment["VERSO_MANAGED_SESSION_TOKEN"] = managedSession.token
             environment["VERSO_MANAGED_SESSION_EXPIRES_AT"] = managedSession.expiresAt
             environment["VERSO_MANAGED_USER_ID"] = managedSession.userId
+            environment["VERSO_MANAGED_DEVICE_ID"] = managedSession.deviceId
         } else {
             // Never allow a stale shell/Xcode identity to leak into a launch
             // that intentionally has no active managed session.
             environment.removeValue(forKey: "VERSO_MANAGED_SESSION_TOKEN")
             environment.removeValue(forKey: "VERSO_MANAGED_SESSION_EXPIRES_AT")
             environment.removeValue(forKey: "VERSO_MANAGED_USER_ID")
+            environment.removeValue(forKey: "VERSO_MANAGED_DEVICE_ID")
         }
 
         environment["VERSO_SIDECAR_AUTH_SECRET"] = authToken

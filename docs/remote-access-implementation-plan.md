@@ -23,7 +23,7 @@ Let a user pair a phone with Verso on their Mac by scanning a QR code, then list
 - `desktop/orchestrator` already owns product session IDs, a local SQLite chat store, HTTP endpoints for sessions/messages/cancel, and SSE translation for Hermes events.
 - The sidecar already has a strong per-launch loopback token and strict loopback Host/CORS checks. Keep this boundary unchanged.
 - The browser shell already demonstrates that session navigation can be driven without the Swift shell.
-- The managed backend already has Privy exchange, users, devices, long-lived revocable app sessions, and Postgres/Drizzle persistence.
+- The managed backend already has WorkOS magic-code authentication, users, devices, short-lived access tokens with rotating refresh tokens, and Postgres/Drizzle persistence.
 - The macOS app already stores its managed session in Keychain and can supply short-lived runtime data to the sidecar.
 
 ### Hermes

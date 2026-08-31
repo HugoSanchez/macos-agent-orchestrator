@@ -1,6 +1,5 @@
 import type {
   AppUserRecord,
-  AuthSessionRecord,
   AuthStore,
   DeviceRecord,
   EntitlementRecord,
@@ -8,26 +7,39 @@ import type {
 
 export class MemoryAuthStore implements AuthStore {
   private readonly usersById = new Map<string, AppUserRecord>();
-  private readonly usersByPrivyUserId = new Map<string, string>();
+  private readonly usersByWorkOSUserId = new Map<string, string>();
+  private readonly usersByEmail = new Map<string, string>();
   private readonly devicesById = new Map<string, DeviceRecord>();
   private readonly deviceLookup = new Map<string, string>();
-  private readonly sessionsById = new Map<string, AuthSessionRecord>();
-  private readonly sessionsByTokenHash = new Map<string, string>();
   private readonly entitlementsById = new Map<string, EntitlementRecord>();
 
-  async getUserByPrivyUserId(privyUserId: string): Promise<AppUserRecord | null> {
-    const id = this.usersByPrivyUserId.get(privyUserId);
+  async getUserByWorkOSUserId(workosUserId: string): Promise<AppUserRecord | null> {
+    const id = this.usersByWorkOSUserId.get(workosUserId);
+    return id ? this.usersById.get(id) ?? null : null;
+  }
+
+  async getUserByEmail(email: string): Promise<AppUserRecord | null> {
+    const id = this.usersByEmail.get(email.toLowerCase());
     return id ? this.usersById.get(id) ?? null : null;
   }
 
   async insertUser(user: AppUserRecord): Promise<void> {
     this.usersById.set(user.id, { ...user });
-    this.usersByPrivyUserId.set(user.privyUserId, user.id);
+    this.usersByWorkOSUserId.set(user.workosUserId, user.id);
+    if (user.email) this.usersByEmail.set(user.email.toLowerCase(), user.id);
   }
 
   async updateUser(user: AppUserRecord): Promise<void> {
+    const previous = this.usersById.get(user.id);
+    if (previous?.workosUserId !== user.workosUserId) {
+      this.usersByWorkOSUserId.delete(previous?.workosUserId ?? '');
+    }
+    if (previous?.email && previous.email.toLowerCase() !== user.email?.toLowerCase()) {
+      this.usersByEmail.delete(previous.email.toLowerCase());
+    }
     this.usersById.set(user.id, { ...user });
-    this.usersByPrivyUserId.set(user.privyUserId, user.id);
+    this.usersByWorkOSUserId.set(user.workosUserId, user.id);
+    if (user.email) this.usersByEmail.set(user.email.toLowerCase(), user.id);
   }
 
   async getDeviceByUserAndPlatform(userId: string, deviceLabel: string, platform: string): Promise<DeviceRecord | null> {
@@ -43,28 +55,6 @@ export class MemoryAuthStore implements AuthStore {
   async updateDevice(device: DeviceRecord): Promise<void> {
     this.devicesById.set(device.id, { ...device });
     this.deviceLookup.set(deviceKey(device.userId, device.deviceLabel, device.platform), device.id);
-  }
-
-  async insertAuthSession(session: AuthSessionRecord): Promise<void> {
-    this.sessionsById.set(session.id, { ...session });
-    this.sessionsByTokenHash.set(session.tokenHash, session.id);
-  }
-
-  async revokeAuthSession(sessionId: string, revokedAt: string): Promise<void> {
-    const existing = this.sessionsById.get(sessionId);
-    if (!existing) return;
-    this.sessionsById.set(sessionId, { ...existing, revokedAt });
-  }
-
-  async extendAuthSession(sessionId: string, expiresAt: string): Promise<void> {
-    const existing = this.sessionsById.get(sessionId);
-    if (!existing) return;
-    this.sessionsById.set(sessionId, { ...existing, expiresAt });
-  }
-
-  async getAuthSessionByTokenHash(tokenHash: string): Promise<AuthSessionRecord | null> {
-    const id = this.sessionsByTokenHash.get(tokenHash);
-    return id ? this.sessionsById.get(id) ?? null : null;
   }
 
   async getUserById(userId: string): Promise<AppUserRecord | null> {

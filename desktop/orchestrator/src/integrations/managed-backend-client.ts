@@ -4,6 +4,7 @@ export interface ManagedSessionRecord {
   token: string;
   expiresAt: string;
   userId: string;
+  deviceId: string;
   email: string | null;
   displayName: string | null;
   receivedAt: string;
@@ -11,7 +12,7 @@ export interface ManagedSessionRecord {
 
 export interface ManagedBackendUserView {
   id: string;
-  privyUserId: string;
+  workosUserId: string;
   email: string | null;
   displayName: string | null;
 }
@@ -217,6 +218,7 @@ export class ManagedBackendClient {
         headers: {
           Accept: 'application/json',
           Authorization: `Bearer ${stored.token}`,
+          'X-Verso-Device-ID': stored.deviceId,
         },
         // A wedged backend (accepts the socket but never replies) would
         // otherwise hang this request indefinitely — and with it the Settings
@@ -309,6 +311,7 @@ export class ManagedBackendClient {
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${stored.token}`,
+        'X-Verso-Device-ID': stored.deviceId,
       },
       body: JSON.stringify(event),
     })
@@ -334,12 +337,14 @@ function readSessionFromEnv(): ManagedSessionRecord | null {
   const token = process.env.VERSO_MANAGED_SESSION_TOKEN?.trim() || '';
   const expiresAt = process.env.VERSO_MANAGED_SESSION_EXPIRES_AT?.trim() || '';
   const userId = process.env.VERSO_MANAGED_USER_ID?.trim() || '';
-  if (!token || !expiresAt || !userId) return null;
+  const deviceId = process.env.VERSO_MANAGED_DEVICE_ID?.trim() || '';
+  if (!token || !expiresAt || !userId || !deviceId) return null;
 
   return {
     token,
     expiresAt,
     userId,
+    deviceId,
     email: null,
     displayName: null,
     receivedAt: new Date().toISOString(),

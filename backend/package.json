@@ -5,6 +5,9 @@
   "license": "AGPL-3.0-only",
   "type": "module",
   "main": "src/index.ts",
+  "engines": {
+    "node": ">=22.11.0"
+  },
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "serve": "tsx src/index.ts",
@@ -13,17 +16,16 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/db/migrate.ts",
     "db:studio": "drizzle-kit studio",
-    "db:smoke": "tsx scripts/smoke-db.ts",
-    "issue-test-session": "tsx scripts/issue-test-session.ts"
+    "db:smoke": "tsx scripts/smoke-db.ts"
   },
   "dependencies": {
     "@composio/core": "^0.9.1",
-    "@fastify/cors": "^11.1.0",
     "@neondatabase/serverless": "^1.0.1",
-    "@privy-io/node": "^0.17.0",
+    "@workos-inc/node": "^10.12.0",
     "dotenv": "^16.6.1",
     "drizzle-orm": "^0.44.2",
     "fastify": "^5.6.1",
+    "jose": "^6.2.10",
     "zod": "^4.1.12"
   },
   "devDependencies": {

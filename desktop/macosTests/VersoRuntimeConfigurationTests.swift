@@ -97,7 +97,6 @@ final class VersoRuntimeConfigurationTests: XCTestCase {
         VersoRuntimeConfiguration(
             mode: mode,
             managedBackendURL: "https://backend.example",
-            managedFrontendURL: "https://frontend.example/login",
             sentryDSN: "https://sentry.example/1",
             sparkleFeedURL: "https://updates.example/appcast.xml",
             sparklePublicKey: "public-key"

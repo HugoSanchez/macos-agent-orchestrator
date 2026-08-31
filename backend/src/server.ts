@@ -1,10 +1,9 @@
 import Fastify from 'fastify';
-import cors from '@fastify/cors';
 import { getConfig, type BackendConfig } from './config.ts';
 import { AuthService } from './auth/service.ts';
 import { MemoryAuthStore } from './auth/memory-store.ts';
 import type { AuthStore } from './auth/types.ts';
-import { BackendPrivyVerifier } from './auth/privy.ts';
+import { BackendWorkOSAuthProvider } from './auth/workos.ts';
 import { DrizzleAuthStore } from './db/auth-store.ts';
 import { registerHealthRoutes } from './routes/health.ts';
 import { registerAuthRoutes } from './routes/auth.ts';
@@ -25,17 +24,12 @@ export async function buildServer(options: BuildServerOptions = {}) {
     logger: config.NODE_ENV === 'development',
   });
 
-  await app.register(cors, {
-    origin: true,
-    credentials: true,
-  });
-
   const authStore = options.authStore ?? defaultAuthStore(config);
 
   const authService = options.authService ?? new AuthService(
     config,
     authStore,
-    config.privyConfigured ? new BackendPrivyVerifier(config) : null,
+    config.workosConfigured ? new BackendWorkOSAuthProvider(config) : null,
   );
 
   await registerHealthRoutes(app, config);

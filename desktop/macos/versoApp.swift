@@ -88,10 +88,7 @@ private struct RootView: View {
         case .content:
             ContentView(sidecar: sidecar, managedSessionStore: managedSessionStore)
         case .managedSignIn:
-            SignInView(
-                managedSessionStore: managedSessionStore,
-                frontendURL: runtimeConfiguration.managedFrontendURL
-            )
+            SignInView(managedSessionStore: managedSessionStore)
         }
     }
 }
@@ -169,6 +166,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.runtimeConfiguration = runtimeConfiguration
         self.sidecar = SidecarManager(runtimeConfiguration: runtimeConfiguration)
         self.managedSessionStore = ManagedSessionStore(
+            backendURL: runtimeConfiguration.managedBackendURL,
             isEnabled: runtimeConfiguration.requiresManagedSession
         )
         Telemetry.configure(configuration: runtimeConfiguration)
@@ -232,19 +230,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         // Quit when the last window closes so the sidecar exits with us.
         return true
-    }
-
-    func application(_ application: NSApplication, open urls: [URL]) {
-        guard runtimeConfiguration.requiresManagedSession else { return }
-        guard !urls.isEmpty else { return }
-
-        NSApp.activate(ignoringOtherApps: true)
-        createMainWindow()
-        mainWindow?.makeKeyAndOrderFront(nil)
-
-        for url in urls {
-            managedSessionStore.handleCallbackURL(url)
-        }
     }
 
     private func installStateObservers() {

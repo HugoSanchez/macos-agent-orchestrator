@@ -105,7 +105,7 @@ final class SidecarManagedSessionPolicyTests: XCTestCase {
     }
 
     @MainActor
-    func testInteractiveSessionSupersedesLateKeychainRestoration() async throws {
+    func testVerifiedMagicCodeSupersedesLateKeychainRestoration() async throws {
         let stale = managedSession(userId: "stale-user", expiresAt: "2099-01-01T00:00:00Z")
         let store = ManagedSessionStore(persistence: .init(
             load: {
@@ -114,12 +114,28 @@ final class SidecarManagedSessionPolicyTests: XCTestCase {
             },
             write: { _ in },
             delete: {}
-        ))
-        let callback = try XCTUnwrap(URL(string:
-            "verso-dev://auth/callback?session_token=fresh-token&expires_at=2099-01-01T00%3A00%3A00Z&user_id=fresh-user"
-        ))
+        ), transport: .init(data: { request in
+            let response = try XCTUnwrap(HTTPURLResponse(
+                url: try XCTUnwrap(request.url),
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: nil
+            ))
+            let body = """
+            {
+              "session": {
+                "accessToken": "fresh-token",
+                "refreshToken": "fresh-refresh",
+                "expiresAt": "2099-01-01T00:00:00Z"
+              },
+              "user": {"id": "fresh-user", "email": "owner@example.com", "displayName": null},
+              "device": {"id": "fresh-device"}
+            }
+            """
+            return (Data(body.utf8), response)
+        }), backendURL: "https://backend.example")
 
-        store.handleCallbackURL(callback)
+        try await store.verifyMagicCode(email: "owner@example.com", code: "123456")
         await waitUntilRestored(store)
         try await Task.sleep(nanoseconds: 60_000_000)
 
@@ -128,7 +144,7 @@ final class SidecarManagedSessionPolicyTests: XCTestCase {
     }
 
     @MainActor
-    func testDisabledStoreNeverTouchesManagedPersistenceOrCallbacks() async throws {
+    func testDisabledStoreNeverTouchesManagedPersistence() async throws {
         let recorder = ManagedSessionPersistenceRecorder()
         let store = ManagedSessionStore(persistence: .init(
             load: {
@@ -138,11 +154,7 @@ final class SidecarManagedSessionPolicyTests: XCTestCase {
             write: { _ in recorder.writeCount += 1 },
             delete: { recorder.deleteCount += 1 }
         ), isEnabled: false)
-        let callback = try XCTUnwrap(URL(string:
-            "verso-dev://auth/callback?session_token=token&expires_at=2099-01-01T00%3A00%3A00Z&user_id=user"
-        ))
 
-        store.handleCallbackURL(callback)
         store.clearSession()
         await Task.yield()
 
@@ -156,8 +168,10 @@ final class SidecarManagedSessionPolicyTests: XCTestCase {
     private func managedSession(userId: String, expiresAt: String) -> ManagedAppSession {
         ManagedAppSession(
             token: "token-\(userId)",
+            refreshToken: "refresh-\(userId)",
             expiresAt: expiresAt,
             userId: userId,
+            deviceId: "device-\(userId)",
             email: nil,
             displayName: nil,
             receivedAt: "2026-08-18T00:00:00Z"

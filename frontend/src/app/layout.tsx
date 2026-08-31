@@ -1,7 +1,6 @@
 import './globals.css';
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
-import { AppPrivyProvider } from '../components/privy-provider';
 
 export const metadata: Metadata = {
   title: 'Verso — open-source agent orchestrator for knowledge work',
@@ -12,9 +11,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
-      <body>
-        <AppPrivyProvider>{children}</AppPrivyProvider>
-      </body>
+      <body>{children}</body>
     </html>
   );
 }

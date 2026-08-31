@@ -40,7 +40,7 @@ Anything not needed to preserve one of those invariants should be deferred.
 ```text
 Electron main
 ├── Window and app lifecycle
-├── Menus, deep links, updates, notifications, sleep/wake
+├── Menus, updates, notifications, sleep/wake
 ├── Secure renderer asset protocol and narrow preload bridge
 └── Existing sidecar supervisor semantics
     └── Bundled standalone Node 24
@@ -235,7 +235,7 @@ Move these SwiftUI surfaces into `desktop/chat-ui` while the Swift shell still
 hosts the webview:
 
 - Session sidebar, working/unread state, and session actions.
-- Sign-in, callback completion, sign-out, and onboarding.
+- Native email/code sign-in, sign-out, and onboarding.
 - Sidebar sections, theme, and window-level layout.
 
 Reuse the existing `ShellState`, `ShellCommand`, `ShellAction`, and browser-mode
@@ -252,7 +252,6 @@ Implement only the OS-host responsibilities:
 - Secure custom asset scheme and restrictive CSP.
 - Narrow preload bridge and existing shell-state protocol.
 - Bundled-sidecar launch, ready parsing, restart, logs, and shutdown.
-- Production `verso://` and isolated development `verso-dev://` deep links.
 - Single-instance behavior, menus, keyboard shortcuts, file dialogs, external
   URL allowlisting, notifications, and supported badges.
 - `powerMonitor` forwarding to the existing `verso:system-sleep` and
@@ -293,7 +292,7 @@ Ship each target only after its Phase 1b runtime proof passes. Add OS-specific
 work only when that target needs it:
 
 - Windows signing, installer/upgrade/uninstall tests, process-tree cleanup,
-  paths, deep links, and SmartScreen observation.
+  paths, and SmartScreen observation.
 - Linux AppImage/DEB packaging, glibc baseline, keyring disclosure, desktop
   integration, and sandbox tests.
 

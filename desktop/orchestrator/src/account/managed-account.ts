@@ -59,12 +59,14 @@ function parseSessionBody(body: unknown): ManagedSessionRecord | null | 'invalid
   const token = typeof source.token === 'string' ? source.token.trim() : '';
   const expiresAt = typeof source.expiresAt === 'string' ? source.expiresAt.trim() : '';
   const userId = typeof source.userId === 'string' ? source.userId.trim() : '';
-  if (!token || !expiresAt || !userId) return 'invalid';
+  const deviceId = typeof source.deviceId === 'string' ? source.deviceId.trim() : '';
+  if (!token || !expiresAt || !userId || !deviceId) return 'invalid';
 
   return {
     token,
     expiresAt,
     userId,
+    deviceId,
     email: optionalString(source.email),
     displayName: optionalString(source.displayName),
     receivedAt: typeof source.receivedAt === 'string' && source.receivedAt.trim().length > 0

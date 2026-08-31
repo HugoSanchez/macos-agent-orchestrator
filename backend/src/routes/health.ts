@@ -14,7 +14,7 @@ export async function registerHealthRoutes(app: FastifyInstance, config: Backend
       timestamp: Date.now(),
       capabilities: {
         databaseConfigured: config.databaseConfigured,
-        privyConfigured: config.privyConfigured,
+        workosConfigured: config.workosConfigured,
       },
       database,
     });

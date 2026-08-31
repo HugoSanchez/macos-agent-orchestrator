@@ -142,7 +142,7 @@ Release and notarization instructions are in
 - `desktop/chat-ui/` — embedded React chat interface
 - `desktop/runtime-patches/` — patches for the bundled Hermes runtime
 - `backend/` — hosted API used by the managed product
-- `frontend/` — hosted website and account UI
+- `frontend/` — hosted website
 
 ## License
 

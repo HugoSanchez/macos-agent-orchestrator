@@ -32,7 +32,7 @@ if [ "${embedded_mode}" != "managed" ]; then
     exit 1
 fi
 
-for key in VersoManagedBackendURL VersoManagedFrontendURL SentryDSN SUFeedURL SUPublicEDKey; do
+for key in VersoManagedBackendURL SentryDSN SUFeedURL SUPublicEDKey; do
     value="$(/usr/libexec/PlistBuddy -c "Print :${key}" "${info_plist}" 2>/dev/null || true)"
     if [ -z "${value}" ]; then
         echo "[managed-release] ERROR: ${key} is missing from the managed app" >&2

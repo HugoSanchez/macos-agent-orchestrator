@@ -1,15 +1,47 @@
-export interface VerifiedPrivyAuthToken {
+export interface WorkOSUserIdentity {
+  id: string;
+  email: string;
+  emailVerified: boolean;
+  displayName: string | null;
+}
+
+export interface VerifiedWorkOSAccessToken {
   userId: string;
   sessionId: string;
-  appId: string;
-  issuer: string;
   issuedAt: number;
   expiration: number;
 }
 
+export interface WorkOSAuthenticationResult {
+  accessToken: string;
+  refreshToken: string;
+  user: WorkOSUserIdentity;
+}
+
+export interface WorkOSAuthProvider {
+  sendMagicCode(input: {
+    email: string;
+    ipAddress?: string;
+    userAgent?: string;
+  }): Promise<void>;
+  authenticateMagicCode(input: {
+    email: string;
+    code: string;
+    ipAddress?: string;
+    userAgent?: string;
+  }): Promise<WorkOSAuthenticationResult>;
+  refreshSession(input: {
+    refreshToken: string;
+    ipAddress?: string;
+    userAgent?: string;
+  }): Promise<WorkOSAuthenticationResult>;
+  verifyAccessToken(accessToken: string): Promise<VerifiedWorkOSAccessToken>;
+  revokeSession(sessionId: string): Promise<void>;
+}
+
 export interface AppUserRecord {
   id: string;
-  privyUserId: string;
+  workosUserId: string;
   email: string | null;
   displayName: string | null;
   createdAt: string;
@@ -25,14 +57,10 @@ export interface DeviceRecord {
   createdAt: string;
 }
 
-export interface AuthSessionRecord {
+export interface AuthenticatedSession {
   id: string;
-  userId: string;
-  deviceId: string;
-  tokenHash: string;
   issuedAt: string;
   expiresAt: string;
-  revokedAt: string | null;
 }
 
 export interface EntitlementRecord {
@@ -50,27 +78,20 @@ export interface EntitlementRecord {
 export interface AuthenticatedContext {
   user: AppUserRecord;
   device: DeviceRecord;
-  session: AuthSessionRecord;
+  session: AuthenticatedSession;
   entitlements: EntitlementRecord[];
 }
 
 export interface AuthStore {
-  getUserByPrivyUserId(privyUserId: string): Promise<AppUserRecord | null>;
+  getUserByWorkOSUserId(workosUserId: string): Promise<AppUserRecord | null>;
+  getUserByEmail(email: string): Promise<AppUserRecord | null>;
   insertUser(user: AppUserRecord): Promise<void>;
   updateUser(user: AppUserRecord): Promise<void>;
   getDeviceByUserAndPlatform(userId: string, deviceLabel: string, platform: string): Promise<DeviceRecord | null>;
   insertDevice(device: DeviceRecord): Promise<void>;
   updateDevice(device: DeviceRecord): Promise<void>;
-  insertAuthSession(session: AuthSessionRecord): Promise<void>;
-  revokeAuthSession(sessionId: string, revokedAt: string): Promise<void>;
-  extendAuthSession(sessionId: string, expiresAt: string): Promise<void>;
-  getAuthSessionByTokenHash(tokenHash: string): Promise<AuthSessionRecord | null>;
   getUserById(userId: string): Promise<AppUserRecord | null>;
   getDeviceById(deviceId: string): Promise<DeviceRecord | null>;
   listEntitlementsByUserId(userId: string): Promise<EntitlementRecord[]>;
   insertEntitlement(entitlement: EntitlementRecord): Promise<void>;
-}
-
-export interface PrivyAuthVerifier {
-  verifyAuthToken(accessToken: string): Promise<VerifiedPrivyAuthToken>;
 }

@@ -3,32 +3,14 @@ import { buildServer } from '../src/server.ts';
 import { getConfig } from '../src/config.ts';
 import { AuthService } from '../src/auth/service.ts';
 import { MemoryAuthStore } from '../src/auth/memory-store.ts';
-import type { PrivyAuthVerifier } from '../src/auth/types.ts';
-
-class FakePrivyVerifier implements PrivyAuthVerifier {
-  async verifyAuthToken(accessToken: string) {
-    if (accessToken !== 'privy-valid-token') {
-      throw new Error('Token verification failed.');
-    }
-
-    return {
-      userId: 'did:privy:user-123',
-      sessionId: 'privy-session-123',
-      appId: 'privy-app-id',
-      issuer: 'privy.io',
-      issuedAt: 1_700_000_000,
-      expiration: 1_700_003_600,
-    };
-  }
-}
+import { FakeWorkOSProvider } from './fake-workos.ts';
 
 const config = getConfig({
   NODE_ENV: 'test',
   HOST: '127.0.0.1',
   PORT: '8788',
-  DATABASE_URL: '',
-  PRIVY_APP_ID: 'privy-app-id',
-  PRIVY_APP_SECRET: 'privy-app-secret',
+  WORKOS_API_KEY: 'sk_test',
+  WORKOS_CLIENT_ID: 'client_test',
 });
 
 describe('auth routes', () => {
@@ -41,183 +23,162 @@ describe('auth routes', () => {
     }
   });
 
-  test('exchanges a verified Privy token into an app session and returns /v1/me', async () => {
-    const authService = new AuthService(config, new MemoryAuthStore(), new FakePrivyVerifier());
+  async function setup() {
+    const provider = new FakeWorkOSProvider();
+    const authService = new AuthService(config, new MemoryAuthStore(), provider);
     app = await buildServer({ config, authService });
+    return provider;
+  }
 
-    const exchange = await app.inject({
+  async function signIn() {
+    await setup();
+    const response = await app!.inject({
       method: 'POST',
-      url: '/v1/auth/privy/exchange',
+      url: '/v1/auth/magic/verify',
       payload: {
-        privyAccessToken: 'privy-valid-token',
+        email: 'owner@example.com',
+        code: '123456',
         deviceLabel: 'Hugo MacBook',
         platform: 'macos',
       },
     });
+    expect(response.statusCode).toBe(200);
+    return response.json();
+  }
 
-    expect(exchange.statusCode).toBe(200);
-    const body = exchange.json();
-    expect(body.user.privyUserId).toBe('did:privy:user-123');
-    expect(body.session.token).toMatch(/^v1_/);
-    expect(body.entitlements[0].allowedModels).toBeNull();
+  test('requests a WorkOS magic code for any valid email address', async () => {
+    const provider = await setup();
+    const allowed = await app!.inject({
+      method: 'POST',
+      url: '/v1/auth/magic/start',
+      payload: { email: 'owner@example.com' },
+    });
+    const denied = await app!.inject({
+      method: 'POST',
+      url: '/v1/auth/magic/start',
+      payload: { email: 'unknown@example.com' },
+    });
 
-    const me = await app.inject({
+    expect(allowed.statusCode).toBe(204);
+    expect(denied.statusCode).toBe(204);
+    expect(provider.sentCodes).toEqual(['owner@example.com', 'unknown@example.com']);
+  });
+
+  test('verifies the code and uses the WorkOS access token for /v1/me', async () => {
+    const body = await signIn();
+    expect(body.session).toMatchObject({
+      accessToken: 'access-1',
+      refreshToken: 'refresh-1',
+      id: 'session-workos-1',
+    });
+    expect(body.user.workosUserId).toBe('user_workos_123');
+
+    const me = await app!.inject({
       method: 'GET',
       url: '/v1/me',
       headers: {
-        authorization: `Bearer ${body.session.token}`,
+        authorization: `Bearer ${body.session.accessToken}`,
+        'x-verso-device-id': body.device.id,
       },
     });
 
     expect(me.statusCode).toBe(200);
     expect(me.json().device.label).toBe('Hugo MacBook');
+    expect(me.json().session.id).toBe('session-workos-1');
   });
 
-  test('returns 503 when Privy exchange is requested without Privy configuration', async () => {
-    const unconfigured = getConfig({
-      NODE_ENV: 'test',
-      HOST: '127.0.0.1',
-      PORT: '8788',
-    });
-    const authService = new AuthService(unconfigured, new MemoryAuthStore(), null);
-    app = await buildServer({ config: unconfigured, authService });
-
-    const exchange = await app.inject({
+  test('rejects a wrong magic code without leaking provider details', async () => {
+    await setup();
+    const response = await app!.inject({
       method: 'POST',
-      url: '/v1/auth/privy/exchange',
+      url: '/v1/auth/magic/verify',
       payload: {
-        privyAccessToken: 'privy-valid-token',
+        email: 'owner@example.com',
+        code: '000000',
         deviceLabel: 'verso',
         platform: 'macos',
       },
     });
 
-    expect(exchange.statusCode).toBe(503);
-    expect(exchange.json().error).toBe('privy_unconfigured');
+    expect(response.statusCode).toBe(401);
+    expect(response.json()).toMatchObject({ error: 'invalid_code' });
   });
 
-  test('rejects exchange with missing privyAccessToken as 400 bad_request', async () => {
-    const authService = new AuthService(config, new MemoryAuthStore(), new FakePrivyVerifier());
-    app = await buildServer({ config, authService });
-
-    const exchange = await app.inject({
+  test('refreshes and rotates a WorkOS session', async () => {
+    const provider = await setup();
+    const login = await app!.inject({
       method: 'POST',
-      url: '/v1/auth/privy/exchange',
-      payload: { deviceLabel: 'verso', platform: 'macos' },
-    });
-
-    expect(exchange.statusCode).toBe(400);
-    expect(exchange.json().error).toBe('bad_request');
-  });
-
-  test('rejects exchange with malformed email as 400 bad_request', async () => {
-    const authService = new AuthService(config, new MemoryAuthStore(), new FakePrivyVerifier());
-    app = await buildServer({ config, authService });
-
-    const exchange = await app.inject({
-      method: 'POST',
-      url: '/v1/auth/privy/exchange',
+      url: '/v1/auth/magic/verify',
       payload: {
-        privyAccessToken: 'privy-valid-token',
+        email: 'owner@example.com',
+        code: '123456',
         deviceLabel: 'verso',
         platform: 'macos',
-        email: 'not-an-email',
+      },
+    });
+    const first = login.json();
+    provider.nextAccessToken = 'access-2';
+    provider.nextRefreshToken = 'refresh-2';
+
+    const refreshed = await app!.inject({
+      method: 'POST',
+      url: '/v1/auth/refresh',
+      payload: {
+        refreshToken: first.session.refreshToken,
+        deviceId: first.device.id,
       },
     });
 
-    expect(exchange.statusCode).toBe(400);
-    expect(exchange.json().error).toBe('bad_request');
+    expect(refreshed.statusCode).toBe(200);
+    expect(refreshed.json().session).toMatchObject({
+      accessToken: 'access-2',
+      refreshToken: 'refresh-2',
+    });
   });
 
-  test('rejects /v1/me without an Authorization header as 401 missing_session', async () => {
-    const authService = new AuthService(config, new MemoryAuthStore(), new FakePrivyVerifier());
-    app = await buildServer({ config, authService });
-
-    const me = await app.inject({ method: 'GET', url: '/v1/me' });
-    expect(me.statusCode).toBe(401);
-    expect(me.json().error).toBe('missing_session');
-  });
-
-  test('rejects /v1/me with a non-Bearer Authorization scheme as 401 invalid_session', async () => {
-    const authService = new AuthService(config, new MemoryAuthStore(), new FakePrivyVerifier());
-    app = await buildServer({ config, authService });
-
-    const me = await app.inject({
+  test('requires the local device binding on protected routes', async () => {
+    const body = await signIn();
+    const response = await app!.inject({
       method: 'GET',
       url: '/v1/me',
-      headers: { authorization: 'Basic some-token' },
+      headers: { authorization: `Bearer ${body.session.accessToken}` },
     });
-    expect(me.statusCode).toBe(401);
-    expect(me.json().error).toBe('invalid_session');
+
+    expect(response.statusCode).toBe(401);
+    expect(response.json().error).toBe('missing_device');
   });
 
-  test('rejects /v1/me with an unknown bearer token as 401 invalid_session', async () => {
-    const authService = new AuthService(config, new MemoryAuthStore(), new FakePrivyVerifier());
-    app = await buildServer({ config, authService });
-
-    const me = await app.inject({
-      method: 'GET',
-      url: '/v1/me',
-      headers: { authorization: 'Bearer v1_not_a_real_token' },
-    });
-    expect(me.statusCode).toBe(401);
-    expect(me.json().error).toBe('invalid_session');
-  });
-
-  test('POST /v1/auth/revoke marks the session revoked; subsequent /v1/me returns 401', async () => {
-    const authService = new AuthService(config, new MemoryAuthStore(), new FakePrivyVerifier());
-    app = await buildServer({ config, authService });
-
-    const exchange = await app.inject({
-      method: 'POST',
-      url: '/v1/auth/privy/exchange',
-      payload: { privyAccessToken: 'privy-valid-token', deviceLabel: 'Hugo', platform: 'macos' },
-    });
-    const token = exchange.json().session.token;
-
-    // /v1/me works pre-revoke.
-    const meBefore = await app.inject({ method: 'GET', url: '/v1/me', headers: { authorization: `Bearer ${token}` } });
-    expect(meBefore.statusCode).toBe(200);
-
-    // Revoke.
-    const revoke = await app.inject({
+  test('revokes the WorkOS session and no legacy Privy endpoint remains', async () => {
+    const provider = await setup();
+    const revoke = await app!.inject({
       method: 'POST',
       url: '/v1/auth/revoke',
-      headers: { authorization: `Bearer ${token}` },
+      headers: { authorization: 'Bearer access-1' },
     });
-    expect(revoke.statusCode).toBe(204);
-
-    // /v1/me is now blocked.
-    const meAfter = await app.inject({ method: 'GET', url: '/v1/me', headers: { authorization: `Bearer ${token}` } });
-    expect(meAfter.statusCode).toBe(401);
-    expect(meAfter.json().error).toBe('invalid_session');
-  });
-
-  test('POST /v1/auth/revoke is idempotent (second call still 204)', async () => {
-    const authService = new AuthService(config, new MemoryAuthStore(), new FakePrivyVerifier());
-    app = await buildServer({ config, authService });
-
-    const exchange = await app.inject({
+    const legacy = await app!.inject({
       method: 'POST',
       url: '/v1/auth/privy/exchange',
-      payload: { privyAccessToken: 'privy-valid-token', deviceLabel: 'Hugo', platform: 'macos' },
+      payload: {},
     });
-    const token = exchange.json().session.token;
 
-    const r1 = await app.inject({ method: 'POST', url: '/v1/auth/revoke', headers: { authorization: `Bearer ${token}` } });
-    expect(r1.statusCode).toBe(204);
-    // Note: after revoke the session lookup still finds the row (just with revokedAt set),
-    // so a second revoke call hits the "already revoked → no-op success" branch.
-    const r2 = await app.inject({ method: 'POST', url: '/v1/auth/revoke', headers: { authorization: `Bearer ${token}` } });
-    expect(r2.statusCode).toBe(204);
+    expect(revoke.statusCode).toBe(204);
+    expect(provider.revokedSessionIds).toEqual(['session-workos-1']);
+    expect(legacy.statusCode).toBe(404);
   });
 
-  test('POST /v1/auth/revoke without Authorization returns 401', async () => {
-    const authService = new AuthService(config, new MemoryAuthStore(), new FakePrivyVerifier());
-    app = await buildServer({ config, authService });
+  test('returns 503 when WorkOS is not configured', async () => {
+    const unconfigured = getConfig({ NODE_ENV: 'test', HOST: '127.0.0.1', PORT: '8788' });
+    app = await buildServer({
+      config: unconfigured,
+      authService: new AuthService(unconfigured, new MemoryAuthStore(), null),
+    });
 
-    const res = await app.inject({ method: 'POST', url: '/v1/auth/revoke' });
-    expect(res.statusCode).toBe(401);
-    expect(res.json().error).toBe('missing_session');
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/auth/magic/start',
+      payload: { email: 'owner@example.com' },
+    });
+    expect(response.statusCode).toBe(503);
+    expect(response.json().error).toBe('workos_unconfigured');
   });
 });

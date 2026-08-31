@@ -12,20 +12,7 @@ import {
   type DisconnectConnectionResult,
   type ProviderRevocationStatus,
 } from '../src/composio/service.ts';
-import type { PrivyAuthVerifier, VerifiedPrivyAuthToken } from '../src/auth/types.ts';
-
-class StubVerifier implements PrivyAuthVerifier {
-  async verifyAuthToken(_t: string): Promise<VerifiedPrivyAuthToken> {
-    return {
-      userId: 'did:privy:composio-test',
-      sessionId: 'p-s',
-      appId: 'p-a',
-      issuer: 'privy.io',
-      issuedAt: 1_700_000_000,
-      expiration: 1_700_003_600,
-    };
-  }
-}
+import { FakeWorkOSProvider } from './fake-workos.ts';
 
 /**
  * Test double for ComposioService. Captures the userId each method receives so
@@ -37,7 +24,7 @@ class StubComposioService extends ComposioService {
   capturedDeletedConnectionId: string | null = null;
   capturedRequestId: string | null = null;
   capturedCallbackUrl: string | null = null;
-  requestOwnerUserId = 'did:privy:composio-test';
+  requestOwnerUserId = 'another-user';
   disconnectRevocation: ProviderRevocationStatus = 'revoked';
   constructor() { super('test-key'); }
 
@@ -156,14 +143,15 @@ const baseEnv: Record<string, string> = {
   NODE_ENV: 'test',
   HOST: '127.0.0.1',
   PORT: '8788',
-  PRIVY_APP_ID: 'app',
-  PRIVY_APP_SECRET: 'secret',
+  WORKOS_API_KEY: 'sk_test',
+  WORKOS_CLIENT_ID: 'client_test',
   COMPOSIO_API_KEY: 'composio',
 };
 
 interface Setup {
   app: Awaited<ReturnType<typeof buildServer>>;
   sessionToken: string;
+  deviceId: string;
   userId: string;
   composio: StubComposioService;
 }
@@ -171,15 +159,29 @@ interface Setup {
 async function setup(): Promise<Setup> {
   const config = getConfig(baseEnv);
   const authStore = new MemoryAuthStore();
-  const authService = new AuthService(config, authStore, new StubVerifier());
+  const authService = new AuthService(config, authStore, new FakeWorkOSProvider());
   const composio = new StubComposioService();
   const app = await buildServer({ config, authService, authStore, composioService: composio });
-  const exchange = await authService.exchangePrivyAuth({
-    privyAccessToken: 'privy',
+  const exchange = await authService.verifyMagicCode({
+    email: 'owner@example.com',
+    code: '123456',
     deviceLabel: 'Hugo',
     platform: 'macos',
   });
-  return { app, sessionToken: exchange.sessionToken, userId: exchange.user.id, composio };
+  return {
+    app,
+    sessionToken: exchange.accessToken,
+    deviceId: exchange.device.id,
+    userId: exchange.user.id,
+    composio,
+  };
+}
+
+function authHeaders(setup: Setup) {
+  return {
+    authorization: `Bearer ${setup.sessionToken}`,
+    'x-verso-device-id': setup.deviceId,
+  };
 }
 
 describe('Composio routes', () => {
@@ -198,7 +200,7 @@ describe('Composio routes', () => {
     const res = await s.app.inject({
       method: 'GET',
       url: '/v1/composio/connections',
-      headers: { authorization: `Bearer ${s.sessionToken}` },
+      headers: authHeaders(s),
     });
     expect(res.statusCode).toBe(200);
     const body = res.json();
@@ -212,7 +214,7 @@ describe('Composio routes', () => {
     const res = await s.app.inject({
       method: 'DELETE',
       url: '/v1/composio/connections/ca_1',
-      headers: { authorization: `Bearer ${s.sessionToken}` },
+      headers: authHeaders(s),
     });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({
@@ -232,7 +234,7 @@ describe('Composio routes', () => {
     const res = await s.app.inject({
       method: 'DELETE',
       url: '/v1/composio/connections/ca_1',
-      headers: { authorization: `Bearer ${s.sessionToken}` },
+      headers: authHeaders(s),
     });
     expect(res.statusCode).toBe(200);
     expect(res.json().disconnect.providerRevocation).toBe('manual_action_required');
@@ -247,7 +249,7 @@ describe('Composio routes', () => {
     const res = await s.app.inject({
       method: 'DELETE',
       url: '/v1/composio/connections/ca_1',
-      headers: { authorization: `Bearer ${s.sessionToken}` },
+      headers: authHeaders(s),
     });
     expect(res.statusCode).toBe(502);
     expect(res.json()).toEqual({
@@ -268,7 +270,7 @@ describe('Composio routes', () => {
     const res = await s.app.inject({
       method: 'GET',
       url: '/v1/composio/toolkits?query=gmail&limit=12',
-      headers: { authorization: `Bearer ${s.sessionToken}` },
+      headers: authHeaders(s),
     });
     expect(res.statusCode).toBe(200);
     expect(receivedOpts?.query).toBe('gmail');
@@ -296,7 +298,7 @@ describe('Composio routes', () => {
     const res = await s.app.inject({
       method: 'POST',
       url: '/v1/composio/connections/request',
-      headers: { authorization: `Bearer ${s.sessionToken}` },
+      headers: authHeaders(s),
       payload: {
         userId: 'usr_attacker_attempting_to_act_as_someone_else',
         toolkit: 'gmail',
@@ -314,7 +316,7 @@ describe('Composio routes', () => {
     const res = await s.app.inject({
       method: 'GET',
       url: '/v1/composio/connections/requests/req_owned',
-      headers: { authorization: `Bearer ${s.sessionToken}` },
+      headers: authHeaders(s),
     });
     expect(res.statusCode).toBe(200);
     expect(res.json().request.id).toBe('req_owned');
@@ -324,11 +326,11 @@ describe('Composio routes', () => {
 
   test('GET connection request returns non-enumerating 404 for another user request', async () => {
     s = await setup();
-    s.composio.requestOwnerUserId = 'did:privy:another-user';
+    s.composio.requestOwnerUserId = 'user_workos_another_user';
     const res = await s.app.inject({
       method: 'GET',
       url: '/v1/composio/connections/requests/req_foreign',
-      headers: { authorization: `Bearer ${s.sessionToken}` },
+      headers: authHeaders(s),
     });
     expect(res.statusCode).toBe(404);
     expect(res.json()).toEqual({
@@ -360,7 +362,7 @@ describe('Composio routes', () => {
       const res = await s.app.inject({
         method: 'POST',
         url: '/v1/composio/connections/request',
-        headers: { authorization: `Bearer ${s.sessionToken}` },
+        headers: authHeaders(s),
         payload: { toolkit: 'gmail', callbackUrl },
       });
       expect(res.statusCode, callbackUrl).toBe(400);
@@ -389,7 +391,7 @@ describe('Composio routes', () => {
     const res = await s.app.inject({
       method: 'POST',
       url: '/v1/composio/connections/request',
-      headers: { authorization: `Bearer ${s.sessionToken}` },
+      headers: authHeaders(s),
       payload: { toolkit: 'gmail', callbackUrl: 'http://127.0.0.1:4123/connections/callback' },
     });
 
@@ -402,7 +404,7 @@ describe('Composio routes', () => {
     const res = await s.app.inject({
       method: 'POST',
       url: '/v1/composio/connections/request',
-      headers: { authorization: `Bearer ${s.sessionToken}` },
+      headers: authHeaders(s),
       payload: { callbackUrl: 'http://127.0.0.1:4123/connections/callback' },
     });
     expect(res.statusCode).toBe(400);
@@ -431,7 +433,7 @@ describe('Composio routes', () => {
     const res = await s.app.inject({
       method: 'POST',
       url: '/v1/composio/tools/search',
-      headers: { authorization: `Bearer ${s.sessionToken}` },
+      headers: authHeaders(s),
       payload: {
         userId: 'usr_attacker_attempting_to_act_as_someone_else',
         query: 'search Slack',
@@ -465,7 +467,7 @@ describe('Composio routes', () => {
     const res = await s.app.inject({
       method: 'POST',
       url: '/v1/composio/tools/list',
-      headers: { authorization: `Bearer ${s.sessionToken}` },
+      headers: authHeaders(s),
       payload: {
         userId: 'usr_attacker_attempting_to_act_as_someone_else',
         toolkits: ['gmail'],
@@ -498,7 +500,7 @@ describe('Composio routes', () => {
     const res = await s.app.inject({
       method: 'POST',
       url: '/v1/composio/tools/schemas',
-      headers: { authorization: `Bearer ${s.sessionToken}` },
+      headers: authHeaders(s),
       payload: {
         toolSlugs: ['SLACK_SEARCH_MESSAGES'],
       },
@@ -527,7 +529,7 @@ describe('Composio routes', () => {
     const res = await s.app.inject({
       method: 'POST',
       url: '/v1/composio/tools/execute',
-      headers: { authorization: `Bearer ${s.sessionToken}` },
+      headers: authHeaders(s),
       payload: {
         toolSlug: 'SLACK_SEARCH_MESSAGES',
         arguments: { query: 'katana' },
@@ -548,7 +550,7 @@ describe('Composio routes', () => {
     const missing = await s.app.inject({
       method: 'POST',
       url: '/v1/composio/tools/execute',
-      headers: { authorization: `Bearer ${s.sessionToken}` },
+      headers: authHeaders(s),
       payload: { toolSlug: 'SLACK_SEARCH_MESSAGES' },
     });
     expect(missing.statusCode).toBe(400);
@@ -557,7 +559,7 @@ describe('Composio routes', () => {
     const nullArgs = await s.app.inject({
       method: 'POST',
       url: '/v1/composio/tools/execute',
-      headers: { authorization: `Bearer ${s.sessionToken}` },
+      headers: authHeaders(s),
       payload: {
         toolSlug: 'SLACK_SEARCH_MESSAGES',
         arguments: null,
@@ -575,7 +577,7 @@ describe('Composio routes', () => {
     const res = await s.app.inject({
       method: 'GET',
       url: '/v1/composio/connections',
-      headers: { authorization: `Bearer ${s.sessionToken}` },
+      headers: authHeaders(s),
     });
     expect(res.statusCode).toBe(503);
     expect(res.json().error).toBe('composio_error');

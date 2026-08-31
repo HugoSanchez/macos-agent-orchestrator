@@ -24,7 +24,7 @@ describe('GET /health', () => {
     expect(body.service).toBe('verso-backend');
     expect(body.capabilities).toEqual({
       databaseConfigured: false,
-      privyConfigured: false,
+      workosConfigured: false,
     });
     expect(body.database.configured).toBe(false);
     expect(body.database.reachable).toBe(false);
@@ -35,8 +35,8 @@ describe('GET /health', () => {
       NODE_ENV: 'test',
       HOST: '127.0.0.1',
       PORT: '8788',
-      PRIVY_APP_ID: 'app',
-      PRIVY_APP_SECRET: 'secret',
+      WORKOS_API_KEY: 'sk_test',
+      WORKOS_CLIENT_ID: 'client_test',
     });
     app = await buildServer({ config });
 
@@ -44,7 +44,7 @@ describe('GET /health', () => {
     expect(response.statusCode).toBe(200);
     expect(response.json().capabilities).toEqual({
       databaseConfigured: false,
-      privyConfigured: true,
+      workosConfigured: true,
     });
   });
 });

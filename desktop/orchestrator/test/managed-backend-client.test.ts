@@ -12,6 +12,7 @@ let nextAccountStatus = 200;
 let nextRevokeStatus = 204;
 let revokeCallCount = 0;
 let revokeAuthHeader: string | null = null;
+let accountDeviceHeader: string | null = null;
 
 beforeAll(async () => {
   backendPort = await allocatePort();
@@ -32,6 +33,7 @@ function freshClient(opts: { withSession?: boolean } = {}): ManagedBackendClient
       token: 'token-test',
       expiresAt: new Date(Date.now() + 60_000).toISOString(),
       userId: 'usr_test',
+      deviceId: 'dev_test',
       email: null,
       displayName: null,
       receivedAt: new Date().toISOString(),
@@ -50,6 +52,7 @@ describe('ManagedBackendClient.getAccount', () => {
       token: 'stale-token',
       expiresAt: new Date(Date.now() + 60_000).toISOString(),
       userId: 'stale-user',
+      deviceId: 'stale-device',
       email: null,
       displayName: null,
       receivedAt: new Date().toISOString(),
@@ -86,6 +89,7 @@ describe('ManagedBackendClient.getAccount', () => {
     const account = await client.getAccount();
 
     expect(account.account.state).toBe('authenticated');
+    expect(accountDeviceHeader).toBe('dev_test');
     expect(account.account.user?.email).toBe('hugo@example.com');
     expect(account.account.entitlements[0]?.mode).toBe('managed');
   });
@@ -144,6 +148,7 @@ async function startFakeBackend(port: number): Promise<http.Server> {
     const url = new URL(req.url || '/', 'http://127.0.0.1');
 
     if (req.method === 'GET' && url.pathname === '/v1/me') {
+      accountDeviceHeader = (req.headers['x-verso-device-id'] as string | undefined) ?? null;
       if (nextAccountStatus !== 200) {
         res.writeHead(nextAccountStatus, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'invalid_session', message: 'Invalid token.' }));
@@ -154,7 +159,7 @@ async function startFakeBackend(port: number): Promise<http.Server> {
       res.end(JSON.stringify({
         user: {
           id: 'usr_test',
-          privyUserId: 'did:privy:test-user',
+          workosUserId: 'user_workos_test',
           email: 'hugo@example.com',
           displayName: null,
         },
