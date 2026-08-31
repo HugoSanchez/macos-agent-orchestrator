@@ -18,7 +18,7 @@ struct SidecarManagedAccountSnapshot: Equatable, Decodable {
 
     struct User: Equatable, Decodable {
         let id: String
-        let privyUserId: String
+        let workosUserId: String
         let email: String?
         let displayName: String?
     }

@@ -43,6 +43,7 @@ for (const key of [
   'VERSO_MANAGED_SESSION_TOKEN',
   'VERSO_MANAGED_SESSION_EXPIRES_AT',
   'VERSO_MANAGED_USER_ID',
+  'VERSO_MANAGED_DEVICE_ID',
 ]) {
   delete process.env[key];
 }

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { AuthService, AuthServiceError } from '../auth/service.ts';
+import { extractBearerToken, extractDeviceId } from './auth.ts';
 import { getDb } from '../db/client.ts';
 import { analyticsEvents } from '../db/schema.ts';
 import type { BackendConfig } from '../config.ts';
@@ -25,7 +26,10 @@ interface RouteDeps {
 export async function registerAnalyticsRoutes(app: FastifyInstance, deps: RouteDeps): Promise<void> {
   app.post('/v1/analytics/event', async (request, reply) => {
     try {
-      const auth = await deps.authService.authenticateAppSession(extractBearerToken(request));
+      const auth = await deps.authService.authenticateAccessToken(
+        extractBearerToken(request),
+        extractDeviceId(request),
+      );
       const event = eventSchema.parse(request.body ?? {});
 
       if (!deps.config.databaseConfigured || !deps.config.DATABASE_URL) {
@@ -50,15 +54,6 @@ export async function registerAnalyticsRoutes(app: FastifyInstance, deps: RouteD
       return handleError(reply, error);
     }
   });
-}
-
-function extractBearerToken(request: FastifyRequest): string {
-  const header = request.headers.authorization;
-  if (!header) throw new AuthServiceError(401, 'missing_session', 'Missing Authorization header.');
-  if (!header.toLowerCase().startsWith('bearer ')) {
-    throw new AuthServiceError(401, 'invalid_session', 'Authorization header must use Bearer token.');
-  }
-  return header.slice(7).trim();
 }
 
 function handleError(reply: FastifyReply, error: unknown) {

@@ -1,9 +1,8 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { getDb } from './client.ts';
-import { authSessions, devices, entitlements, users } from './schema.ts';
+import { devices, entitlements, users } from './schema.ts';
 import type {
   AppUserRecord,
-  AuthSessionRecord,
   AuthStore,
   DeviceRecord,
   EntitlementRecord,
@@ -18,8 +17,17 @@ export class DrizzleAuthStore implements AuthStore {
     this.db = getDb(databaseUrl);
   }
 
-  async getUserByPrivyUserId(privyUserId: string): Promise<AppUserRecord | null> {
-    const rows = await this.db.select().from(users).where(eq(users.privyUserId, privyUserId)).limit(1);
+  async getUserByWorkOSUserId(workosUserId: string): Promise<AppUserRecord | null> {
+    const rows = await this.db.select().from(users).where(eq(users.workosUserId, workosUserId)).limit(1);
+    return rows[0] ? mapUser(rows[0]) : null;
+  }
+
+  async getUserByEmail(email: string): Promise<AppUserRecord | null> {
+    const rows = await this.db
+      .select()
+      .from(users)
+      .where(sql`lower(${users.email}) = ${email.toLowerCase()}`)
+      .limit(1);
     return rows[0] ? mapUser(rows[0]) : null;
   }
 
@@ -31,7 +39,7 @@ export class DrizzleAuthStore implements AuthStore {
     await this.db
       .update(users)
       .set({
-        privyUserId: user.privyUserId,
+        workosUserId: user.workosUserId,
         email: user.email,
         displayName: user.displayName,
         updatedAt: new Date(user.updatedAt),
@@ -71,40 +79,6 @@ export class DrizzleAuthStore implements AuthStore {
       .where(eq(devices.id, device.id));
   }
 
-  async insertAuthSession(session: AuthSessionRecord): Promise<void> {
-    await this.db.insert(authSessions).values(serializeAuthSession(session))
-      .onConflictDoUpdate({
-        target: authSessions.id,
-        set: {
-          userId: session.userId,
-          deviceId: session.deviceId,
-          tokenHash: session.tokenHash,
-          issuedAt: new Date(session.issuedAt),
-          expiresAt: new Date(session.expiresAt),
-          revokedAt: session.revokedAt ? new Date(session.revokedAt) : null,
-        },
-      });
-  }
-
-  async revokeAuthSession(sessionId: string, revokedAt: string): Promise<void> {
-    await this.db
-      .update(authSessions)
-      .set({ revokedAt: new Date(revokedAt) })
-      .where(eq(authSessions.id, sessionId));
-  }
-
-  async extendAuthSession(sessionId: string, expiresAt: string): Promise<void> {
-    await this.db
-      .update(authSessions)
-      .set({ expiresAt: new Date(expiresAt) })
-      .where(eq(authSessions.id, sessionId));
-  }
-
-  async getAuthSessionByTokenHash(tokenHash: string): Promise<AuthSessionRecord | null> {
-    const rows = await this.db.select().from(authSessions).where(eq(authSessions.tokenHash, tokenHash)).limit(1);
-    return rows[0] ? mapAuthSession(rows[0]) : null;
-  }
-
   async getUserById(userId: string): Promise<AppUserRecord | null> {
     const rows = await this.db.select().from(users).where(eq(users.id, userId)).limit(1);
     return rows[0] ? mapUser(rows[0]) : null;
@@ -127,13 +101,12 @@ export class DrizzleAuthStore implements AuthStore {
 
 type UserRow = typeof users.$inferSelect;
 type DeviceRow = typeof devices.$inferSelect;
-type AuthSessionRow = typeof authSessions.$inferSelect;
 type EntitlementRow = typeof entitlements.$inferSelect;
 
 function mapUser(row: UserRow): AppUserRecord {
   return {
     id: row.id,
-    privyUserId: row.privyUserId,
+    workosUserId: row.workosUserId,
     email: row.email,
     displayName: row.displayName,
     createdAt: row.createdAt.toISOString(),
@@ -144,7 +117,7 @@ function mapUser(row: UserRow): AppUserRecord {
 function serializeUser(record: AppUserRecord): typeof users.$inferInsert {
   return {
     id: record.id,
-    privyUserId: record.privyUserId,
+    workosUserId: record.workosUserId,
     email: record.email,
     displayName: record.displayName,
     createdAt: new Date(record.createdAt),
@@ -171,30 +144,6 @@ function serializeDevice(record: DeviceRecord): typeof devices.$inferInsert {
     platform: record.platform,
     lastSeenAt: new Date(record.lastSeenAt),
     createdAt: new Date(record.createdAt),
-  };
-}
-
-function mapAuthSession(row: AuthSessionRow): AuthSessionRecord {
-  return {
-    id: row.id,
-    userId: row.userId,
-    deviceId: row.deviceId,
-    tokenHash: row.tokenHash,
-    issuedAt: row.issuedAt.toISOString(),
-    expiresAt: row.expiresAt.toISOString(),
-    revokedAt: row.revokedAt ? row.revokedAt.toISOString() : null,
-  };
-}
-
-function serializeAuthSession(record: AuthSessionRecord): typeof authSessions.$inferInsert {
-  return {
-    id: record.id,
-    userId: record.userId,
-    deviceId: record.deviceId,
-    tokenHash: record.tokenHash,
-    issuedAt: new Date(record.issuedAt),
-    expiresAt: new Date(record.expiresAt),
-    revokedAt: record.revokedAt ? new Date(record.revokedAt) : null,
   };
 }
 

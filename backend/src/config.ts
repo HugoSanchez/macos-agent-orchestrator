@@ -6,16 +6,21 @@ const optionalString = () => z.preprocess(
   z.string().min(1).optional(),
 );
 
-const DEFAULT_SESSION_LIFETIME_DAYS = 365;
-
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   HOST: z.string().min(1).default('127.0.0.1'),
   PORT: z.coerce.number().int().positive().default(8788),
   DATABASE_URL: optionalString(),
-  PRIVY_APP_ID: optionalString(),
-  PRIVY_APP_SECRET: optionalString(),
-  AUTH_SESSION_LIFETIME_DAYS: z.coerce.number().int().positive().optional(),
+  WORKOS_API_KEY: optionalString(),
+  WORKOS_CLIENT_ID: optionalString(),
+  WORKOS_ISSUER_URL: z.preprocess(
+    (value) => typeof value === 'string' && value.trim() === '' ? undefined : value,
+    z.string().url().optional(),
+  ),
+  WORKOS_JWKS_URL: z.preprocess(
+    (value) => typeof value === 'string' && value.trim() === '' ? undefined : value,
+    z.string().url().optional(),
+  ),
   WEB_BASE_URL: z.preprocess(
     (value) => typeof value === 'string' && value.trim() === '' ? undefined : value,
     z.string().url().optional(),
@@ -24,19 +29,22 @@ const envSchema = z.object({
 
 export type BackendConfig = z.infer<typeof envSchema> & {
   databaseConfigured: boolean;
-  privyConfigured: boolean;
-  authSessionLifetimeMs: number;
+  workosConfigured: boolean;
+  workosIssuer: string;
+  workosJwksUrl: string;
 };
 
 export function getConfig(env: NodeJS.ProcessEnv = process.env): BackendConfig {
   const parsed = envSchema.parse(env);
-  const authSessionLifetimeDays = parsed.AUTH_SESSION_LIFETIME_DAYS ?? DEFAULT_SESSION_LIFETIME_DAYS;
-  const authSessionLifetimeMs = authSessionLifetimeDays * 24 * 60 * 60 * 1000;
+  const workosConfigured = Boolean(parsed.WORKOS_API_KEY && parsed.WORKOS_CLIENT_ID);
 
   return {
     ...parsed,
     databaseConfigured: Boolean(parsed.DATABASE_URL),
-    privyConfigured: Boolean(parsed.PRIVY_APP_ID && parsed.PRIVY_APP_SECRET),
-    authSessionLifetimeMs,
+    workosConfigured,
+    workosIssuer: parsed.WORKOS_ISSUER_URL
+      ?? `https://api.workos.com/user_management/${encodeURIComponent(parsed.WORKOS_CLIENT_ID ?? '')}`,
+    workosJwksUrl: parsed.WORKOS_JWKS_URL
+      ?? `https://api.workos.com/sso/jwks/${encodeURIComponent(parsed.WORKOS_CLIENT_ID ?? '')}`,
   };
 }

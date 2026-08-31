@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { AuthService, AuthServiceError } from '../auth/service.ts';
+import { extractBearerToken, extractDeviceId } from './auth.ts';
 import { ComposioService, ComposioServiceError } from '../composio/service.ts';
 
 export interface ComposioRouteDeps {
@@ -15,7 +16,7 @@ export interface ComposioRouteDeps {
 export async function registerComposioRoutes(app: FastifyInstance, deps: ComposioRouteDeps): Promise<void> {
   app.get('/v1/composio/connections', async (request, reply) => {
     try {
-      const auth = await deps.authService.authenticateAppSession(extractBearerToken(request));
+      const auth = await authenticateRequest(deps.authService, request);
       const connections = await deps.composioService.listConnections(auth.user.id);
       return reply.code(200).send({ connections });
     } catch (error) {
@@ -25,7 +26,7 @@ export async function registerComposioRoutes(app: FastifyInstance, deps: Composi
 
   app.delete('/v1/composio/connections/:id', async (request, reply) => {
     try {
-      const auth = await deps.authService.authenticateAppSession(extractBearerToken(request));
+      const auth = await authenticateRequest(deps.authService, request);
       const { id } = request.params as { id: string };
       const disconnect = await deps.composioService.deleteConnection(auth.user.id, id);
       return reply.code(200).send({ disconnect });
@@ -36,7 +37,7 @@ export async function registerComposioRoutes(app: FastifyInstance, deps: Composi
 
   app.get('/v1/composio/toolkits', async (request, reply) => {
     try {
-      const auth = await deps.authService.authenticateAppSession(extractBearerToken(request));
+      const auth = await authenticateRequest(deps.authService, request);
       const query = optionalString(request.query as Record<string, unknown> | undefined, 'query');
       const limit = optionalNumber(request.query as Record<string, unknown> | undefined, 'limit');
       const toolkits = await deps.composioService.listToolkits(auth.user.id, { query, limit });
@@ -48,7 +49,7 @@ export async function registerComposioRoutes(app: FastifyInstance, deps: Composi
 
   app.post('/v1/composio/connections/request', async (request, reply) => {
     try {
-      const auth = await deps.authService.authenticateAppSession(extractBearerToken(request));
+      const auth = await authenticateRequest(deps.authService, request);
       const body = (request.body ?? {}) as Record<string, unknown>;
       const toolkit = requiredString(body, 'toolkit');
       const callbackUrl = validateLoopbackCallbackUrl(requiredString(body, 'callbackUrl'));
@@ -61,7 +62,7 @@ export async function registerComposioRoutes(app: FastifyInstance, deps: Composi
 
   app.get('/v1/composio/connections/requests/:id', async (request, reply) => {
     try {
-      const auth = await deps.authService.authenticateAppSession(extractBearerToken(request));
+      const auth = await authenticateRequest(deps.authService, request);
       const { id } = request.params as { id: string };
       const result = await deps.composioService.getRequest(auth.user.id, id);
       return reply.code(200).send({ request: result });
@@ -72,7 +73,7 @@ export async function registerComposioRoutes(app: FastifyInstance, deps: Composi
 
   app.post('/v1/composio/tools/search', async (request, reply) => {
     try {
-      const auth = await deps.authService.authenticateAppSession(extractBearerToken(request));
+      const auth = await authenticateRequest(deps.authService, request);
       const body = (request.body ?? {}) as Record<string, unknown>;
       const query = requiredString(body, 'query');
       const toolkits = optionalStringArray(body, 'toolkits');
@@ -85,7 +86,7 @@ export async function registerComposioRoutes(app: FastifyInstance, deps: Composi
 
   app.post('/v1/composio/tools/list', async (request, reply) => {
     try {
-      const auth = await deps.authService.authenticateAppSession(extractBearerToken(request));
+      const auth = await authenticateRequest(deps.authService, request);
       const body = (request.body ?? {}) as Record<string, unknown>;
       const toolkits = requiredStringArray(body, 'toolkits');
       const tools = await deps.composioService.listTools(auth.user.id, toolkits);
@@ -97,7 +98,7 @@ export async function registerComposioRoutes(app: FastifyInstance, deps: Composi
 
   app.post('/v1/composio/tools/schemas', async (request, reply) => {
     try {
-      const auth = await deps.authService.authenticateAppSession(extractBearerToken(request));
+      const auth = await authenticateRequest(deps.authService, request);
       const body = (request.body ?? {}) as Record<string, unknown>;
       const toolSlugs = requiredStringArray(body, 'toolSlugs');
       const tools = await deps.composioService.getToolSchemas(auth.user.id, toolSlugs);
@@ -109,7 +110,7 @@ export async function registerComposioRoutes(app: FastifyInstance, deps: Composi
 
   app.post('/v1/composio/tools/execute', async (request, reply) => {
     try {
-      const auth = await deps.authService.authenticateAppSession(extractBearerToken(request));
+      const auth = await authenticateRequest(deps.authService, request);
       const body = (request.body ?? {}) as Record<string, unknown>;
       const toolSlug = requiredString(body, 'toolSlug');
       const args = requiredRecord(body, 'arguments');
@@ -132,13 +133,11 @@ function validateLoopbackCallbackUrl(value: string): string {
   return value;
 }
 
-function extractBearerToken(request: FastifyRequest): string {
-  const header = request.headers.authorization;
-  if (!header) throw new AuthServiceError(401, 'missing_session', 'Missing Authorization header.');
-  if (!header.toLowerCase().startsWith('bearer ')) {
-    throw new AuthServiceError(401, 'invalid_session', 'Authorization header must use Bearer token.');
-  }
-  return header.slice(7).trim();
+function authenticateRequest(authService: AuthService, request: FastifyRequest) {
+  return authService.authenticateAccessToken(
+    extractBearerToken(request),
+    extractDeviceId(request),
+  );
 }
 
 function handleError(reply: FastifyReply, error: unknown) {

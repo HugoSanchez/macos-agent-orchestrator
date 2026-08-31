@@ -1,4 +1,3 @@
-import AppKit
 import SwiftUI
 
 /// Minimal editorial palette for the sign-in screen. The main shell carries the
@@ -12,6 +11,8 @@ private struct SignInPalette {
     let ink2: Color
     let inkDim: Color
     let ringColor: Color
+    let inputFill: Color
+    let inputStroke: Color
     let primaryFill: Color
     let primaryFillHover: Color
     let primaryText: Color
@@ -23,6 +24,8 @@ private struct SignInPalette {
         ink2: Color.white.opacity(0.74),                               // ink-2
         inkDim: Color.white.opacity(0.46),                             // ink-dim
         ringColor: Color.white.opacity(0.14),                          // icon-ring
+        inputFill: Color(red: 38/255, green: 40/255, blue: 43/255),    // #26282B paper-2
+        inputStroke: Color.white.opacity(0.10),                        // line
         primaryFill: Color.white.opacity(0.92),                        // primary-btn-bg
         primaryFillHover: Color.white,                                 // primary-btn-bg-hover
         primaryText: Color(red: 17/255, green: 17/255, blue: 17/255),  // #111 primary-btn-text
@@ -35,6 +38,8 @@ private struct SignInPalette {
         ink2: Color(red: 85/255, green: 83/255, blue: 74/255),         // #55534A ink-2
         inkDim: Color(red: 143/255, green: 140/255, blue: 127/255),    // #8F8C7F ink-dim
         ringColor: Color(red: 50/255, green: 48/255, blue: 40/255).opacity(0.14),  // icon-ring
+        inputFill: Color(red: 251/255, green: 249/255, blue: 242/255), // #FBF9F2 warm cream
+        inputStroke: Color(red: 50/255, green: 48/255, blue: 40/255).opacity(0.11), // line
         primaryFill: Color(red: 17/255, green: 17/255, blue: 17/255),  // #111 primary-btn-bg
         primaryFillHover: Color.black,                                 // primary-btn-bg-hover
         primaryText: Color.white,                                      // primary-btn-text
@@ -44,14 +49,21 @@ private struct SignInPalette {
 
 struct SignInView: View {
     @ObservedObject var managedSessionStore: ManagedSessionStore
-    let frontendURL: String?
-    // Match the shell's theme source (defaults to dark) so the sign-in screen
-    // reads as the same app before a session exists.
     @AppStorage("isDarkMode") private var isDarkMode = true
+    @State private var email = ""
+    @State private var code = ""
+    @State private var codeWasSent = false
+    @State private var isSubmitting = false
     @State private var errorMessage: String?
     @State private var isButtonHovered = false
+    @FocusState private var focusedField: Field?
 
     private static let contentWidth: CGFloat = 300
+
+    private enum Field {
+        case email
+        case code
+    }
 
     private var palette: SignInPalette { isDarkMode ? .dark : .light }
 
@@ -68,6 +80,7 @@ struct SignInView: View {
             }
         }
         .preferredColorScheme(isDarkMode ? .dark : .light)
+        .onAppear { focusedField = codeWasSent ? .code : .email }
     }
 
     private var header: some View {
@@ -97,7 +110,9 @@ struct SignInView: View {
                     .font(.custom("IBM Plex Sans SemiBold", size: 34))
                     .foregroundStyle(palette.ink)
 
-                Text("Please sign in by clicking the button below. You'll be redirected back to verso once you're done.")
+                Text(codeWasSent
+                    ? "Enter the six-digit code we sent to \(email.trimmingCharacters(in: .whitespacesAndNewlines))."
+                    : "Sign in with a one-time code sent to your email.")
                     .font(.custom("IBM Plex Sans", size: 13))
                     .foregroundStyle(palette.inkDim)
                     .multilineTextAlignment(.center)
@@ -105,8 +120,36 @@ struct SignInView: View {
                     .frame(width: Self.contentWidth)
             }
 
-            Button(action: signIn) {
-                Text("Sign in")
+            if codeWasSent {
+                codeEntryField
+            } else {
+                TextField("you@example.com", text: $email)
+                    .textContentType(.emailAddress)
+                    .textFieldStyle(.plain)
+                    .font(.custom("IBM Plex Sans", size: 14))
+                    .foregroundStyle(palette.ink)
+                    .padding(.horizontal, 12)
+                    .frame(width: Self.contentWidth, height: 40)
+                    .background(
+                        palette.inputFill,
+                        in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    )
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .stroke(palette.inputStroke, lineWidth: 1)
+                    }
+                    .focused($focusedField, equals: .email)
+                    .onSubmit(submit)
+            }
+
+            Button(action: submit) {
+                HStack(spacing: 8) {
+                    if isSubmitting {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
+                    Text(codeWasSent ? "Verify code" : "Send code")
+                }
                     .font(.custom("IBM Plex Sans Medium", size: 14))
                     .foregroundStyle(palette.primaryText)
                     .frame(maxWidth: .infinity)
@@ -118,7 +161,22 @@ struct SignInView: View {
             }
             .buttonStyle(.plain)
             .frame(width: Self.contentWidth)
+            .disabled(isSubmitting || !canSubmit)
+            .opacity(canSubmit ? 1 : 0.95)
             .onHover { isButtonHovered = $0 }
+
+            if codeWasSent {
+                Button("Use a different email") {
+                    codeWasSent = false
+                    code = ""
+                    errorMessage = nil
+                    focusedField = .email
+                }
+                .buttonStyle(.plain)
+                .font(.custom("IBM Plex Sans", size: 12))
+                .foregroundStyle(palette.ink2)
+                .disabled(isSubmitting)
+            }
 
             if let errorMessage {
                 Text(errorMessage)
@@ -130,33 +188,89 @@ struct SignInView: View {
         }
     }
 
-    private func signIn() {
-        errorMessage = nil
+    private var codeEntryField: some View {
+        ZStack {
+            HStack(spacing: 8) {
+                ForEach(0..<6, id: \.self) { index in
+                    Text(codeDigit(at: index))
+                        .font(.custom("IBM Plex Sans Medium", size: 17))
+                        .foregroundStyle(palette.ink)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 44)
+                        .background(
+                            palette.inputFill,
+                            in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        )
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .stroke(
+                                    isActiveCodeSlot(index)
+                                        ? palette.ink2.opacity(0.58)
+                                        : palette.inputStroke,
+                                    lineWidth: isActiveCodeSlot(index) ? 1.25 : 1
+                                )
+                        }
+                }
+            }
+            .accessibilityHidden(true)
 
-        guard let frontendURL, let url = Self.freshPrivySessionURL(from: frontendURL) else {
-            errorMessage = "Sign-in URL is not configured."
-            return
+            // One real field powers all six visual cells. Keeping a single
+            // editor makes typing, backspace, system one-time-code autofill,
+            // and pasting a complete code work without per-cell bookkeeping.
+            TextField("Six-digit code", text: $code)
+                .textContentType(.oneTimeCode)
+                .textFieldStyle(.plain)
+                .focused($focusedField, equals: .code)
+                .opacity(0.01)
+                .frame(width: Self.contentWidth, height: 44)
+                .onChange(of: code) { _, newValue in
+                    let normalized = String(newValue.filter(\.isNumber).prefix(6))
+                    if normalized != newValue {
+                        code = normalized
+                    }
+                }
+                .onSubmit(submit)
+                .accessibilityLabel("Six-digit verification code")
         }
-
-        NSWorkspace.shared.open(url)
+        .frame(width: Self.contentWidth, height: 44)
+        .contentShape(Rectangle())
+        .onTapGesture { focusedField = .code }
     }
 
-    private static func freshPrivySessionURL(from raw: String) -> URL? {
-        guard var components = URLComponents(string: raw) else { return nil }
-        var queryItems = components.queryItems ?? []
-        queryItems.removeAll { $0.name == "fresh_privy_session" }
-        queryItems.removeAll { $0.name == "redirect_uri" }
-        queryItems.append(URLQueryItem(name: "fresh_privy_session", value: "1"))
-        queryItems.append(URLQueryItem(name: "redirect_uri", value: Self.callbackRedirectURI))
-        components.queryItems = queryItems
-        return components.url
+    private func codeDigit(at index: Int) -> String {
+        guard index < code.count else { return "" }
+        return String(code[code.index(code.startIndex, offsetBy: index)])
     }
 
-    private static var callbackRedirectURI: String {
-        #if DEBUG
-        return "verso-dev://auth/callback"
-        #else
-        return "verso://auth/callback"
-        #endif
+    private func isActiveCodeSlot(_ index: Int) -> Bool {
+        focusedField == .code && index == min(code.count, 5)
+    }
+
+    private var canSubmit: Bool {
+        if codeWasSent {
+            return code.allSatisfy(\.isNumber) && code.count == 6
+        }
+        let normalized = email.trimmingCharacters(in: .whitespacesAndNewlines)
+        return normalized.contains("@") && normalized.count <= 320
+    }
+
+    private func submit() {
+        guard canSubmit, !isSubmitting else { return }
+        errorMessage = nil
+        isSubmitting = true
+        Task {
+            defer { isSubmitting = false }
+            do {
+                if codeWasSent {
+                    try await managedSessionStore.verifyMagicCode(email: email, code: code)
+                } else {
+                    try await managedSessionStore.requestMagicCode(email: email)
+                    codeWasSent = true
+                    focusedField = .code
+                }
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+        }
     }
 }

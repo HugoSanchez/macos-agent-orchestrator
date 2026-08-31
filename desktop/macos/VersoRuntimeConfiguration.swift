@@ -13,11 +13,9 @@ struct VersoRuntimeConfiguration: Equatable {
     private static let logger = Logger(subsystem: "com.verso.app", category: "RuntimeConfiguration")
     static let defaultModeInfoKey = "VersoDefaultRuntimeMode"
     static let managedBackendURLInfoKey = "VersoManagedBackendURL"
-    static let managedFrontendURLInfoKey = "VersoManagedFrontendURL"
 
     let mode: VersoRuntimeMode
     let managedBackendURL: String?
-    let managedFrontendURL: String?
     let sentryDSN: String?
     let sparkleFeedURL: String?
     let sparklePublicKey: String?
@@ -33,15 +31,12 @@ struct VersoRuntimeConfiguration: Equatable {
         infoDictionary: [String: Any] = Bundle.main.infoDictionary ?? [:]
     ) -> VersoRuntimeConfiguration {
         let mode = resolveMode(environment: environment, infoDictionary: infoDictionary)
-        let environmentBackendURL = normalized(environment["VERSO_BACKEND_URL"])
-        let environmentFrontendURL = normalized(environment["VERSO_FRONTEND_URL"])
+        let environmentBackendURL = normalizedHTTPURL(environment["VERSO_BACKEND_URL"])
 
         return VersoRuntimeConfiguration(
             mode: mode,
             managedBackendURL: environmentBackendURL
-                ?? normalized(infoDictionary[managedBackendURLInfoKey] as? String),
-            managedFrontendURL: environmentFrontendURL
-                ?? normalized(infoDictionary[managedFrontendURLInfoKey] as? String),
+                ?? normalizedHTTPURL(infoDictionary[managedBackendURLInfoKey] as? String),
             sentryDSN: normalizedHTTPURL(infoDictionary["SentryDSN"] as? String),
             sparkleFeedURL: normalizedHTTPURL(infoDictionary["SUFeedURL"] as? String),
             sparklePublicKey: normalized(infoDictionary["SUPublicEDKey"] as? String)

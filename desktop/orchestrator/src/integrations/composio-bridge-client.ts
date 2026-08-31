@@ -194,6 +194,7 @@ export class RemoteComposioBridgeClient {
     const headers: Record<string, string> = {
       Accept: 'application/json',
       Authorization: `Bearer ${session.token}`,
+      'X-Verso-Device-ID': session.deviceId,
     };
 
     let payload: string | undefined;

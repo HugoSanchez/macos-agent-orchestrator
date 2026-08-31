@@ -24,6 +24,7 @@ describe('Managed account routes', () => {
       VERSO_MANAGED_SESSION_TOKEN: process.env.VERSO_MANAGED_SESSION_TOKEN,
       VERSO_MANAGED_SESSION_EXPIRES_AT: process.env.VERSO_MANAGED_SESSION_EXPIRES_AT,
       VERSO_MANAGED_USER_ID: process.env.VERSO_MANAGED_USER_ID,
+      VERSO_MANAGED_DEVICE_ID: process.env.VERSO_MANAGED_DEVICE_ID,
     };
 
     backendPort = await allocatePort();
@@ -33,6 +34,7 @@ describe('Managed account routes', () => {
     delete process.env.VERSO_MANAGED_SESSION_TOKEN;
     delete process.env.VERSO_MANAGED_SESSION_EXPIRES_AT;
     delete process.env.VERSO_MANAGED_USER_ID;
+    delete process.env.VERSO_MANAGED_DEVICE_ID;
 
     backendServer = await startFakeBackend(backendPort);
     const result = await startServer({ port: 0, allowUnauthenticated: true });
@@ -58,6 +60,7 @@ describe('Managed account routes', () => {
     restoreEnv('VERSO_MANAGED_SESSION_TOKEN', envSnapshot.VERSO_MANAGED_SESSION_TOKEN);
     restoreEnv('VERSO_MANAGED_SESSION_EXPIRES_AT', envSnapshot.VERSO_MANAGED_SESSION_EXPIRES_AT);
     restoreEnv('VERSO_MANAGED_USER_ID', envSnapshot.VERSO_MANAGED_USER_ID);
+    restoreEnv('VERSO_MANAGED_DEVICE_ID', envSnapshot.VERSO_MANAGED_DEVICE_ID);
     rmSync(tempDir, { recursive: true, force: true });
   });
 
@@ -81,6 +84,7 @@ describe('Managed account routes', () => {
         token: 'token_test_123',
         expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
         userId: 'usr_test_123',
+        deviceId: 'dev_test_123',
         email: 'hugo@example.com',
         displayName: null,
         receivedAt: new Date().toISOString(),
@@ -127,7 +131,10 @@ async function startFakeBackend(port: number): Promise<http.Server> {
   const server = http.createServer((req, res) => {
     const url = new URL(req.url || '/', 'http://127.0.0.1');
     if (req.method === 'GET' && url.pathname === '/v1/me') {
-      if (req.headers.authorization !== 'Bearer token_test_123') {
+      if (
+        req.headers.authorization !== 'Bearer token_test_123'
+        || req.headers['x-verso-device-id'] !== 'dev_test_123'
+      ) {
         res.writeHead(401, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'invalid_session', message: 'Invalid token.' }));
         return;
@@ -137,7 +144,7 @@ async function startFakeBackend(port: number): Promise<http.Server> {
       res.end(JSON.stringify({
         user: {
           id: 'usr_test_123',
-          privyUserId: 'did:privy:test-user',
+          workosUserId: 'user_workos_test',
           email: 'hugo@example.com',
           displayName: null,
         },

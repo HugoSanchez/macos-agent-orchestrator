@@ -18,17 +18,6 @@
 	<string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
 	<key>CFBundleShortVersionString</key>
 	<string>$(MARKETING_VERSION)</string>
-	<key>CFBundleURLTypes</key>
-	<array>
-		<dict>
-			<key>CFBundleURLName</key>
-			<string>xyz.itsverso.app.auth</string>
-			<key>CFBundleURLSchemes</key>
-			<array>
-				<string>$(VERSO_CALLBACK_SCHEME)</string>
-			</array>
-		</dict>
-	</array>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSMinimumSystemVersion</key>
@@ -41,8 +30,6 @@
 	<string>$(VERSO_DEFAULT_RUNTIME_MODE)</string>
 	<key>VersoManagedBackendURL</key>
 	<string>$(VERSO_MANAGED_BACKEND_URL)</string>
-	<key>VersoManagedFrontendURL</key>
-	<string>$(VERSO_MANAGED_FRONTEND_URL)</string>
 	<key>SentryDSN</key>
 	<string>$(VERSO_SENTRY_DSN)</string>
 	<key>SUFeedURL</key>
