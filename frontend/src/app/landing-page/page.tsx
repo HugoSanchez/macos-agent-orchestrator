@@ -68,7 +68,7 @@ export default function TriagePreviewPage() {
       <nav className={styles.nav}>
         <div className={styles.navInner}>
           <Link href="/" className={styles.brand}>
-            daylight.
+            verso.
           </Link>
         </div>
       </nav>
@@ -563,12 +563,12 @@ function IssueMockup() {
 
           <div className={styles.silhouetteCanvas}>
             <div className={styles.silhouetteThread}>
-              <div className={styles.silhouettePrompt}>
+              <div className={`${styles.silhouettePrompt} ${styles.demoPrompt}`}>
                 <p className={styles.demoPromptText}>Catch me up on the board conversation.</p>
                 <i />
               </div>
 
-              <div className={styles.silhouetteActivity}>
+              <div className={`${styles.silhouetteActivity} ${styles.demoActivityShell}`}>
                 <div className={styles.silhouetteActivityHead}>
                   <div className={styles.silhouetteLogoRow}>
                     {appConnections.slice(0, 5).map(([logo, name]) => (
@@ -582,7 +582,7 @@ function IssueMockup() {
                   {demoActivity.map(([logo, label, tone], index) => (
                     <div
                       className={`${styles.silhouetteRow} ${styles.demoRow}`}
-                      style={{ animationDelay: `${0.3 + index * 0.35}s` }}
+                      style={{ animationDelay: `${1.7 + index * 0.35}s` }}
                       key={logo}
                     >
                       <img src={logoUrl(logo)} alt="" aria-hidden="true" />
