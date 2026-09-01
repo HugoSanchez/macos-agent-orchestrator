@@ -28,14 +28,14 @@ describe('ComposioToolUsageStore', () => {
   test('ranks connected toolkit tools by success count and recency', () => {
     const { store, manifestPath } = setup();
     store.recordSuccessfulUse(tool('SLACK_SEARCH_MESSAGES', 'slack'), '2026-05-28T10:00:00.000Z');
-    store.recordSuccessfulUse(tool('GMAIL_SEND_EMAIL', 'gmail'), '2026-05-28T11:00:00.000Z');
-    store.recordSuccessfulUse(tool('GMAIL_SEND_EMAIL', 'gmail'), '2026-05-28T12:00:00.000Z');
+    store.recordSuccessfulUse(tool('GMAIL_FETCH_EMAILS', 'gmail'), '2026-05-28T11:00:00.000Z');
+    store.recordSuccessfulUse(tool('GMAIL_FETCH_EMAILS', 'gmail'), '2026-05-28T12:00:00.000Z');
     store.recordSuccessfulUse(tool('GMAIL_CREATE_DRAFT', 'gmail'), '2026-05-28T13:00:00.000Z');
 
     const manifest = store.writeManifest(manifestPath, ['gmail', 'slack']);
 
     expect(manifest.tools.map((item) => item.toolSlug)).toEqual([
-      'GMAIL_SEND_EMAIL',
+      'GMAIL_FETCH_EMAILS',
       'GMAIL_CREATE_DRAFT',
       'SLACK_SEARCH_MESSAGES',
     ]);
@@ -46,17 +46,17 @@ describe('ComposioToolUsageStore', () => {
   test('excludes disconnected toolkit tools', () => {
     const { store, manifestPath } = setup();
     store.recordSuccessfulUse(tool('SLACK_SEARCH_MESSAGES', 'slack'));
-    store.recordSuccessfulUse(tool('GMAIL_SEND_EMAIL', 'gmail'));
+    store.recordSuccessfulUse(tool('GMAIL_FETCH_EMAILS', 'gmail'));
 
     const manifest = store.writeManifest(manifestPath, ['gmail']);
 
     expect(manifest.tools.map((item) => item.toolkitSlug)).toEqual(['gmail']);
-    expect(manifest.tools.map((item) => item.toolSlug)).toEqual(['GMAIL_SEND_EMAIL']);
+    expect(manifest.tools.map((item) => item.toolSlug)).toEqual(['GMAIL_FETCH_EMAILS']);
   });
 
   test('keeps the manifest file present when no toolkit tools remain', () => {
     const { store, manifestPath } = setup();
-    store.recordSuccessfulUse(tool('GMAIL_SEND_EMAIL', 'gmail'));
+    store.recordSuccessfulUse(tool('GMAIL_FETCH_EMAILS', 'gmail'));
     store.writeManifest(manifestPath, ['gmail']);
     expect(existsSync(manifestPath)).toBe(true);
 
@@ -90,25 +90,44 @@ describe('ComposioToolUsageStore', () => {
     ];
     const manifest = store.writeManifest(manifestPath, ['gmail'], undefined, materialized);
 
-    expect(manifest.tools.map((item) => item.toolSlug)).toContain('GMAIL_SEND_EMAIL');
+    expect(manifest.tools.map((item) => item.toolSlug)).not.toContain('GMAIL_SEND_EMAIL');
     expect(manifest.tools.map((item) => item.toolSlug)).toContain('GMAIL_CREATE_DRAFT');
     expect(manifest.tools.map((item) => item.toolSlug)).not.toContain('SLACK_SEARCH_MESSAGES');
-    // 25 learned Gmail tools + 2 materialized Gmail tools
-    expect(manifest.tools).toHaveLength(27);
+    // 25 learned Gmail tools + create-draft; the raw send tool is protected.
+    expect(manifest.tools).toHaveLength(26);
   });
 
   test('dedupes materialized tools against learned tools', () => {
     const { store, manifestPath } = setup();
-    store.recordSuccessfulUse(tool('GMAIL_SEND_EMAIL', 'gmail'), '2026-05-28T10:00:00.000Z');
+    store.recordSuccessfulUse(tool('GMAIL_CREATE_DRAFT', 'gmail'), '2026-05-28T10:00:00.000Z');
 
     const manifest = store.writeManifest(
       manifestPath,
       ['gmail'],
       undefined,
-      [materializedTool('GMAIL_SEND_EMAIL', 'gmail')],
+      [materializedTool('GMAIL_CREATE_DRAFT', 'gmail')],
     );
 
-    expect(manifest.tools.filter((item) => item.toolSlug === 'GMAIL_SEND_EMAIL')).toHaveLength(1);
+    expect(manifest.tools.filter((item) => item.toolSlug === 'GMAIL_CREATE_DRAFT')).toHaveLength(1);
+  });
+
+  test('removes protected message sends from learned and materialized tools', () => {
+    const { store, manifestPath } = setup();
+    store.recordSuccessfulUse(tool('GMAIL_SEND_EMAIL', 'gmail'));
+    store.recordSuccessfulUse(tool('SLACK_SEND_MESSAGE', 'slack'));
+
+    const manifest = store.writeManifest(
+      manifestPath,
+      ['gmail', 'slack'],
+      undefined,
+      [
+        materializedTool('GMAIL_SEND_EMAIL', 'gmail'),
+        materializedTool('SLACK_SEND_MESSAGE', 'slack'),
+        materializedTool('SLACK_SEARCH_MESSAGES', 'slack'),
+      ],
+    );
+
+    expect(manifest.tools.map((item) => item.toolSlug)).toEqual(['SLACK_SEARCH_MESSAGES']);
   });
 
   test('generates safe native names', () => {

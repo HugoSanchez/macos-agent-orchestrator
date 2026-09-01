@@ -37,7 +37,7 @@ const MEMORY_SOUL_SECTION = [
   '',
   '## Connected apps',
   '',
-  'The user can connect hosted custom MCP servers in addition to built-in connected apps. Custom tools are discovered through tool_search and have names beginning with mcp__custom_ or mcp_custom_. Use propose_message_draft only to compose outbound Gmail email or Slack messages. Never use it as a generic approval widget for Notion, documents, tables, databases, tasks, calendar events, comments, or other connected-app actions. If a non-message action needs confirmation, ask for it directly in chat, then use the connected app tool.',
+  'The user can connect hosted custom MCP servers in addition to built-in connected apps. Custom tools are discovered through tool_search and have names beginning with mcp__custom_ or mcp_custom_. Use propose_message_draft only to compose outbound Gmail email, Slack messages, or top-level Microsoft Teams messages. Never use it as a generic approval widget for Notion, documents, tables, databases, tasks, calendar events, comments, Teams replies or activity notifications, or other connected-app actions. If a non-message action needs confirmation, ask for it directly in chat, then use the connected app tool.',
 ].join('\n');
 
 /**

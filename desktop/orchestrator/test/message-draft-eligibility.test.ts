@@ -1,13 +1,20 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { applyMemorySoulSection } from '../src/memory/memory-soul.ts';
 import { ManagedBackendClient } from '../src/integrations/managed-backend-client.ts';
 import {
   ComposioBridgeHttpError,
   ComposioBridgeService,
 } from '../src/integrations/composio-bridge.ts';
+import {
+  PROTECTED_MESSAGE_SEND_TOOL_SLUGS,
+  REVIEWED_MESSAGE_TOOL_BY_CHANNEL,
+  REVIEWED_TEAMS_TOOL_BY_TARGET_KIND,
+} from '../src/integrations/reviewed-message-policy.ts';
 
 describe('message draft eligibility', () => {
-  it.each(['gmail', 'slack'])('accepts supported communication channel %s', async (channel) => {
+  it.each(['gmail', 'slack', 'microsoft_teams'])(
+    'accepts supported communication channel %s',
+    async (channel) => {
     const bridge = new ComposioBridgeService(new ManagedBackendClient(''));
 
     const result = await bridge.executeTool('PROPOSE_MESSAGE_DRAFT', {
@@ -18,7 +25,8 @@ describe('message draft eligibility', () => {
 
     expect(result.error).toBeNull();
     expect(result.data).toMatchObject({ status: 'pending_review', channel });
-  });
+    },
+  );
 
   it.each(['notion', 'airtable', 'google_docs', ''])('rejects non-message channel %s', async (channel) => {
     const bridge = new ComposioBridgeService(new ManagedBackendClient(''));
@@ -33,10 +41,169 @@ describe('message draft eligibility', () => {
     }
   });
 
+  it.each(PROTECTED_MESSAGE_SEND_TOOL_SLUGS)(
+    'rejects direct agent execution of protected send tool %s',
+    async (toolSlug) => {
+      const bridge = new ComposioBridgeService(new ManagedBackendClient(''));
+
+      await expect(bridge.executeTool(toolSlug, { body: 'bypass review' }))
+        .rejects.toMatchObject({ status: 403 });
+    },
+  );
+
+  it('keeps every reviewed dispatch tool inside the protected policy', () => {
+    expect(PROTECTED_MESSAGE_SEND_TOOL_SLUGS).toEqual(expect.arrayContaining(
+      [
+        ...Object.values(REVIEWED_MESSAGE_TOOL_BY_CHANNEL),
+        ...Object.values(REVIEWED_TEAMS_TOOL_BY_TARGET_KIND),
+      ],
+    ));
+  });
+
+  it.each([
+    ['gmail', 'GMAIL_SEND_EMAIL'],
+    ['slack', 'SLACK_SEND_MESSAGE'],
+  ])('maps reviewed %s sends to the fixed provider tool', async (channel, toolSlug) => {
+    const bridge = new ComposioBridgeService(new ManagedBackendClient('https://backend.example'));
+    const remote = (bridge as unknown as {
+      bridgeClient: { executeTool: (slug: string, args: Record<string, unknown>) => Promise<unknown> };
+    }).bridgeClient;
+    const execute = vi.spyOn(remote, 'executeTool').mockResolvedValue({
+      data: { ok: true },
+      error: null,
+      logId: null,
+    });
+    const args = { body: 'reviewed content' };
+
+    await bridge.sendReviewedMessage(channel, args);
+
+    expect(execute).toHaveBeenCalledWith(toolSlug, args);
+  });
+
+  it.each([
+    [
+      'self',
+      'MICROSOFT_TEAMS_SEND_MESSAGE_TO_SELF',
+      { target_kind: 'self', content: 'Personal note', content_type: 'text' },
+      { content: 'Personal note', content_type: 'text' },
+    ],
+    [
+      'chat',
+      'MICROSOFT_TEAMS_TEAMS_POST_CHAT_MESSAGE',
+      { target_kind: 'chat', chat_id: '19:chat-id', content: 'Hello chat', content_type: 'text' },
+      { chat_id: '19:chat-id', content: 'Hello chat', content_type: 'text' },
+    ],
+    [
+      'channel',
+      'MICROSOFT_TEAMS_TEAMS_POST_CHANNEL_MESSAGE',
+      {
+        target_kind: 'channel',
+        team_id: 'team-1',
+        channel_id: '19:channel-id',
+        content: 'Hello channel',
+        content_type: 'text',
+      },
+      {
+        team_id: 'team-1',
+        channel_id: '19:channel-id',
+        content: 'Hello channel',
+        content_type: 'text',
+      },
+    ],
+  ])('maps reviewed Teams %s messages to a fixed provider tool', async (_kind, toolSlug, args, expectedArgs) => {
+    const bridge = new ComposioBridgeService(new ManagedBackendClient('https://backend.example'));
+    const remote = (bridge as unknown as {
+      bridgeClient: { executeTool: (slug: string, args: Record<string, unknown>) => Promise<unknown> };
+    }).bridgeClient;
+    const execute = vi.spyOn(remote, 'executeTool').mockResolvedValue({
+      data: { ok: true },
+      error: null,
+      logId: null,
+    });
+
+    await bridge.sendReviewedMessage('microsoft_teams', args);
+
+    expect(execute).toHaveBeenCalledOnce();
+    expect(execute).toHaveBeenCalledWith(toolSlug, expectedArgs);
+  });
+
+  it('rejects a reviewed Teams message without a recognized target kind', async () => {
+    const bridge = new ComposioBridgeService(new ManagedBackendClient('https://backend.example'));
+
+    await expect(bridge.sendReviewedMessage('microsoft_teams', { content: 'Missing target' }))
+      .rejects.toMatchObject({ status: 400 });
+  });
+
+  it.each(['me', 'self', 'myself', 'yourself'])(
+    'resolves Slack self alias %s to a DM before the reviewed send',
+    async (selfAlias) => {
+      const bridge = new ComposioBridgeService(new ManagedBackendClient('https://backend.example'));
+      const remote = (bridge as unknown as {
+        bridgeClient: { executeTool: (slug: string, args: Record<string, unknown>) => Promise<unknown> };
+      }).bridgeClient;
+      const execute = vi.spyOn(remote, 'executeTool')
+        .mockResolvedValueOnce({
+          data: { ok: true, user_id: 'U012AUTHED' },
+          error: null,
+          logId: null,
+        })
+        .mockResolvedValueOnce({
+          data: { ok: true, channel: { id: 'D012SELFDM' } },
+          error: null,
+          logId: null,
+        })
+        .mockResolvedValueOnce({
+          data: { ok: true },
+          error: null,
+          logId: null,
+        });
+
+      const result = await bridge.sendReviewedMessage('slack', {
+        channel: selfAlias,
+        markdown_text: 'Hello from Hermes',
+      });
+
+      expect(result.error).toBeNull();
+      expect(execute.mock.calls).toEqual([
+        ['SLACK_TEST_AUTH', {}],
+        ['SLACK_OPEN_DM', { users: 'U012AUTHED', return_im: true }],
+        ['SLACK_SEND_MESSAGE', {
+          channel: 'D012SELFDM',
+          markdown_text: 'Hello from Hermes',
+        }],
+      ]);
+    },
+  );
+
+  it('passes an existing Slack DM conversation id straight through', async () => {
+    const bridge = new ComposioBridgeService(new ManagedBackendClient('https://backend.example'));
+    const remote = (bridge as unknown as {
+      bridgeClient: { executeTool: (slug: string, args: Record<string, unknown>) => Promise<unknown> };
+    }).bridgeClient;
+    const execute = vi.spyOn(remote, 'executeTool').mockResolvedValue({
+      data: { ok: true },
+      error: null,
+      logId: null,
+    });
+    const args = { channel: 'D012EXISTING', markdown_text: 'Hello' };
+
+    await bridge.sendReviewedMessage('slack', args);
+
+    expect(execute).toHaveBeenCalledOnce();
+    expect(execute).toHaveBeenCalledWith('SLACK_SEND_MESSAGE', args);
+  });
+
+  it('leaves unrelated connected-app tools on the generic execution path', async () => {
+    const bridge = new ComposioBridgeService(new ManagedBackendClient(''));
+
+    await expect(bridge.executeTool('GMAIL_FETCH_EMAILS', {}))
+      .rejects.toMatchObject({ status: 503 });
+  });
+
   it('teaches existing managed profiles that drafts are not generic approvals', () => {
     const soul = applyMemorySoulSection('# Existing profile\n', true);
 
-    expect(soul).toContain('Use propose_message_draft only to compose outbound Gmail email or Slack messages.');
+    expect(soul).toContain('Use propose_message_draft only to compose outbound Gmail email, Slack messages, or top-level Microsoft Teams messages.');
     expect(soul).toContain('Never use it as a generic approval widget for Notion');
     expect(soul).not.toContain('Before using any custom connector tool');
   });

@@ -163,9 +163,11 @@ def get_connection_status(request_id: str) -> types.CallToolResult:
 
 @mcp.tool()
 def propose_message_draft(
-    channel: Literal["gmail", "slack"],
+    channel: Literal["gmail", "slack", "microsoft_teams"],
     body: str,
     to: str | None = None,
+    target_kind: Literal["self", "chat", "channel"] | None = None,
+    team_id: str | None = None,
     subject: str | None = None,
     cc: str | None = None,
     threadId: str | None = None,
@@ -174,11 +176,25 @@ def propose_message_draft(
     to_display: str | None = None,
     to_avatar_url: str | None = None,
 ) -> types.CallToolResult:
-    """Surface a Gmail email or Slack message for review before sending.
+    """Surface a Gmail, Slack, or Microsoft Teams message for review.
 
-    Use this only for outbound Gmail email and Slack messages. Never use it
-    for Notion pages or tables, documents, databases, tasks, calendar events,
-    comments, or any other connected-app action.
+    Use this only for outbound Gmail email, Slack messages, and top-level
+    Microsoft Teams messages. Never use it for Notion pages or tables,
+    documents, databases, tasks, calendar events, comments, Teams replies or
+    activity notifications, or any other connected-app action.
+
+    For Slack, `to="me"` sends to the authenticated user's own DM. For other
+    direct messages, resolve the recipient with SLACK_FIND_USERS and open the
+    conversation with SLACK_OPEN_DM, then pass the returned D-prefixed channel
+    id as `to`. Public channel names and C/G-prefixed conversation ids are also
+    accepted. Use `to_display` for the friendly name shown in the review UI.
+
+    For Microsoft Teams, set `target_kind="self"` and `to="me"` for the
+    authenticated user's self-DM. For an existing chat, set
+    `target_kind="chat"` and pass its chat id as `to`. For a channel, set
+    `target_kind="channel"`, pass the channel id as `to`, and include its
+    `team_id`. Resolve those ids with the Teams list/read tools before drafting.
+    Put the human-readable chat or "Team · Channel" name in `to_display`.
 
     Verso handles the final send (or discard) from the review widget. After a
     "pending_review" result, do not call the underlying send tool yourself.
@@ -190,6 +206,8 @@ def propose_message_draft(
     }
     optional_values = {
         "to": to,
+        "target_kind": target_kind,
+        "team_id": team_id,
         "subject": subject,
         "cc": cc,
         "threadId": threadId,

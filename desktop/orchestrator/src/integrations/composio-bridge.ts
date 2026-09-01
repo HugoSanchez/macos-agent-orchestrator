@@ -13,6 +13,11 @@ import {
   type ComposioNativeToolManifestTool,
   type ComposioToolUsageStore,
 } from '../connections/composio-tool-usage-store.ts';
+import {
+  isProtectedMessageSendToolSlug,
+  reviewedMessageToolSlug,
+  SUPPORTED_MESSAGE_DRAFT_CHANNELS,
+} from './reviewed-message-policy.ts';
 
 export interface ComposioBridgeSearchToolView extends RemoteBridgeSearchToolResult {}
 export interface ComposioBridgeToolSchemaView extends RemoteBridgeToolSchemaView {}
@@ -58,11 +63,6 @@ export interface NativeToolManifestRefreshStatus {
  * directly; it forwards search/schema/execute calls to the authenticated
  * backend bridge so the Composio project API key stays server-side.
  */
-
-// The draft widget is intentionally a native Gmail/Slack composer. It is not
-// a generic confirmation surface for documents, databases, tasks, or other
-// connected-app mutations.
-export const SUPPORTED_MESSAGE_DRAFT_CHANNELS = new Set(['gmail', 'slack']);
 
 /**
  * Deterministic id for a draft, derived from the agent's tool args. The chat
@@ -239,6 +239,99 @@ export class ComposioBridgeService {
       };
     }
 
+    // Message delivery is never available through the generic agent-facing
+    // bridge. The reviewed draft endpoint calls sendReviewedMessage(), whose
+    // channel-to-slug mapping cannot be supplied or overridden by the model.
+    if (isProtectedMessageSendToolSlug(slug)) {
+      throw new ComposioBridgeHttpError(
+        403,
+        `Direct execution of ${slug.toUpperCase()} requires review in the message draft widget.`,
+      );
+    }
+
+    return this.executeRemoteTool(slug, argumentRecord, opts);
+  }
+
+  async sendReviewedMessage(
+    channel: string,
+    arguments_: Record<string, unknown>,
+  ): Promise<ComposioBridgeToolExecutionView> {
+    const argumentRecord = asRecord(arguments_);
+    if (!argumentRecord) {
+      throw new ComposioBridgeHttpError(400, 'Missing required object "arguments".');
+    }
+    const normalizedChannel = channel.trim().toLowerCase();
+    const slug = reviewedMessageToolSlug(normalizedChannel, argumentRecord);
+    if (!slug) {
+      const message = SUPPORTED_MESSAGE_DRAFT_CHANNELS.has(normalizedChannel)
+        ? 'Microsoft Teams drafts require target_kind to be self, chat, or channel.'
+        : `Channel "${channel}" is not supported. Drafts are limited to Gmail, Slack, and Microsoft Teams.`;
+      throw new ComposioBridgeHttpError(400, message);
+    }
+
+    const resolvedArguments = normalizedChannel === 'slack'
+      ? await this.resolveReviewedSlackArguments(argumentRecord)
+      : { arguments: argumentRecord };
+    if ('error' in resolvedArguments) return resolvedArguments.error;
+
+    const providerArguments = normalizedChannel === 'microsoft_teams'
+      ? withoutRecordKey(resolvedArguments.arguments, 'target_kind')
+      : resolvedArguments.arguments;
+    return this.executeRemoteTool(slug, providerArguments, { recordUsage: false });
+  }
+
+  /**
+   * Gmail accepts the special recipient `me`; Slack's message API does not.
+   * Resolve that one user-friendly alias only after native approval, then use
+   * the returned DM conversation id for the reviewed send. Other Slack targets
+   * (channel names and C/G/D conversation ids) continue to pass through.
+   */
+  private async resolveReviewedSlackArguments(
+    argumentRecord: Record<string, unknown>,
+  ): Promise<
+    | { arguments: Record<string, unknown> }
+    | { error: ComposioBridgeToolExecutionView }
+  > {
+    const target = cleanString(argumentRecord.channel);
+    if (!target || !isSlackSelfAlias(target)) return { arguments: argumentRecord };
+
+    const auth = await this.executeRemoteTool('SLACK_TEST_AUTH', {}, { recordUsage: false });
+    if (auth.error) return { error: auth };
+    const userId = slackAuthenticatedUserId(auth.data);
+    if (!userId) {
+      throw new ComposioBridgeHttpError(
+        502,
+        'Slack did not return the authenticated user id needed to open your direct message.',
+      );
+    }
+
+    const dm = await this.executeRemoteTool(
+      'SLACK_OPEN_DM',
+      { users: userId, return_im: true },
+      { recordUsage: false },
+    );
+    if (dm.error) return { error: dm };
+    const conversationId = slackConversationId(dm.data);
+    if (!conversationId) {
+      throw new ComposioBridgeHttpError(
+        502,
+        'Slack did not return the direct-message conversation id needed to send this message.',
+      );
+    }
+
+    return {
+      arguments: {
+        ...argumentRecord,
+        channel: conversationId,
+      },
+    };
+  }
+
+  private async executeRemoteTool(
+    slug: string,
+    argumentRecord: Record<string, unknown>,
+    opts: { recordUsage?: boolean },
+  ): Promise<ComposioBridgeToolExecutionView> {
     this.assertConfigured();
     try {
       const result = await this.bridgeClient.executeTool(slug, argumentRecord);
@@ -332,6 +425,39 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? value as Record<string, unknown>
     : null;
+}
+
+function withoutRecordKey(
+  record: Record<string, unknown>,
+  omittedKey: string,
+): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(record).filter(([key]) => key !== omittedKey));
+}
+
+function isSlackSelfAlias(value: string): boolean {
+  return /^(me|myself|self|yourself)$/i.test(value.trim());
+}
+
+function slackAuthenticatedUserId(value: unknown): string | null {
+  const record = asRecord(value);
+  if (!record) return null;
+  const user = asRecord(record.user);
+  const direct = [record.user_id, record.userId, user?.id]
+    .map(cleanString)
+    .find((candidate): candidate is string => candidate !== null && /^[UW][A-Z0-9]+$/i.test(candidate));
+  if (direct) return direct;
+  return slackAuthenticatedUserId(record.data);
+}
+
+function slackConversationId(value: unknown): string | null {
+  const record = asRecord(value);
+  if (!record) return null;
+  const channel = asRecord(record.channel);
+  const direct = [record.channel_id, record.channelId, channel?.id]
+    .map(cleanString)
+    .find((candidate): candidate is string => candidate !== null && /^D[A-Z0-9]+$/i.test(candidate));
+  if (direct) return direct;
+  return slackConversationId(record.data);
 }
 
 export function buildComposioToolUsageInput(

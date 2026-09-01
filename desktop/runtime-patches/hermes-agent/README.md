@@ -37,10 +37,14 @@ gateway and exercises streaming plus the MCP OAuth routes.
    effort selected in the chat UI. It depends on patch 1.
 9. `verso-tool-search-pinned.patch` — keeps essential tools visible when
    Hermes defers the remainder behind tool search.
+10. `verso-credential-env-filter.patch` — extends Hermes' existing subprocess
+    credential scrubber to cover Verso-managed tokens, secrets, and keys while
+    preserving explicitly configured MCP-server environments.
 
-`verso-web-routing-tests.patch` is a source-only companion containing upstream
-regression tests. The patch helper applies it to Hermes source checkouts, but
-skips it for release `site-packages` trees because wheels do not ship `tests/`.
+`verso-web-routing-tests.patch` and `verso-credential-env-filter-tests.patch`
+are source-only companions containing upstream regression tests. The patch
+helper applies them to Hermes source checkouts, but skips them for release
+`site-packages` trees because wheels do not ship `tests/`.
 
 ## Updating Hermes
 

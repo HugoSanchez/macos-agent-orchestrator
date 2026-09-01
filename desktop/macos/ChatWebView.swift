@@ -85,6 +85,7 @@ struct ShellState: Codable, Equatable {
 struct ChatWebView: NSViewRepresentable {
     let sidecarPort: Int?
     let sidecarAuthToken: String?
+    let draftApprovalToken: String?
     let isDarkMode: Bool
     let isCatalogOpen: Bool
     let isSkillsCatalogOpen: Bool
@@ -206,11 +207,19 @@ struct ChatWebView: NSViewRepresentable {
         // When sidecar port becomes available, inject it into JS
         if let port = sidecarPort,
            let authToken = sidecarAuthToken,
-           port != context.coordinator.lastInjectedPort || authToken != context.coordinator.lastInjectedAuthToken {
+           let draftApprovalToken,
+           port != context.coordinator.lastInjectedPort
+            || authToken != context.coordinator.lastInjectedAuthToken
+            || draftApprovalToken != context.coordinator.lastInjectedDraftApprovalToken {
             context.coordinator.pendingPort = port
             context.coordinator.pendingAuthToken = authToken
+            context.coordinator.pendingDraftApprovalToken = draftApprovalToken
             if context.coordinator.pageLoaded {
-                context.coordinator.injectSidecar(port: port, authToken: authToken)
+                context.coordinator.injectSidecar(
+                    port: port,
+                    authToken: authToken,
+                    draftApprovalToken: draftApprovalToken
+                )
             }
         }
 
@@ -282,6 +291,8 @@ struct ChatWebView: NSViewRepresentable {
         var pendingPort: Int?
         var lastInjectedAuthToken: String?
         var pendingAuthToken: String?
+        var lastInjectedDraftApprovalToken: String?
+        var pendingDraftApprovalToken: String?
         var lastInjectedCatalogOpen: Bool?
         var pendingCatalogOpen: Bool = false
         var lastInjectedSkillsCatalogOpen: Bool?
@@ -413,8 +424,13 @@ struct ChatWebView: NSViewRepresentable {
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             pageLoaded = true
             if let port = pendingPort ?? lastInjectedPort,
-               let authToken = pendingAuthToken ?? lastInjectedAuthToken {
-                injectSidecar(port: port, authToken: authToken)
+               let authToken = pendingAuthToken ?? lastInjectedAuthToken,
+               let draftApprovalToken = pendingDraftApprovalToken ?? lastInjectedDraftApprovalToken {
+                injectSidecar(
+                    port: port,
+                    authToken: authToken,
+                    draftApprovalToken: draftApprovalToken
+                )
             }
             injectCatalogState(pendingCatalogOpen)
             injectSkillsCatalogState(pendingSkillsCatalogOpen)
@@ -464,20 +480,26 @@ struct ChatWebView: NSViewRepresentable {
             decisionHandler(.allow)
         }
 
-        func injectSidecar(port: Int, authToken: String) {
+        func injectSidecar(port: Int, authToken: String, draftApprovalToken: String) {
             guard let webView else { return }
             guard let tokenLiteral = Self.javascriptStringLiteral(authToken) else { return }
+            guard let draftApprovalTokenLiteral = Self.javascriptStringLiteral(draftApprovalToken) else { return }
             let js = """
             (function() {
               window.__versoSidecarPort = \(port);
               window.__versoSidecarToken = \(tokenLiteral);
+              window.__versoDraftApprovalToken = \(draftApprovalTokenLiteral);
               if (typeof window.__versoApplySidecarPort === 'function') {
                 window.__versoApplySidecarPort(\(port), \(tokenLiteral));
               }
               if (typeof window.setSidecarPort === 'function') {
                 window.setSidecarPort(\(port));
               }
-              window.dispatchEvent(new CustomEvent('verso:sidecar-port', { detail: { port: \(port), token: \(tokenLiteral) } }));
+              window.dispatchEvent(new CustomEvent('verso:sidecar-port', { detail: {
+                port: \(port),
+                token: \(tokenLiteral),
+                draftApprovalToken: \(draftApprovalTokenLiteral)
+              } }));
             })();
             """
             webView.evaluateJavaScript(js) { _, error in
@@ -487,8 +509,10 @@ struct ChatWebView: NSViewRepresentable {
             }
             lastInjectedPort = port
             lastInjectedAuthToken = authToken
+            lastInjectedDraftApprovalToken = draftApprovalToken
             pendingPort = port
             pendingAuthToken = authToken
+            pendingDraftApprovalToken = draftApprovalToken
         }
 
         private static func javascriptStringLiteral(_ value: String) -> String? {

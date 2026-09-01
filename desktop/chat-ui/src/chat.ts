@@ -17,6 +17,7 @@ import { postShellAction } from './shell-bridge';
 
 let sidecarPort: number | null = null;
 let sidecarToken: string | null = null;
+let draftApprovalToken: string | null = null;
 
 // Tell the native host that a piece of sidebar state changed. The Swift shell
 // listens via WKScriptMessageHandler('chatBridge') and refetches the
@@ -41,6 +42,10 @@ export function setSidecarPort(port: number) {
 
 export function setSidecarAuthToken(token: string | null | undefined) {
   sidecarToken = token || null;
+}
+
+export function setDraftApprovalToken(token: string | null | undefined) {
+  draftApprovalToken = token || null;
 }
 
 export function getSidecarPort(): number | null {
@@ -571,6 +576,8 @@ export async function disconnectAnthropic(): Promise<void> {
 
 export interface DraftSendInput {
   channel: string;
+  targetKind?: string;
+  teamId?: string;
   to: string;
   cc?: string;
   subject?: string;
@@ -591,7 +598,10 @@ export async function sendDraft(
 ): Promise<void> {
   const res = await sidecarFetch(`${baseURL()}/drafts/send`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(draftApprovalToken ? { 'X-Verso-Draft-Approval-Token': draftApprovalToken } : {}),
+    },
     body: JSON.stringify({ ...payload, draftId, sessionId }),
   });
   if (!res.ok) {

@@ -198,4 +198,5 @@ jobs:
           smoke_wait_for_gateway 120
           smoke_assert_streaming_responses "ci-smoke-1"
           smoke_assert_runtime_capabilities
+          smoke_assert_credential_env_filtering
           smoke_assert_mcp_oauth_routes

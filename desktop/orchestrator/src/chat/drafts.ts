@@ -1,13 +1,20 @@
+import { createHash, timingSafeEqual } from 'node:crypto';
+import type { IncomingMessage } from 'node:http';
 import { json, route, type Route } from '../http/router.ts';
 import { ChatStore } from './chat-store.ts';
 import {
   ComposioBridgeHttpError,
-  SUPPORTED_MESSAGE_DRAFT_CHANNELS,
   type ComposioBridgeService,
 } from '../integrations/composio-bridge.ts';
+import {
+  reviewedMessageToolSlug,
+  SUPPORTED_MESSAGE_DRAFT_CHANNELS,
+} from '../integrations/reviewed-message-policy.ts';
 
 interface DraftPayload {
   channel: string;
+  targetKind: string;
+  teamId: string;
   to: string;
   cc: string;
   subject: string;
@@ -17,10 +24,15 @@ interface DraftPayload {
   draftId: string;
 }
 
+const DRAFT_APPROVAL_HEADER = 'x-verso-draft-approval-token';
+
+export interface DraftsRouteOptions {
+  draftApprovalTokenSha256?: string | null;
+}
+
 // Verso dispatches directly from the widget after the model's turn ends.
-const MESSAGE_DRAFT_DISPATCH: Record<string, { slug: string; buildArgs: (p: DraftPayload) => Record<string, unknown> }> = {
+const MESSAGE_DRAFT_DISPATCH: Record<string, { buildArgs: (p: DraftPayload) => Record<string, unknown> }> = {
   gmail: {
-    slug: 'GMAIL_SEND_EMAIL',
     buildArgs: (p) => {
       const args: Record<string, unknown> = {
         recipient_email: p.to,
@@ -33,7 +45,6 @@ const MESSAGE_DRAFT_DISPATCH: Record<string, { slug: string; buildArgs: (p: Draf
     },
   },
   slack: {
-    slug: 'SLACK_SEND_MESSAGE',
     buildArgs: (p) => {
       const args: Record<string, unknown> = {
         channel: p.to.replace(/^#/, ''),
@@ -43,13 +54,50 @@ const MESSAGE_DRAFT_DISPATCH: Record<string, { slug: string; buildArgs: (p: Draf
       return args;
     },
   },
+  microsoft_teams: {
+    buildArgs: (p) => {
+      const args: Record<string, unknown> = {
+        target_kind: p.targetKind,
+        content: p.body,
+        content_type: 'text',
+      };
+      if (p.targetKind === 'chat') args.chat_id = p.to;
+      if (p.targetKind === 'channel') {
+        args.team_id = p.teamId;
+        args.channel_id = p.to;
+      }
+      return args;
+    },
+  },
 };
 
-export function buildDraftsRoutes(bridge: ComposioBridgeService, store: ChatStore): Route[] {
+export function buildDraftsRoutes(
+  bridge: ComposioBridgeService,
+  store: ChatStore,
+  options: DraftsRouteOptions = {},
+): Route[] {
+  const activeSends = new Set<string>();
+  const draftApprovalTokenSha256 = options.draftApprovalTokenSha256
+    ?? process.env.VERSO_DRAFT_APPROVAL_TOKEN_SHA256?.trim()
+    ?? null;
+
   return [
-    // POST /drafts/send — dispatches supported Slack/Gmail drafts without
-    // re-engaging the model.
-    route('POST', '/drafts/send', async (_req, res, _params, body) => {
+    // POST /drafts/send — dispatches supported Gmail, Slack, and Teams drafts
+    // without re-engaging the model.
+    route('POST', '/drafts/send', async (req, res, _params, body) => {
+      if (!draftApprovalTokenSha256) {
+        return json(res, 503, {
+          error: 'approval_unavailable',
+          message: 'Native message approval is not configured.',
+        });
+      }
+      if (!hasValidDraftApproval(req, draftApprovalTokenSha256)) {
+        return json(res, 403, {
+          error: 'approval_required',
+          message: 'Sending this message requires approval from the native draft widget.',
+        });
+      }
+
       let payload: DraftPayload;
       try {
         payload = parseDraftPayload(body);
@@ -62,7 +110,7 @@ export function buildDraftsRoutes(bridge: ComposioBridgeService, store: ChatStor
       if (!dispatch) {
         return json(res, 400, {
           error: 'bad_request',
-          message: `Channel "${payload.channel}" is not supported. Drafts are limited to Gmail and Slack.`,
+          message: `Channel "${payload.channel}" is not supported. Drafts are limited to Gmail, Slack, and Microsoft Teams.`,
         });
       }
       if (!payload.sessionId) {
@@ -78,24 +126,45 @@ export function buildDraftsRoutes(bridge: ComposioBridgeService, store: ChatStor
         });
       }
 
+      const sendKey = `${payload.sessionId}\u0000${payload.draftId}`;
+      const existingResolution = store.listDraftResolutions(payload.sessionId)
+        .find((resolution) => resolution.draftId === payload.draftId);
+      if (existingResolution || activeSends.has(sendKey)) {
+        return json(res, 409, {
+          error: 'draft_resolved',
+          message: existingResolution
+            ? `Draft has already been ${existingResolution.status}.`
+            : 'Draft is already being sent.',
+          status: existingResolution?.status ?? 'sending',
+        });
+      }
+
+      activeSends.add(sendKey);
       try {
-        const result = await bridge.executeTool(dispatch.slug, dispatch.buildArgs(payload));
+        const arguments_ = dispatch.buildArgs(payload);
+        const toolSlug = reviewedMessageToolSlug(payload.channel, arguments_);
+        if (!toolSlug) {
+          throw new ComposioBridgeHttpError(400, 'The reviewed message target is not supported.');
+        }
+        const result = await bridge.sendReviewedMessage(payload.channel, arguments_);
         if (result.error) {
           return json(res, 502, {
             error: 'send_failed',
             message: result.error,
             channel: payload.channel,
-            toolSlug: dispatch.slug,
+            toolSlug,
           });
         }
         store.recordDraftResolution(payload.sessionId, payload.draftId, 'sent', payload.channel);
-        json(res, 200, { status: 'sent', channel: payload.channel, toolSlug: dispatch.slug, result: result.data });
+        json(res, 200, { status: 'sent', channel: payload.channel, toolSlug, result: result.data });
       } catch (error: unknown) {
         if (error instanceof ComposioBridgeHttpError) {
           return json(res, error.status, { error: 'send_failed', message: error.message });
         }
         const message = error instanceof Error ? error.message : String(error);
         json(res, 500, { error: 'internal_error', message });
+      } finally {
+        activeSends.delete(sendKey);
       }
     }),
 
@@ -112,7 +181,14 @@ export function buildDraftsRoutes(bridge: ComposioBridgeService, store: ChatStor
       if (!SUPPORTED_MESSAGE_DRAFT_CHANNELS.has(payload.channel)) {
         return json(res, 400, {
           error: 'bad_request',
-          message: `Channel "${payload.channel}" is not supported. Drafts are limited to Gmail and Slack.`,
+          message: `Channel "${payload.channel}" is not supported. Drafts are limited to Gmail, Slack, and Microsoft Teams.`,
+        });
+      }
+      const sendKey = `${payload.sessionId}\u0000${params.id}`;
+      if (activeSends.has(sendKey)) {
+        return json(res, 409, {
+          error: 'draft_sending',
+          message: 'Draft is already being sent and can no longer be discarded.',
         });
       }
       const resolution = store.recordDraftResolution(payload.sessionId, params.id, 'discarded', payload.channel);
@@ -133,14 +209,33 @@ function parseDraftPayload(body: unknown): DraftPayload {
     throw new Error('Missing JSON body');
   }
   const record = body as Record<string, unknown>;
-  const channel = stringField(record.channel);
+  const channel = stringField(record.channel).toLowerCase();
   const to = stringField(record.to);
   const body_ = stringField(record.body);
+  const teamId = stringField(record.teamId) || stringField(record.team_id);
+  let targetKind = (stringField(record.targetKind) || stringField(record.target_kind)).toLowerCase();
   if (!channel) throw new Error('Field "channel" is required');
   if (!to) throw new Error('Field "to" is required');
   if (!body_) throw new Error('Field "body" is required');
+  if (channel === 'microsoft_teams') {
+    if (!targetKind) {
+      targetKind = /^(me|myself|self|yourself)$/i.test(to)
+        ? 'self'
+        : teamId
+          ? 'channel'
+          : 'chat';
+    }
+    if (!['self', 'chat', 'channel'].includes(targetKind)) {
+      throw new Error('Field "target_kind" must be self, chat, or channel for Microsoft Teams');
+    }
+    if (targetKind === 'channel' && !teamId) {
+      throw new Error('Field "team_id" is required for a Microsoft Teams channel message');
+    }
+  }
   return {
     channel,
+    targetKind,
+    teamId,
     to,
     cc: stringField(record.cc),
     subject: stringField(record.subject),
@@ -158,11 +253,25 @@ function parseDiscardPayload(body: unknown): { sessionId: string; channel: strin
   const record = body as Record<string, unknown>;
   return {
     sessionId: stringField(record.sessionId),
-    channel: stringField(record.channel),
+    channel: stringField(record.channel).toLowerCase(),
   };
 }
 
 function stringField(value: unknown): string {
   if (typeof value !== 'string') return '';
   return value.trim();
+}
+
+function hasValidDraftApproval(req: IncomingMessage, expectedSha256: string): boolean {
+  const header = req.headers[DRAFT_APPROVAL_HEADER];
+  const token = typeof header === 'string'
+    ? header
+    : Array.isArray(header) && typeof header[0] === 'string'
+      ? header[0]
+      : '';
+  if (!token) return false;
+
+  const expected = Buffer.from(expectedSha256.toLowerCase(), 'utf8');
+  const actual = Buffer.from(createHash('sha256').update(token, 'utf8').digest('hex'), 'utf8');
+  return expected.length === actual.length && timingSafeEqual(expected, actual);
 }

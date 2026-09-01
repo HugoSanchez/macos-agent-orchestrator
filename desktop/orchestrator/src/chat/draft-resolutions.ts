@@ -1,7 +1,7 @@
 import {
   draftIdForArgs,
-  SUPPORTED_MESSAGE_DRAFT_CHANNELS,
 } from '../integrations/composio-bridge.ts';
+import { SUPPORTED_MESSAGE_DRAFT_CHANNELS } from '../integrations/reviewed-message-policy.ts';
 import type {
   ChatActivityStep,
   ChatMessageRecord,
