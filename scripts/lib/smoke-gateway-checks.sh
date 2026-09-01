@@ -164,6 +164,77 @@ PYEOF
     echo "[smoke] PASS: dependencies, registered tools, and baseline capabilities are complete"
 }
 
+# Product credentials enter the native sidecar under Verso-specific names that
+# upstream Hermes does not know by default. Exercise the exact environment
+# builders used by foreground terminal, PTY/background terminal, generic child
+# processes, and execute_code so a missing/misapplied runtime patch fails both
+# CI and the shipped-bundle smoke gate.
+smoke_assert_credential_env_filtering() {
+    local python_bin="${SMOKE_PYTHON:-python3}"
+    local python_path="${SMOKE_PYTHONPATH:-}"
+    echo "[smoke] checking Verso credential environment filtering"
+
+    if ! PYTHONPATH="${python_path}" "${python_bin}" - <<'PYEOF'
+import os
+from unittest.mock import patch
+
+from tools.code_execution_tool import _scrub_child_env
+from tools.environments.local import (
+    _make_run_env,
+    _sanitize_subprocess_env,
+    hermes_subprocess_env,
+)
+from tools.mcp_tool import _build_safe_env
+
+verso_secrets = {
+    "VERSO_MANAGED_SESSION_TOKEN": "managed-secret",
+    "VERSO_SIDECAR_AUTH_SECRET": "sidecar-secret",
+    "VERSO_CC_smoke_TOKEN": "connector-secret",
+    "VERSO_HERMES_API_SERVER_KEY": "gateway-secret",
+}
+terminal_secrets = {**verso_secrets, "API_SERVER_KEY": "api-server-secret"}
+operational = {
+    "PATH": "/usr/bin:/bin",
+    "VERSO_RUNTIME_MODE": "managed",
+    "VERSO_ORCHESTRATOR_BASE_URL": "http://127.0.0.1:1234",
+}
+source = {**terminal_secrets, **operational}
+
+with patch.dict(os.environ, source, clear=True):
+    foreground = _make_run_env({})
+    for inherit_credentials in (False, True):
+        generic_child = hermes_subprocess_env(
+            inherit_credentials=inherit_credentials,
+        )
+        assert not (set(verso_secrets) & set(generic_child)), generic_child.keys()
+
+background = _sanitize_subprocess_env(source)
+code_child = _scrub_child_env(source, is_passthrough=lambda _name: False)
+for result in (foreground, background, code_child):
+    leaked = set(terminal_secrets) & set(result)
+    assert not leaked, f"credential variables leaked: {sorted(leaked)}"
+
+for name, value in operational.items():
+    assert background.get(name) == value
+
+# Explicit MCP-server environments use a separate allowlisted baseline. The
+# Verso bridge must still receive the one credential scoped to that process.
+with patch.dict(os.environ, source, clear=True):
+    mcp_env = _build_safe_env({
+        "VERSO_SIDECAR_AUTH_SECRET": "scoped-sidecar-secret",
+    })
+assert mcp_env["VERSO_SIDECAR_AUTH_SECRET"] == "scoped-sidecar-secret"
+assert "VERSO_MANAGED_SESSION_TOKEN" not in mcp_env
+assert "VERSO_CC_smoke_TOKEN" not in mcp_env
+PYEOF
+    then
+        smoke_fail "Verso credential environment filtering contract failed"
+        return 1
+    fi
+
+    echo "[smoke] PASS: Verso credentials are absent from model-authored subprocess environments"
+}
+
 # MCP OAuth routes added by verso-gateway-mcp-oauth.patch. A mis-anchored or
 # missing patch means aiohttp's default 404 on all of them; a healthy patch is
 # distinguishable on each route without running a real OAuth flow:

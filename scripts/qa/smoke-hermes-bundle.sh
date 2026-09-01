@@ -83,6 +83,7 @@ echo "[smoke] gateway ready; sending streaming /v1/responses request"
 
 smoke_assert_streaming_responses "smoke-test-1"
 smoke_assert_runtime_capabilities
+smoke_assert_credential_env_filtering
 smoke_assert_mcp_oauth_routes
 
 # ── Pin-liveness contract ────────────────────────────────────────────────

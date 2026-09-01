@@ -44,6 +44,29 @@ type HermesRuntimeState = 'idle' | 'starting' | 'ready' | 'error' | 'unavailable
 type HermesRuntimeSource = 'none' | 'managed' | 'manual';
 type HermesGatewayProbe = 'ready' | 'unauthorized' | 'unreachable';
 
+const ORCHESTRATOR_ONLY_HERMES_ENV_KEYS = [
+  'VERSO_MANAGED_SESSION_TOKEN',
+  'VERSO_MANAGED_SESSION_EXPIRES_AT',
+  'VERSO_MANAGED_USER_ID',
+  'VERSO_MANAGED_DEVICE_ID',
+  'VERSO_SIDECAR_AUTH_SECRET',
+  'VERSO_HERMES_API_SERVER_KEY',
+] as const;
+
+/**
+ * Copy the native sidecar environment without credentials that Hermes does
+ * not need. Credentials required by a dedicated MCP server are supplied in
+ * that server's explicit environment instead of becoming ambient Hermes
+ * process state.
+ */
+export function buildHermesInheritedEnvironment(
+  source: NodeJS.ProcessEnv = process.env,
+): NodeJS.ProcessEnv {
+  const inherited = { ...source };
+  for (const key of ORCHESTRATOR_ONLY_HERMES_ENV_KEYS) delete inherited[key];
+  return inherited;
+}
+
 class HermesGatewayAuthMismatchError extends Error {
   constructor(baseUrl: string) {
     super(`Hermes at ${baseUrl} rejected Verso's managed gateway credential.`);
@@ -586,7 +609,7 @@ export class HermesSupervisor {
     const browserCdpUrl = this.browserRuntime?.cdpUrl() ?? null;
 
     const env = {
-      ...process.env,
+      ...buildHermesInheritedEnvironment(),
       ...pythonEnv,
       ...customConnectorEnv,
       PATH: [
