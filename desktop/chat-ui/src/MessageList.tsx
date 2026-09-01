@@ -272,9 +272,11 @@ function CodexConnectRequiredCard({ onConnected }: { onConnected: () => void }) 
 }
 
 interface DraftFields {
-  // The widget is intentionally limited to the two communication channels
+  // The widget is intentionally limited to the communication channels
   // that Verso can dispatch and durably resolve itself.
   channel: string;
+  targetKind: string;
+  teamId: string;
   channelLabel: string;
   channelLogoUrl: string;
   // `to` is what gets sent (possibly an opaque id like a Slack DM channel id
@@ -319,6 +321,8 @@ function parseDraftInput(input: unknown): DraftFields {
   const body = firstStringField(obj, ['body', 'message', 'markdown_text', 'fallback_text', 'text']);
   return {
     channel,
+    targetKind: firstStringField(obj, ['targetKind', 'target_kind']).toLowerCase(),
+    teamId: firstStringField(obj, ['teamId', 'team_id']),
     channelLabel: typeof obj.channel_label === 'string' ? obj.channel_label.trim() : '',
     channelLogoUrl: typeof obj.channel_logo_url === 'string' ? obj.channel_logo_url.trim() : '',
     to,
@@ -356,6 +360,7 @@ function prettyChannelLabel(channel: string): string {
   if (!channel) return 'message';
   if (channel === 'gmail') return 'Gmail';
   if (channel === 'slack') return 'Slack';
+  if (channel === 'microsoft_teams') return 'Microsoft Teams';
   return channel.charAt(0).toUpperCase() + channel.slice(1);
 }
 
@@ -417,6 +422,8 @@ function MessageDraftCard({
     setErrorMessage(null);
     const payload = {
       channel: fields.channel,
+      targetKind: fields.targetKind || undefined,
+      teamId: fields.teamId || undefined,
       to: fields.to.trim(),
       cc: fields.cc.trim() || undefined,
       subject: fields.subject.trim() || undefined,
@@ -462,7 +469,9 @@ function MessageDraftCard({
 
   const toPlaceholder = fields.channel === 'gmail'
     ? 'name@example.com'
-    : '#channel or @user';
+    : fields.channel === 'microsoft_teams'
+      ? 'Chat or channel'
+      : '#channel or @user';
   const sizeClass = draftSizeClass(fields.body);
   const bodyRows = draftBodyRows(fields.body);
 

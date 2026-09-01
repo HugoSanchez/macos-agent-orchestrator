@@ -8,10 +8,13 @@ import {
 import {
   PROTECTED_MESSAGE_SEND_TOOL_SLUGS,
   REVIEWED_MESSAGE_TOOL_BY_CHANNEL,
+  REVIEWED_TEAMS_TOOL_BY_TARGET_KIND,
 } from '../src/integrations/reviewed-message-policy.ts';
 
 describe('message draft eligibility', () => {
-  it.each(['gmail', 'slack'])('accepts supported communication channel %s', async (channel) => {
+  it.each(['gmail', 'slack', 'microsoft_teams'])(
+    'accepts supported communication channel %s',
+    async (channel) => {
     const bridge = new ComposioBridgeService(new ManagedBackendClient(''));
 
     const result = await bridge.executeTool('PROPOSE_MESSAGE_DRAFT', {
@@ -22,7 +25,8 @@ describe('message draft eligibility', () => {
 
     expect(result.error).toBeNull();
     expect(result.data).toMatchObject({ status: 'pending_review', channel });
-  });
+    },
+  );
 
   it.each(['notion', 'airtable', 'google_docs', ''])('rejects non-message channel %s', async (channel) => {
     const bridge = new ComposioBridgeService(new ManagedBackendClient(''));
@@ -49,7 +53,10 @@ describe('message draft eligibility', () => {
 
   it('keeps every reviewed dispatch tool inside the protected policy', () => {
     expect(PROTECTED_MESSAGE_SEND_TOOL_SLUGS).toEqual(expect.arrayContaining(
-      Object.values(REVIEWED_MESSAGE_TOOL_BY_CHANNEL),
+      [
+        ...Object.values(REVIEWED_MESSAGE_TOOL_BY_CHANNEL),
+        ...Object.values(REVIEWED_TEAMS_TOOL_BY_TARGET_KIND),
+      ],
     ));
   });
 
@@ -71,6 +78,60 @@ describe('message draft eligibility', () => {
     await bridge.sendReviewedMessage(channel, args);
 
     expect(execute).toHaveBeenCalledWith(toolSlug, args);
+  });
+
+  it.each([
+    [
+      'self',
+      'MICROSOFT_TEAMS_SEND_MESSAGE_TO_SELF',
+      { target_kind: 'self', content: 'Personal note', content_type: 'text' },
+      { content: 'Personal note', content_type: 'text' },
+    ],
+    [
+      'chat',
+      'MICROSOFT_TEAMS_TEAMS_POST_CHAT_MESSAGE',
+      { target_kind: 'chat', chat_id: '19:chat-id', content: 'Hello chat', content_type: 'text' },
+      { chat_id: '19:chat-id', content: 'Hello chat', content_type: 'text' },
+    ],
+    [
+      'channel',
+      'MICROSOFT_TEAMS_TEAMS_POST_CHANNEL_MESSAGE',
+      {
+        target_kind: 'channel',
+        team_id: 'team-1',
+        channel_id: '19:channel-id',
+        content: 'Hello channel',
+        content_type: 'text',
+      },
+      {
+        team_id: 'team-1',
+        channel_id: '19:channel-id',
+        content: 'Hello channel',
+        content_type: 'text',
+      },
+    ],
+  ])('maps reviewed Teams %s messages to a fixed provider tool', async (_kind, toolSlug, args, expectedArgs) => {
+    const bridge = new ComposioBridgeService(new ManagedBackendClient('https://backend.example'));
+    const remote = (bridge as unknown as {
+      bridgeClient: { executeTool: (slug: string, args: Record<string, unknown>) => Promise<unknown> };
+    }).bridgeClient;
+    const execute = vi.spyOn(remote, 'executeTool').mockResolvedValue({
+      data: { ok: true },
+      error: null,
+      logId: null,
+    });
+
+    await bridge.sendReviewedMessage('microsoft_teams', args);
+
+    expect(execute).toHaveBeenCalledOnce();
+    expect(execute).toHaveBeenCalledWith(toolSlug, expectedArgs);
+  });
+
+  it('rejects a reviewed Teams message without a recognized target kind', async () => {
+    const bridge = new ComposioBridgeService(new ManagedBackendClient('https://backend.example'));
+
+    await expect(bridge.sendReviewedMessage('microsoft_teams', { content: 'Missing target' }))
+      .rejects.toMatchObject({ status: 400 });
   });
 
   it.each(['me', 'self', 'myself', 'yourself'])(
@@ -142,7 +203,7 @@ describe('message draft eligibility', () => {
   it('teaches existing managed profiles that drafts are not generic approvals', () => {
     const soul = applyMemorySoulSection('# Existing profile\n', true);
 
-    expect(soul).toContain('Use propose_message_draft only to compose outbound Gmail email or Slack messages.');
+    expect(soul).toContain('Use propose_message_draft only to compose outbound Gmail email, Slack messages, or top-level Microsoft Teams messages.');
     expect(soul).toContain('Never use it as a generic approval widget for Notion');
     expect(soul).not.toContain('Before using any custom connector tool');
   });

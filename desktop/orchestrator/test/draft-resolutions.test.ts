@@ -149,7 +149,7 @@ describe('Draft resolutions', () => {
     const calls: Array<{ slug: string; args: Record<string, unknown> }> = [];
     const port = await startDraftServer(store, {
       sendReviewedMessage: async (channel: string, args: Record<string, unknown>) => {
-        calls.push({ slug: reviewedMessageToolSlug(channel) ?? '', args });
+        calls.push({ slug: reviewedMessageToolSlug(channel, args) ?? '', args });
         return { data: { ok: true }, error: null, logId: null };
       },
     });
@@ -210,7 +210,7 @@ describe('Draft resolutions', () => {
     const calls: Array<{ slug: string; args: Record<string, unknown> }> = [];
     const port = await startDraftServer(store, {
       sendReviewedMessage: async (channel: string, args: Record<string, unknown>) => {
-        calls.push({ slug: reviewedMessageToolSlug(channel) ?? '', args });
+        calls.push({ slug: reviewedMessageToolSlug(channel, args) ?? '', args });
         return { data: { ok: true }, error: null, logId: null };
       },
     });
@@ -233,6 +233,92 @@ describe('Draft resolutions', () => {
       },
     }]);
     expect(calls[0].args).not.toHaveProperty('text');
+  });
+
+  it.each([
+    [
+      'self',
+      { channel: 'microsoft_teams', target_kind: 'self', to: 'me', body: 'Personal note' },
+      'MICROSOFT_TEAMS_SEND_MESSAGE_TO_SELF',
+      { target_kind: 'self', content: 'Personal note', content_type: 'text' },
+    ],
+    [
+      'chat',
+      { channel: 'microsoft_teams', target_kind: 'chat', to: '19:chat-id', body: 'Hello chat' },
+      'MICROSOFT_TEAMS_TEAMS_POST_CHAT_MESSAGE',
+      { target_kind: 'chat', chat_id: '19:chat-id', content: 'Hello chat', content_type: 'text' },
+    ],
+    [
+      'channel',
+      {
+        channel: 'microsoft_teams',
+        target_kind: 'channel',
+        team_id: 'team-1',
+        to: '19:channel-id',
+        body: 'Hello channel',
+      },
+      'MICROSOFT_TEAMS_TEAMS_POST_CHANNEL_MESSAGE',
+      {
+        target_kind: 'channel',
+        team_id: 'team-1',
+        channel_id: '19:channel-id',
+        content: 'Hello channel',
+        content_type: 'text',
+      },
+    ],
+  ])('sends a reviewed Teams %s draft with its canonical target', async (_kind, input, toolSlug, expectedArgs) => {
+    const store = tempStore();
+    const session = store.createSession('Teams draft');
+    const calls: Array<{ slug: string; args: Record<string, unknown> }> = [];
+    const port = await startDraftServer(store, {
+      sendReviewedMessage: async (channel: string, args: Record<string, unknown>) => {
+        calls.push({ slug: reviewedMessageToolSlug(channel, args) ?? '', args });
+        return { data: { ok: true }, error: null, logId: null };
+      },
+    });
+    const draftId = draftIdForArgs(input);
+
+    const res = await fetch(`http://127.0.0.1:${port}/drafts/send`, {
+      method: 'POST',
+      headers: approvedDraftHeaders(),
+      body: JSON.stringify({ ...input, draftId, sessionId: session.id }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(calls).toEqual([{ slug: toolSlug, args: expectedArgs }]);
+    expect(store.listDraftResolutions(session.id)[0]).toMatchObject({
+      draftId,
+      status: 'sent',
+      channel: 'microsoft_teams',
+    });
+  });
+
+  it('rejects a Teams channel draft without its team id', async () => {
+    const store = tempStore();
+    const session = store.createSession('Invalid Teams draft');
+    let calls = 0;
+    const port = await startDraftServer(store, {
+      sendReviewedMessage: async () => {
+        calls += 1;
+        return { data: { ok: true }, error: null, logId: null };
+      },
+    });
+    const input = {
+      channel: 'microsoft_teams',
+      target_kind: 'channel',
+      to: '19:channel-id',
+      body: 'Hello channel',
+    };
+
+    const res = await fetch(`http://127.0.0.1:${port}/drafts/send`, {
+      method: 'POST',
+      headers: approvedDraftHeaders(),
+      body: JSON.stringify({ ...input, draftId: draftIdForArgs(input), sessionId: session.id }),
+    });
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ message: expect.stringContaining('team_id') });
+    expect(calls).toBe(0);
   });
 
   it('allows only one in-flight send for a draft', async () => {
@@ -322,7 +408,7 @@ describe('Draft resolutions', () => {
 
     expect(res.status).toBe(400);
     expect(await res.json()).toMatchObject({
-      message: 'Channel "notion" is not supported. Drafts are limited to Gmail and Slack.',
+      message: 'Channel "notion" is not supported. Drafts are limited to Gmail, Slack, and Microsoft Teams.',
     });
     expect(store.listDraftResolutions(session.id)).toEqual([]);
   });

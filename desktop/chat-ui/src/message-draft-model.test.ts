@@ -6,9 +6,12 @@ import {
 } from './message-draft-model';
 
 describe('message draft eligibility', () => {
-  it.each(['gmail', 'slack', ' Gmail ', 'SLACK'])('accepts communication channel %s', (channel) => {
+  it.each(['gmail', 'slack', 'microsoft_teams', ' Gmail ', 'SLACK', ' MICROSOFT_TEAMS '])(
+    'accepts communication channel %s',
+    (channel) => {
     expect(isSupportedMessageDraftInput({ channel })).toBe(true);
-  });
+    },
+  );
 
   it.each(['notion', 'google_docs', 'airtable', 'calendar', ''])('rejects non-message channel %s', (channel) => {
     expect(isSupportedMessageDraftInput({ channel })).toBe(false);

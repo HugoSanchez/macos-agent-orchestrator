@@ -576,6 +576,8 @@ export async function disconnectAnthropic(): Promise<void> {
 
 export interface DraftSendInput {
   channel: string;
+  targetKind?: string;
+  teamId?: string;
   to: string;
   cc?: string;
   subject?: string;

@@ -13,6 +13,8 @@ import {
 
 interface DraftPayload {
   channel: string;
+  targetKind: string;
+  teamId: string;
   to: string;
   cc: string;
   subject: string;
@@ -52,6 +54,21 @@ const MESSAGE_DRAFT_DISPATCH: Record<string, { buildArgs: (p: DraftPayload) => R
       return args;
     },
   },
+  microsoft_teams: {
+    buildArgs: (p) => {
+      const args: Record<string, unknown> = {
+        target_kind: p.targetKind,
+        content: p.body,
+        content_type: 'text',
+      };
+      if (p.targetKind === 'chat') args.chat_id = p.to;
+      if (p.targetKind === 'channel') {
+        args.team_id = p.teamId;
+        args.channel_id = p.to;
+      }
+      return args;
+    },
+  },
 };
 
 export function buildDraftsRoutes(
@@ -65,8 +82,8 @@ export function buildDraftsRoutes(
     ?? null;
 
   return [
-    // POST /drafts/send — dispatches supported Slack/Gmail drafts without
-    // re-engaging the model.
+    // POST /drafts/send — dispatches supported Gmail, Slack, and Teams drafts
+    // without re-engaging the model.
     route('POST', '/drafts/send', async (req, res, _params, body) => {
       if (!draftApprovalTokenSha256) {
         return json(res, 503, {
@@ -93,7 +110,7 @@ export function buildDraftsRoutes(
       if (!dispatch) {
         return json(res, 400, {
           error: 'bad_request',
-          message: `Channel "${payload.channel}" is not supported. Drafts are limited to Gmail and Slack.`,
+          message: `Channel "${payload.channel}" is not supported. Drafts are limited to Gmail, Slack, and Microsoft Teams.`,
         });
       }
       if (!payload.sessionId) {
@@ -124,8 +141,12 @@ export function buildDraftsRoutes(
 
       activeSends.add(sendKey);
       try {
-        const result = await bridge.sendReviewedMessage(payload.channel, dispatch.buildArgs(payload));
-        const toolSlug = reviewedMessageToolSlug(payload.channel);
+        const arguments_ = dispatch.buildArgs(payload);
+        const toolSlug = reviewedMessageToolSlug(payload.channel, arguments_);
+        if (!toolSlug) {
+          throw new ComposioBridgeHttpError(400, 'The reviewed message target is not supported.');
+        }
+        const result = await bridge.sendReviewedMessage(payload.channel, arguments_);
         if (result.error) {
           return json(res, 502, {
             error: 'send_failed',
@@ -160,7 +181,7 @@ export function buildDraftsRoutes(
       if (!SUPPORTED_MESSAGE_DRAFT_CHANNELS.has(payload.channel)) {
         return json(res, 400, {
           error: 'bad_request',
-          message: `Channel "${payload.channel}" is not supported. Drafts are limited to Gmail and Slack.`,
+          message: `Channel "${payload.channel}" is not supported. Drafts are limited to Gmail, Slack, and Microsoft Teams.`,
         });
       }
       const sendKey = `${payload.sessionId}\u0000${params.id}`;
@@ -191,11 +212,30 @@ function parseDraftPayload(body: unknown): DraftPayload {
   const channel = stringField(record.channel).toLowerCase();
   const to = stringField(record.to);
   const body_ = stringField(record.body);
+  const teamId = stringField(record.teamId) || stringField(record.team_id);
+  let targetKind = (stringField(record.targetKind) || stringField(record.target_kind)).toLowerCase();
   if (!channel) throw new Error('Field "channel" is required');
   if (!to) throw new Error('Field "to" is required');
   if (!body_) throw new Error('Field "body" is required');
+  if (channel === 'microsoft_teams') {
+    if (!targetKind) {
+      targetKind = /^(me|myself|self|yourself)$/i.test(to)
+        ? 'self'
+        : teamId
+          ? 'channel'
+          : 'chat';
+    }
+    if (!['self', 'chat', 'channel'].includes(targetKind)) {
+      throw new Error('Field "target_kind" must be self, chat, or channel for Microsoft Teams');
+    }
+    if (targetKind === 'channel' && !teamId) {
+      throw new Error('Field "team_id" is required for a Microsoft Teams channel message');
+    }
+  }
   return {
     channel,
+    targetKind,
+    teamId,
     to,
     cc: stringField(record.cc),
     subject: stringField(record.subject),

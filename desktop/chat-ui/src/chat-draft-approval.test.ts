@@ -36,4 +36,29 @@ describe('native draft approval capability', () => {
     expect(ordinaryHeaders.get('X-Verso-Sidecar-Token')).toBe('sidecar-token');
     expect(ordinaryHeaders.has('X-Verso-Draft-Approval-Token')).toBe(false);
   });
+
+  it('preserves the reviewed Microsoft Teams target in the send payload', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    setSidecarPort(1234);
+    setDraftApprovalToken('native-approval-token');
+
+    await sendDraft('draft_teams', 'session_teams', {
+      channel: 'microsoft_teams',
+      targetKind: 'channel',
+      teamId: 'team-1',
+      to: '19:channel-id',
+      body: 'Reviewed Teams message',
+    });
+
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toMatchObject({
+      channel: 'microsoft_teams',
+      targetKind: 'channel',
+      teamId: 'team-1',
+      to: '19:channel-id',
+      body: 'Reviewed Teams message',
+      draftId: 'draft_teams',
+      sessionId: 'session_teams',
+    });
+  });
 });

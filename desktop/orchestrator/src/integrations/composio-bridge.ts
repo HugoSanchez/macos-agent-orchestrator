@@ -256,24 +256,28 @@ export class ComposioBridgeService {
     channel: string,
     arguments_: Record<string, unknown>,
   ): Promise<ComposioBridgeToolExecutionView> {
-    const slug = reviewedMessageToolSlug(channel);
-    if (!slug) {
-      throw new ComposioBridgeHttpError(
-        400,
-        `Channel "${channel}" is not supported. Drafts are limited to Gmail and Slack.`,
-      );
-    }
     const argumentRecord = asRecord(arguments_);
     if (!argumentRecord) {
       throw new ComposioBridgeHttpError(400, 'Missing required object "arguments".');
     }
+    const normalizedChannel = channel.trim().toLowerCase();
+    const slug = reviewedMessageToolSlug(normalizedChannel, argumentRecord);
+    if (!slug) {
+      const message = SUPPORTED_MESSAGE_DRAFT_CHANNELS.has(normalizedChannel)
+        ? 'Microsoft Teams drafts require target_kind to be self, chat, or channel.'
+        : `Channel "${channel}" is not supported. Drafts are limited to Gmail, Slack, and Microsoft Teams.`;
+      throw new ComposioBridgeHttpError(400, message);
+    }
 
-    const resolvedArguments = channel.trim().toLowerCase() === 'slack'
+    const resolvedArguments = normalizedChannel === 'slack'
       ? await this.resolveReviewedSlackArguments(argumentRecord)
       : { arguments: argumentRecord };
     if ('error' in resolvedArguments) return resolvedArguments.error;
 
-    return this.executeRemoteTool(slug, resolvedArguments.arguments, { recordUsage: false });
+    const providerArguments = normalizedChannel === 'microsoft_teams'
+      ? withoutRecordKey(resolvedArguments.arguments, 'target_kind')
+      : resolvedArguments.arguments;
+    return this.executeRemoteTool(slug, providerArguments, { recordUsage: false });
   }
 
   /**
@@ -421,6 +425,13 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? value as Record<string, unknown>
     : null;
+}
+
+function withoutRecordKey(
+  record: Record<string, unknown>,
+  omittedKey: string,
+): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(record).filter(([key]) => key !== omittedKey));
 }
 
 function isSlackSelfAlias(value: string): boolean {

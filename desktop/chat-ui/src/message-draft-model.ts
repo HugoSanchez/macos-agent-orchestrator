@@ -2,7 +2,7 @@ import { stripNamespace } from './message-activity-model';
 
 // The drafting widget is a communication composer, not a generic approval
 // surface for arbitrary connected-app mutations.
-export const MESSAGE_DRAFT_CHANNELS = new Set(['gmail', 'slack']);
+export const MESSAGE_DRAFT_CHANNELS = new Set(['gmail', 'slack', 'microsoft_teams']);
 
 export function messageDraftChannel(input: unknown): string {
   if (!input || typeof input !== 'object' || Array.isArray(input)) return '';
