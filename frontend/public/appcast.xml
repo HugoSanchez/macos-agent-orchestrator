@@ -3,6 +3,15 @@
     <channel>
         <title>verso</title>
         <item>
+            <title>1.0.25</title>
+            <pubDate>Tue, 01 Sep 2026 15:15:56 +0200</pubDate>
+            <sparkle:version>26</sparkle:version>
+            <sparkle:shortVersionString>1.0.25</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <enclosure url="https://github.com/HugoSanchez/macos-agent-orchestrator/releases/download/v1.0.25/verso-1.0.25.dmg" length="395815502" type="application/octet-stream" sparkle:edSignature="n8NZCX6/VFlZw58gxyTD7pxKTgx+pdtXWj/cgahKkbWlmOMAIuNGmvO0EnQ8vEUzLcPJgQjp9j3sQ7hTlIaMBw=="/>
+        </item>
+        <item>
             <title>1.0.24</title>
             <pubDate>Mon, 31 Aug 2026 10:43:47 +0200</pubDate>
             <sparkle:version>25</sparkle:version>
@@ -19,33 +28,6 @@
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
             <enclosure url="https://github.com/HugoSanchez/macos-agent-orchestrator/releases/download/v1.0.23/verso-1.0.23.dmg" length="383969069" type="application/octet-stream" sparkle:edSignature="bGX4SI9LD+/tI17N3Pk26dCF8hVVlXfRjgGOYDEr66QYdf6RraIzcbdRheXoG2FiynP09ybwgvcxqiA+uQuFDA=="/>
-        </item>
-        <item>
-            <title>1.0.22</title>
-            <pubDate>Wed, 26 Aug 2026 17:59:52 +0200</pubDate>
-            <sparkle:version>23</sparkle:version>
-            <sparkle:shortVersionString>1.0.22</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <enclosure url="https://github.com/HugoSanchez/macos-agent-orchestrator/releases/download/v1.0.22/verso-1.0.22.dmg" length="369452851" type="application/octet-stream" sparkle:edSignature="7ZlZ50UCNbkRBsLgZtECvUh123/+xe9MjKKDH9K1ZdzArNSAKRbKdbZI4+TUANdJLcdQ0xpFMZfr2DWujmdrDA=="/>
-        </item>
-        <item>
-            <title>1.0.21</title>
-            <pubDate>Thu, 20 Aug 2026 17:35:26 +0200</pubDate>
-            <sparkle:version>22</sparkle:version>
-            <sparkle:shortVersionString>1.0.21</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <enclosure url="https://github.com/HugoSanchez/macos-agent-orchestrator/releases/download/v1.0.21/verso-1.0.21.dmg" length="362656741" type="application/octet-stream" sparkle:edSignature="6kgSdnqhFkk30cWHWN5n7WcrxrskdF8z8bE4TJsKQRcUDmhlHFZiPhz1nd9Hy9ckxVXCyi+b/coLiJO84FP5BA=="/>
-        </item>
-        <item>
-            <title>1.0.20</title>
-            <pubDate>Mon, 17 Aug 2026 18:32:22 +0200</pubDate>
-            <sparkle:version>21</sparkle:version>
-            <sparkle:shortVersionString>1.0.20</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <enclosure url="https://github.com/HugoSanchez/macos-agent-orchestrator/releases/download/v1.0.20/verso-1.0.20.dmg" length="325215007" type="application/octet-stream" sparkle:edSignature="0cdCMBsue4OUDJnuSFPa/v/TiLagKdAoWTeUgL8EG4GY5eesG6CNN4ype3joCYgtKZyiWqk/oI1tRv+LJL6WAA=="/>
         </item>
     </channel>
 </rss>
