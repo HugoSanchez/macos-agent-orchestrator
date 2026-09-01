@@ -40,4 +40,6 @@ for key in VersoManagedBackendURL SentryDSN SUFeedURL SUPublicEDKey; do
     fi
 done
 
+"${SCRIPT_DIR}/verify-auth-boundary.sh" "${VERSO_RELEASE_APP}"
+
 echo "[managed-release] built ${VERSO_RELEASE_APP} (mode=managed)"

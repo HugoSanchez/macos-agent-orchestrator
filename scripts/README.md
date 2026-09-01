@@ -57,6 +57,12 @@ This avoids accidentally packaging an older app from Xcode's global
 match a passing smoke marker. The isolated QA command does not move or delete
 the developer's normal Verso or Hermes data.
 
+`build-managed.sh`, `notarize-app.sh`, and `make-dmg.sh` also run
+`release/verify-auth-boundary.sh`. The gate rejects release candidates that
+still register the retired `verso`/`verso-dev` login schemes or contain markers
+from the removed Privy callback flow anywhere in the app bundle, preventing a
+stale pre-WorkOS app from being notarized or packaged.
+
 After appcast generation, create the matching GitHub release, upload the DMG,
 copy `dist/appcast.xml` to `frontend/public/appcast.xml`, and deploy the
 frontend.

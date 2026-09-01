@@ -44,6 +44,8 @@ if [ ! -d "${APP_PATH}" ]; then
     exit 1
 fi
 
+"${SCRIPT_DIR}/verify-auth-boundary.sh" "${APP_PATH}"
+
 # ── Re-sign Sparkle.framework's nested binaries ─────────────────────────────
 # Xcode's "Embed Frameworks" step copies Sparkle.framework into the .app
 # AFTER our build-phase Run Scripts execute, so sign-bundle-binaries.sh
