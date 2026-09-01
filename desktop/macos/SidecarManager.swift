@@ -1,6 +1,7 @@
 import Foundation
 import os
 import Security
+import CryptoKit
 
 /// Manages the local Node.js sidecar process lifecycle.
 @MainActor
@@ -18,6 +19,7 @@ final class SidecarManager: ObservableObject {
     @Published private(set) var managedSession: ManagedAppSession?
     @Published private(set) var managedAccount: ManagedAccountSnapshot?
     @Published private(set) var authToken: String?
+    @Published private(set) var draftApprovalToken: String?
 
     private var activityToken: NSObjectProtocol?
     private var stopRequested = false
@@ -110,7 +112,9 @@ final class SidecarManager: ObservableObject {
         Task {
             do {
                 let launchAuthToken = try Self.generateAuthToken()
+                let launchDraftApprovalToken = try Self.generateAuthToken()
                 self.authToken = launchAuthToken
+                self.draftApprovalToken = launchDraftApprovalToken
                 let detectedPort = try await launchProcess(managedSession: launchManagedSession)
                 guard generation == launchGeneration, !stopRequested else { return }
                 state = .running(port: detectedPort)
@@ -129,13 +133,15 @@ final class SidecarManager: ObservableObject {
                     restart()
                     return
                 }
-                if launchManagedSession != managedSession {
-                    await pushManagedSession(managedSession)
-                }
+                // The managed bearer is intentionally absent from the child
+                // environment. Seed it into orchestrator memory only after
+                // the authenticated loopback server is ready.
+                await pushManagedSession(managedSession)
                 await refreshManagedAccount()
             } catch {
                 guard generation == launchGeneration, !stopRequested else { return }
                 authToken = nil
+                draftApprovalToken = nil
                 state = .failed(error.localizedDescription)
                 logger.error("Sidecar failed: \(error.localizedDescription)")
                 Telemetry.reportError(error, context: "sidecar-launch")
@@ -156,6 +162,7 @@ final class SidecarManager: ObservableObject {
         endActivityIfNeeded()
         managedAccount = nil
         authToken = nil
+        draftApprovalToken = nil
         state = .idle
     }
 
@@ -190,12 +197,14 @@ final class SidecarManager: ObservableObject {
         }
         guard await processController.stopGracefully() else {
             authToken = nil
+            draftApprovalToken = nil
             state = .failed("The previous sidecar process did not stop. Quit and reopen Verso before retrying.")
             logger.error("Sidecar process did not exit before restart")
             return false
         }
         managedAccount = nil
         authToken = nil
+        draftApprovalToken = nil
         return true
     }
 
@@ -314,7 +323,7 @@ final class SidecarManager: ObservableObject {
         guard FileManager.default.isExecutableFile(atPath: tsxPath) else {
             throw SidecarError.executableNotFound("tsx (run npm install in the sidecar package)")
         }
-        guard let authToken else {
+        guard let authToken, let draftApprovalToken else {
             throw SidecarError.authTokenUnavailable
         }
 
@@ -330,7 +339,6 @@ final class SidecarManager: ObservableObject {
         )
         let managedSessionSeed = launchManagedSession.flatMap { session in
             session.isExpired ? nil : SidecarManagedSessionSeed(
-                token: session.token,
                 expiresAt: session.expiresAt,
                 userId: session.userId,
                 deviceId: session.deviceId
@@ -344,6 +352,7 @@ final class SidecarManager: ObservableObject {
             hermesHomeOverride: environment["VERSO_HERMES_HOME"],
             managedSession: managedSessionSeed,
             authToken: authToken,
+            draftApprovalTokenSha256: Self.sha256Hex(draftApprovalToken),
             parentProcessIdentifier: ProcessInfo.processInfo.processIdentifier
         )
         let configuration = SidecarProcessConfiguration(
@@ -380,6 +389,12 @@ final class SidecarManager: ObservableObject {
             throw SidecarError.authTokenUnavailable
         }
         return Data(bytes).base64EncodedString()
+    }
+
+    nonisolated private static func sha256Hex(_ value: String) -> String {
+        SHA256.hash(data: Data(value.utf8))
+            .map { String(format: "%02x", $0) }
+            .joined()
     }
 }
 

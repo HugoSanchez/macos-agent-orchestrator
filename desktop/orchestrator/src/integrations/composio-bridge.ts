@@ -13,6 +13,11 @@ import {
   type ComposioNativeToolManifestTool,
   type ComposioToolUsageStore,
 } from '../connections/composio-tool-usage-store.ts';
+import {
+  isProtectedMessageSendToolSlug,
+  reviewedMessageToolSlug,
+  SUPPORTED_MESSAGE_DRAFT_CHANNELS,
+} from './reviewed-message-policy.ts';
 
 export interface ComposioBridgeSearchToolView extends RemoteBridgeSearchToolResult {}
 export interface ComposioBridgeToolSchemaView extends RemoteBridgeToolSchemaView {}
@@ -58,11 +63,6 @@ export interface NativeToolManifestRefreshStatus {
  * directly; it forwards search/schema/execute calls to the authenticated
  * backend bridge so the Composio project API key stays server-side.
  */
-
-// The draft widget is intentionally a native Gmail/Slack composer. It is not
-// a generic confirmation surface for documents, databases, tasks, or other
-// connected-app mutations.
-export const SUPPORTED_MESSAGE_DRAFT_CHANNELS = new Set(['gmail', 'slack']);
 
 /**
  * Deterministic id for a draft, derived from the agent's tool args. The chat
@@ -239,6 +239,43 @@ export class ComposioBridgeService {
       };
     }
 
+    // Message delivery is never available through the generic agent-facing
+    // bridge. The reviewed draft endpoint calls sendReviewedMessage(), whose
+    // channel-to-slug mapping cannot be supplied or overridden by the model.
+    if (isProtectedMessageSendToolSlug(slug)) {
+      throw new ComposioBridgeHttpError(
+        403,
+        `Direct execution of ${slug.toUpperCase()} requires review in the message draft widget.`,
+      );
+    }
+
+    return this.executeRemoteTool(slug, argumentRecord, opts);
+  }
+
+  async sendReviewedMessage(
+    channel: string,
+    arguments_: Record<string, unknown>,
+  ): Promise<ComposioBridgeToolExecutionView> {
+    const slug = reviewedMessageToolSlug(channel);
+    if (!slug) {
+      throw new ComposioBridgeHttpError(
+        400,
+        `Channel "${channel}" is not supported. Drafts are limited to Gmail and Slack.`,
+      );
+    }
+    const argumentRecord = asRecord(arguments_);
+    if (!argumentRecord) {
+      throw new ComposioBridgeHttpError(400, 'Missing required object "arguments".');
+    }
+
+    return this.executeRemoteTool(slug, argumentRecord, { recordUsage: false });
+  }
+
+  private async executeRemoteTool(
+    slug: string,
+    argumentRecord: Record<string, unknown>,
+    opts: { recordUsage?: boolean },
+  ): Promise<ComposioBridgeToolExecutionView> {
     this.assertConfigured();
     try {
       const result = await this.bridgeClient.executeTool(slug, argumentRecord);

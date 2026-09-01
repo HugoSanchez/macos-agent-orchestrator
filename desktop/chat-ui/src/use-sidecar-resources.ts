@@ -13,6 +13,7 @@ import {
   openCustomConnectorAuth,
   retryCustomConnector,
   setSidecarAuthToken,
+  setDraftApprovalToken,
   setSidecarPort,
 } from './chat';
 import { postShellAction } from './shell-bridge';
@@ -204,6 +205,7 @@ export function useSidecarResources({ onError }: UseSidecarResourcesOptions) {
     const applyPort = (port: number) => {
       setSidecarPort(port);
       setSidecarAuthToken(window.__versoSidecarToken);
+      setDraftApprovalToken(window.__versoDraftApprovalToken);
       setConnected(true);
       void refreshConnections({ fast: true }).then(() => refreshConnections());
       void refreshToolkitCatalog();
@@ -221,10 +223,17 @@ export function useSidecarResources({ onError }: UseSidecarResourcesOptions) {
     }
 
     const onPortEvent = (event: Event) => {
-      const detail = (event as CustomEvent<{ port?: unknown; token?: unknown }>).detail;
+      const detail = (event as CustomEvent<{
+        port?: unknown;
+        token?: unknown;
+        draftApprovalToken?: unknown;
+      }>).detail;
       const port = typeof detail?.port === 'number' ? detail.port : Number(detail?.port);
       if (!Number.isFinite(port) || port <= 0) return;
       if (typeof detail?.token === 'string') window.__versoSidecarToken = detail.token;
+      if (typeof detail?.draftApprovalToken === 'string') {
+        window.__versoDraftApprovalToken = detail.draftApprovalToken;
+      }
       window.__versoSidecarPort = port;
       applyPort(port);
     };

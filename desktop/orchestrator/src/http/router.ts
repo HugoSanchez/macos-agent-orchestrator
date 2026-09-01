@@ -22,13 +22,14 @@ export interface Route {
 // attachment limits in attachments.ts are the precise, per-kind gate.
 const MAX_BODY = 32 * 1024 * 1024; // 32MB
 const AUTH_HEADER = 'x-verso-sidecar-token';
+const DRAFT_APPROVAL_HEADER = 'x-verso-draft-approval-token';
 // WKWebView serializes the chat page's origin as "file://" because the shell
 // enables allowFileAccessFromFileURLs (see ChatWebView.swift). Deliberately
 // NOT "null": sandboxed iframes on arbitrary websites also send Origin: null,
 // so allowlisting it would let them read public-route responses.
 const ALLOWED_ORIGINS = new Set(['file://']);
 const ALLOWED_METHODS = 'GET, POST, PUT, PATCH, DELETE, OPTIONS';
-const ALLOWED_HEADERS = `Content-Type, ${AUTH_HEADER}, Authorization`;
+const ALLOWED_HEADERS = `Content-Type, ${AUTH_HEADER}, ${DRAFT_APPROVAL_HEADER}, Authorization`;
 
 export interface DispatchOptions {
   authSecret?: string | null;

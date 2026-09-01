@@ -196,6 +196,7 @@ struct ContentView: View {
             ChatWebView(
                 sidecarPort: sidecarPort,
                 sidecarAuthToken: sidecar.authToken,
+                draftApprovalToken: sidecar.draftApprovalToken,
                 isDarkMode: isDarkMode,
                 isCatalogOpen: isConnectionsCatalogExpanded,
                 isSkillsCatalogOpen: isSkillsCatalogExpanded,

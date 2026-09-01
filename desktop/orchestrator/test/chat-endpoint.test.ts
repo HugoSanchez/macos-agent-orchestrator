@@ -47,15 +47,15 @@ describe('Chat HTTP Endpoints', () => {
     expect(body.hasActiveRequest).toBe(false);
   });
 
-  it('reports the managed Composio bridge as unavailable in local mode', async () => {
+  it('rejects direct message sends before contacting the managed Composio bridge', async () => {
     const { status, body } = await fetchJson('/composio/tools/execute', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ toolSlug: 'GMAIL_SEND_EMAIL', arguments: {} }),
     });
-    expect(status).toBe(503);
+    expect(status).toBe(403);
     expect(body.error).toBe('request_failed');
-    expect(body.message).toMatch(/backend/i);
+    expect(body.message).toMatch(/requires review/i);
   });
 
   it('hides managed connection actions in local mode without a remote request', async () => {

@@ -1,10 +1,14 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { applyMemorySoulSection } from '../src/memory/memory-soul.ts';
 import { ManagedBackendClient } from '../src/integrations/managed-backend-client.ts';
 import {
   ComposioBridgeHttpError,
   ComposioBridgeService,
 } from '../src/integrations/composio-bridge.ts';
+import {
+  PROTECTED_MESSAGE_SEND_TOOL_SLUGS,
+  REVIEWED_MESSAGE_TOOL_BY_CHANNEL,
+} from '../src/integrations/reviewed-message-policy.ts';
 
 describe('message draft eligibility', () => {
   it.each(['gmail', 'slack'])('accepts supported communication channel %s', async (channel) => {
@@ -31,6 +35,49 @@ describe('message draft eligibility', () => {
       expect(error).toMatchObject({ status: 400 });
       expect((error as Error).message).toContain('only Gmail email and Slack messages');
     }
+  });
+
+  it.each(PROTECTED_MESSAGE_SEND_TOOL_SLUGS)(
+    'rejects direct agent execution of protected send tool %s',
+    async (toolSlug) => {
+      const bridge = new ComposioBridgeService(new ManagedBackendClient(''));
+
+      await expect(bridge.executeTool(toolSlug, { body: 'bypass review' }))
+        .rejects.toMatchObject({ status: 403 });
+    },
+  );
+
+  it('keeps every reviewed dispatch tool inside the protected policy', () => {
+    expect(PROTECTED_MESSAGE_SEND_TOOL_SLUGS).toEqual(expect.arrayContaining(
+      Object.values(REVIEWED_MESSAGE_TOOL_BY_CHANNEL),
+    ));
+  });
+
+  it.each([
+    ['gmail', 'GMAIL_SEND_EMAIL'],
+    ['slack', 'SLACK_SEND_MESSAGE'],
+  ])('maps reviewed %s sends to the fixed provider tool', async (channel, toolSlug) => {
+    const bridge = new ComposioBridgeService(new ManagedBackendClient('https://backend.example'));
+    const remote = (bridge as unknown as {
+      bridgeClient: { executeTool: (slug: string, args: Record<string, unknown>) => Promise<unknown> };
+    }).bridgeClient;
+    const execute = vi.spyOn(remote, 'executeTool').mockResolvedValue({
+      data: { ok: true },
+      error: null,
+      logId: null,
+    });
+    const args = { body: 'reviewed content' };
+
+    await bridge.sendReviewedMessage(channel, args);
+
+    expect(execute).toHaveBeenCalledWith(toolSlug, args);
+  });
+
+  it('leaves unrelated connected-app tools on the generic execution path', async () => {
+    const bridge = new ComposioBridgeService(new ManagedBackendClient(''));
+
+    await expect(bridge.executeTool('GMAIL_FETCH_EMAILS', {}))
+      .rejects.toMatchObject({ status: 503 });
   });
 
   it('teaches existing managed profiles that drafts are not generic approvals', () => {

@@ -1,4 +1,5 @@
 import { mkdtempSync, rmSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
@@ -8,8 +9,13 @@ import { buildDraftsRoutes } from '../src/chat/drafts.ts';
 import { dispatch } from '../src/http/router.ts';
 import { ChatStore, type ChatMessageRecord } from '../src/chat/chat-store.ts';
 import { applyDraftResolutions } from '../src/chat/draft-resolutions.ts';
+import { reviewedMessageToolSlug } from '../src/integrations/reviewed-message-policy.ts';
 
 describe('Draft resolutions', () => {
+  const draftApprovalToken = 'test-native-draft-approval';
+  const draftApprovalTokenSha256 = createHash('sha256')
+    .update(draftApprovalToken, 'utf8')
+    .digest('hex');
   const tempDirs: string[] = [];
   const servers: http.Server[] = [];
 
@@ -142,8 +148,8 @@ describe('Draft resolutions', () => {
     const session = store.createSession('Drafts');
     const calls: Array<{ slug: string; args: Record<string, unknown> }> = [];
     const port = await startDraftServer(store, {
-      executeTool: async (slug: string, args: Record<string, unknown>) => {
-        calls.push({ slug, args });
+      sendReviewedMessage: async (channel: string, args: Record<string, unknown>) => {
+        calls.push({ slug: reviewedMessageToolSlug(channel) ?? '', args });
         return { data: { ok: true }, error: null, logId: null };
       },
     });
@@ -152,7 +158,7 @@ describe('Draft resolutions', () => {
     const draftId = draftIdForArgs(input);
     const res = await fetch(`http://127.0.0.1:${port}/drafts/send`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: approvedDraftHeaders(),
       body: JSON.stringify({ ...input, draftId, sessionId: session.id }),
     });
 
@@ -164,6 +170,38 @@ describe('Draft resolutions', () => {
       status: 'sent',
       channel: 'gmail',
     });
+
+    const repeated = await fetch(`http://127.0.0.1:${port}/drafts/send`, {
+      method: 'POST',
+      headers: approvedDraftHeaders(),
+      body: JSON.stringify({ ...input, draftId, sessionId: session.id }),
+    });
+    expect(repeated.status).toBe(409);
+    expect(calls).toHaveLength(1);
+  });
+
+  it('rejects sends without the native draft approval capability', async () => {
+    const store = tempStore();
+    const session = store.createSession('Unapproved draft');
+    let calls = 0;
+    const port = await startDraftServer(store, {
+      sendReviewedMessage: async () => {
+        calls += 1;
+        return { data: { ok: true }, error: null, logId: null };
+      },
+    });
+    const input = { channel: 'gmail', to: 'hugo@example.com', subject: 'Hi', body: 'Hello' };
+    const draftId = draftIdForArgs(input);
+
+    const res = await fetch(`http://127.0.0.1:${port}/drafts/send`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...input, draftId, sessionId: session.id }),
+    });
+
+    expect(res.status).toBe(403);
+    expect(await res.json()).toMatchObject({ error: 'approval_required' });
+    expect(calls).toBe(0);
   });
 
   it('sends Slack native drafts with markdown_text', async () => {
@@ -171,8 +209,8 @@ describe('Draft resolutions', () => {
     const session = store.createSession('Slack draft');
     const calls: Array<{ slug: string; args: Record<string, unknown> }> = [];
     const port = await startDraftServer(store, {
-      executeTool: async (slug: string, args: Record<string, unknown>) => {
-        calls.push({ slug, args });
+      sendReviewedMessage: async (channel: string, args: Record<string, unknown>) => {
+        calls.push({ slug: reviewedMessageToolSlug(channel) ?? '', args });
         return { data: { ok: true }, error: null, logId: null };
       },
     });
@@ -181,7 +219,7 @@ describe('Draft resolutions', () => {
     const draftId = draftIdForArgs(input);
     const res = await fetch(`http://127.0.0.1:${port}/drafts/send`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: approvedDraftHeaders(),
       body: JSON.stringify({ ...input, draftId, sessionId: session.id }),
     });
 
@@ -197,18 +235,52 @@ describe('Draft resolutions', () => {
     expect(calls[0].args).not.toHaveProperty('text');
   });
 
+  it('allows only one in-flight send for a draft', async () => {
+    const store = tempStore();
+    const session = store.createSession('Single-use draft');
+    let releaseSend!: () => void;
+    let markStarted!: () => void;
+    const sendReleased = new Promise<void>((resolve) => { releaseSend = resolve; });
+    const sendStarted = new Promise<void>((resolve) => { markStarted = resolve; });
+    let calls = 0;
+    const port = await startDraftServer(store, {
+      sendReviewedMessage: async () => {
+        calls += 1;
+        markStarted();
+        await sendReleased;
+        return { data: { ok: true }, error: null, logId: null };
+      },
+    });
+    const input = { channel: 'gmail', to: 'hugo@example.com', subject: 'Hi', body: 'Hello' };
+    const draftId = draftIdForArgs(input);
+    const request = () => fetch(`http://127.0.0.1:${port}/drafts/send`, {
+      method: 'POST',
+      headers: approvedDraftHeaders(),
+      body: JSON.stringify({ ...input, draftId, sessionId: session.id }),
+    });
+
+    const first = request();
+    await sendStarted;
+    const competing = await request();
+    expect(competing.status).toBe(409);
+    expect(calls).toBe(1);
+
+    releaseSend();
+    expect((await first).status).toBe(200);
+  });
+
   it('records native discarded drafts through the drafts API', async () => {
     const store = tempStore();
     const session = store.createSession('Drafts');
     const input = { channel: 'slack', to: '#general', body: 'Hello' };
     const draftId = draftIdForArgs(input);
     const port = await startDraftServer(store, {
-      executeTool: async () => ({ data: null, error: null, logId: null }),
+      sendReviewedMessage: async () => ({ data: null, error: null, logId: null }),
     });
 
     const res = await fetch(`http://127.0.0.1:${port}/drafts/${encodeURIComponent(draftId)}/discard`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: approvedDraftHeaders(),
       body: JSON.stringify({ sessionId: session.id, channel: 'slack' }),
     });
 
@@ -221,23 +293,30 @@ describe('Draft resolutions', () => {
 
     const repeated = await fetch(`http://127.0.0.1:${port}/drafts/${encodeURIComponent(draftId)}/discard`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: approvedDraftHeaders(),
       body: JSON.stringify({ sessionId: session.id, channel: 'slack' }),
     });
     expect(repeated.status).toBe(200);
     expect(store.listDraftResolutions(session.id)).toHaveLength(1);
+
+    const sendAfterDiscard = await fetch(`http://127.0.0.1:${port}/drafts/send`, {
+      method: 'POST',
+      headers: approvedDraftHeaders(),
+      body: JSON.stringify({ ...input, draftId, sessionId: session.id }),
+    });
+    expect(sendAfterDiscard.status).toBe(409);
   });
 
   it('rejects unsupported draft channels without creating a resolution', async () => {
     const store = tempStore();
     const session = store.createSession('Notion action');
     const port = await startDraftServer(store, {
-      executeTool: async () => ({ data: null, error: null, logId: null }),
+      sendReviewedMessage: async () => ({ data: null, error: null, logId: null }),
     });
 
     const res = await fetch(`http://127.0.0.1:${port}/drafts/draft_notion/discard`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: approvedDraftHeaders(),
       body: JSON.stringify({ sessionId: session.id, channel: 'notion' }),
     });
 
@@ -250,9 +329,9 @@ describe('Draft resolutions', () => {
 
   async function startDraftServer(
     store: ChatStore,
-    bridge: { executeTool: (slug: string, args: Record<string, unknown>) => Promise<{ data: unknown; error: string | null; logId: string | null }> },
+    bridge: { sendReviewedMessage: (channel: string, args: Record<string, unknown>) => Promise<{ data: unknown; error: string | null; logId: string | null }> },
   ): Promise<number> {
-    const routes = buildDraftsRoutes(bridge as any, store);
+    const routes = buildDraftsRoutes(bridge as any, store, { draftApprovalTokenSha256 });
     const server = http.createServer((req, res) => {
       dispatch(routes, req, res, { allowUnauthenticated: true });
     });
@@ -264,5 +343,12 @@ describe('Draft resolutions', () => {
         resolve(addr.port);
       });
     });
+  }
+
+  function approvedDraftHeaders(): Record<string, string> {
+    return {
+      'Content-Type': 'application/json',
+      'X-Verso-Draft-Approval-Token': draftApprovalToken,
+    };
   }
 });

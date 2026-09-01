@@ -10,12 +10,14 @@ final class SidecarLaunchEnvironmentTests: XCTestCase {
             hermesHomeOverride: nil,
             managedSession: nil,
             authToken: "sidecar-secret",
+            draftApprovalTokenSha256: "approval-hash",
             parentProcessIdentifier: 1234
         )
 
         XCTAssertEqual(environment["VERSO_RUNTIME_MODE"], "managed")
         XCTAssertEqual(environment["VERSO_BACKEND_URL"], "https://backend.example")
         XCTAssertEqual(environment["VERSO_SIDECAR_AUTH_SECRET"], "sidecar-secret")
+        XCTAssertEqual(environment["VERSO_DRAFT_APPROVAL_TOKEN_SHA256"], "approval-hash")
         XCTAssertEqual(environment["VERSO_PARENT_PID"], "1234")
         XCTAssertEqual(
             environment["PATH"],
@@ -51,7 +53,6 @@ final class SidecarLaunchEnvironmentTests: XCTestCase {
             bundleRoot: nil,
             hermesHomeOverride: nil,
             managedSession: SidecarManagedSessionSeed(
-                token: "new-token",
                 expiresAt: "2027-01-01T00:00:00Z",
                 userId: "new-user",
                 deviceId: "new-device"
@@ -60,7 +61,7 @@ final class SidecarLaunchEnvironmentTests: XCTestCase {
             parentProcessIdentifier: 1
         )
 
-        XCTAssertEqual(environment["VERSO_MANAGED_SESSION_TOKEN"], "new-token")
+        XCTAssertNil(environment["VERSO_MANAGED_SESSION_TOKEN"])
         XCTAssertEqual(environment["VERSO_MANAGED_SESSION_EXPIRES_AT"], "2027-01-01T00:00:00Z")
         XCTAssertEqual(environment["VERSO_MANAGED_USER_ID"], "new-user")
         XCTAssertEqual(environment["VERSO_MANAGED_DEVICE_ID"], "new-device")
@@ -103,7 +104,6 @@ final class SidecarLaunchEnvironmentTests: XCTestCase {
             bundleRoot: nil,
             hermesHomeOverride: nil,
             managedSession: SidecarManagedSessionSeed(
-                token: "new-token",
                 expiresAt: "2027-01-01T00:00:00Z",
                 userId: "new-user",
                 deviceId: "new-device"

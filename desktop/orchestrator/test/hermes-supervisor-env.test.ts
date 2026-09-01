@@ -11,6 +11,7 @@ describe('Hermes managed process environment', () => {
       VERSO_MANAGED_USER_ID: 'user-123',
       VERSO_MANAGED_DEVICE_ID: 'device-123',
       VERSO_SIDECAR_AUTH_SECRET: 'native-sidecar-secret',
+      VERSO_DRAFT_APPROVAL_TOKEN_SHA256: 'native-approval-verifier',
       VERSO_HERMES_API_SERVER_KEY: 'supervisor-only-key',
       VERSO_CC_example_TOKEN: 'custom-mcp-secret',
       API_SERVER_KEY: 'hermes-gateway-key',
@@ -23,6 +24,7 @@ describe('Hermes managed process environment', () => {
     expect(inherited).not.toHaveProperty('VERSO_MANAGED_USER_ID');
     expect(inherited).not.toHaveProperty('VERSO_MANAGED_DEVICE_ID');
     expect(inherited).not.toHaveProperty('VERSO_SIDECAR_AUTH_SECRET');
+    expect(inherited).not.toHaveProperty('VERSO_DRAFT_APPROVAL_TOKEN_SHA256');
     expect(inherited).not.toHaveProperty('VERSO_HERMES_API_SERVER_KEY');
     expect(inherited).toMatchObject({
       PATH: '/usr/bin:/bin',

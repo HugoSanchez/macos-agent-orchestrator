@@ -52,6 +52,7 @@ declare global {
     setSidecarPort?: (port: number) => void;
     __versoSidecarPort?: number;
     __versoSidecarToken?: string;
+    __versoDraftApprovalToken?: string;
     __versoShellMode?: 'native' | 'browser';
     __versoPendingCatalogOpen?: boolean;
     __versoPendingSkillsCatalogOpen?: boolean;

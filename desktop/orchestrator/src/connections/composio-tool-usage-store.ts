@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { writeJsonFileAtomic } from '../shared/atomic-json-file.ts';
+import { isProtectedMessageSendToolSlug } from '../integrations/reviewed-message-policy.ts';
 
 export interface ComposioToolUsageInput {
   slug: string;
@@ -155,7 +156,7 @@ export class ComposioToolUsageStore {
     const tools = dedupeManifestTools([
       ...this.listManifestTools(active, limit).map((tool) => ({ ...tool, origin: 'usage' as const })),
       ...connectedMaterializedTools,
-    ]);
+    ]).filter((tool) => !isProtectedMessageSendToolSlug(tool.toolSlug));
     const manifest: ComposioNativeToolManifest = {
       version: 1,
       generatedAt: new Date().toISOString(),
