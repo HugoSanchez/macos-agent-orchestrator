@@ -52,6 +52,8 @@ if [ -z "${VERSION}" ]; then
     exit 1
 fi
 
+"${SCRIPT_DIR}/verify-auth-boundary.sh" "${APP_PATH}"
+
 # Sanity-check that the .app is signed + stapled. Cheap to verify; saves
 # a friend from downloading a DMG that pops a Gatekeeper warning.
 echo "[make-dmg] verifying notarization staple"
