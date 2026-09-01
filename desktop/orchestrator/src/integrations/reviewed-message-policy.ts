@@ -14,6 +14,9 @@ export const PROTECTED_MESSAGE_SEND_TOOL_SLUGS = [
   'GMAIL_REPLY_TO_THREAD',
   'GMAIL_SEND_DRAFT',
   'GMAIL_SEND_EMAIL',
+  // Deprecated provider alias for SLACK_SEND_MESSAGE. Keep it blocked while
+  // it remains discoverable in Composio's Slack catalog.
+  'SLACK_CHAT_POST_MESSAGE',
   'SLACK_SCHEDULE_MESSAGE',
   'SLACK_SEND_EPHEMERAL_MESSAGE',
   'SLACK_SEND_ME_MESSAGE',

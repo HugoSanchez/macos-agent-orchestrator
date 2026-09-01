@@ -268,7 +268,59 @@ export class ComposioBridgeService {
       throw new ComposioBridgeHttpError(400, 'Missing required object "arguments".');
     }
 
-    return this.executeRemoteTool(slug, argumentRecord, { recordUsage: false });
+    const resolvedArguments = channel.trim().toLowerCase() === 'slack'
+      ? await this.resolveReviewedSlackArguments(argumentRecord)
+      : { arguments: argumentRecord };
+    if ('error' in resolvedArguments) return resolvedArguments.error;
+
+    return this.executeRemoteTool(slug, resolvedArguments.arguments, { recordUsage: false });
+  }
+
+  /**
+   * Gmail accepts the special recipient `me`; Slack's message API does not.
+   * Resolve that one user-friendly alias only after native approval, then use
+   * the returned DM conversation id for the reviewed send. Other Slack targets
+   * (channel names and C/G/D conversation ids) continue to pass through.
+   */
+  private async resolveReviewedSlackArguments(
+    argumentRecord: Record<string, unknown>,
+  ): Promise<
+    | { arguments: Record<string, unknown> }
+    | { error: ComposioBridgeToolExecutionView }
+  > {
+    const target = cleanString(argumentRecord.channel);
+    if (!target || !isSlackSelfAlias(target)) return { arguments: argumentRecord };
+
+    const auth = await this.executeRemoteTool('SLACK_TEST_AUTH', {}, { recordUsage: false });
+    if (auth.error) return { error: auth };
+    const userId = slackAuthenticatedUserId(auth.data);
+    if (!userId) {
+      throw new ComposioBridgeHttpError(
+        502,
+        'Slack did not return the authenticated user id needed to open your direct message.',
+      );
+    }
+
+    const dm = await this.executeRemoteTool(
+      'SLACK_OPEN_DM',
+      { users: userId, return_im: true },
+      { recordUsage: false },
+    );
+    if (dm.error) return { error: dm };
+    const conversationId = slackConversationId(dm.data);
+    if (!conversationId) {
+      throw new ComposioBridgeHttpError(
+        502,
+        'Slack did not return the direct-message conversation id needed to send this message.',
+      );
+    }
+
+    return {
+      arguments: {
+        ...argumentRecord,
+        channel: conversationId,
+      },
+    };
   }
 
   private async executeRemoteTool(
@@ -369,6 +421,32 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? value as Record<string, unknown>
     : null;
+}
+
+function isSlackSelfAlias(value: string): boolean {
+  return /^(me|myself|self|yourself)$/i.test(value.trim());
+}
+
+function slackAuthenticatedUserId(value: unknown): string | null {
+  const record = asRecord(value);
+  if (!record) return null;
+  const user = asRecord(record.user);
+  const direct = [record.user_id, record.userId, user?.id]
+    .map(cleanString)
+    .find((candidate): candidate is string => candidate !== null && /^[UW][A-Z0-9]+$/i.test(candidate));
+  if (direct) return direct;
+  return slackAuthenticatedUserId(record.data);
+}
+
+function slackConversationId(value: unknown): string | null {
+  const record = asRecord(value);
+  if (!record) return null;
+  const channel = asRecord(record.channel);
+  const direct = [record.channel_id, record.channelId, channel?.id]
+    .map(cleanString)
+    .find((candidate): candidate is string => candidate !== null && /^D[A-Z0-9]+$/i.test(candidate));
+  if (direct) return direct;
+  return slackConversationId(record.data);
 }
 
 export function buildComposioToolUsageInput(

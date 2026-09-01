@@ -180,6 +180,12 @@ def propose_message_draft(
     for Notion pages or tables, documents, databases, tasks, calendar events,
     comments, or any other connected-app action.
 
+    For Slack, `to="me"` sends to the authenticated user's own DM. For other
+    direct messages, resolve the recipient with SLACK_FIND_USERS and open the
+    conversation with SLACK_OPEN_DM, then pass the returned D-prefixed channel
+    id as `to`. Public channel names and C/G-prefixed conversation ids are also
+    accepted. Use `to_display` for the friendly name shown in the review UI.
+
     Verso handles the final send (or discard) from the review widget. After a
     "pending_review" result, do not call the underlying send tool yourself.
     """

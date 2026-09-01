@@ -73,6 +73,65 @@ describe('message draft eligibility', () => {
     expect(execute).toHaveBeenCalledWith(toolSlug, args);
   });
 
+  it.each(['me', 'self', 'myself', 'yourself'])(
+    'resolves Slack self alias %s to a DM before the reviewed send',
+    async (selfAlias) => {
+      const bridge = new ComposioBridgeService(new ManagedBackendClient('https://backend.example'));
+      const remote = (bridge as unknown as {
+        bridgeClient: { executeTool: (slug: string, args: Record<string, unknown>) => Promise<unknown> };
+      }).bridgeClient;
+      const execute = vi.spyOn(remote, 'executeTool')
+        .mockResolvedValueOnce({
+          data: { ok: true, user_id: 'U012AUTHED' },
+          error: null,
+          logId: null,
+        })
+        .mockResolvedValueOnce({
+          data: { ok: true, channel: { id: 'D012SELFDM' } },
+          error: null,
+          logId: null,
+        })
+        .mockResolvedValueOnce({
+          data: { ok: true },
+          error: null,
+          logId: null,
+        });
+
+      const result = await bridge.sendReviewedMessage('slack', {
+        channel: selfAlias,
+        markdown_text: 'Hello from Hermes',
+      });
+
+      expect(result.error).toBeNull();
+      expect(execute.mock.calls).toEqual([
+        ['SLACK_TEST_AUTH', {}],
+        ['SLACK_OPEN_DM', { users: 'U012AUTHED', return_im: true }],
+        ['SLACK_SEND_MESSAGE', {
+          channel: 'D012SELFDM',
+          markdown_text: 'Hello from Hermes',
+        }],
+      ]);
+    },
+  );
+
+  it('passes an existing Slack DM conversation id straight through', async () => {
+    const bridge = new ComposioBridgeService(new ManagedBackendClient('https://backend.example'));
+    const remote = (bridge as unknown as {
+      bridgeClient: { executeTool: (slug: string, args: Record<string, unknown>) => Promise<unknown> };
+    }).bridgeClient;
+    const execute = vi.spyOn(remote, 'executeTool').mockResolvedValue({
+      data: { ok: true },
+      error: null,
+      logId: null,
+    });
+    const args = { channel: 'D012EXISTING', markdown_text: 'Hello' };
+
+    await bridge.sendReviewedMessage('slack', args);
+
+    expect(execute).toHaveBeenCalledOnce();
+    expect(execute).toHaveBeenCalledWith('SLACK_SEND_MESSAGE', args);
+  });
+
   it('leaves unrelated connected-app tools on the generic execution path', async () => {
     const bridge = new ComposioBridgeService(new ManagedBackendClient(''));
 
