@@ -35,6 +35,9 @@ const DOWNLOAD_URL = `${GITHUB_URL}/releases/download/v1.0.23/verso-1.0.23.dmg`;
 // Flip on once there are real testimonials to show.
 const SHOW_TESTIMONIALS = false;
 
+// Local-first / memory section, hidden for now.
+const SHOW_LOCAL_FIRST = false;
+
 const features = [
   {
     title: 'Memory that stays home.',
@@ -192,30 +195,31 @@ export default function TriagePreviewPage() {
         </div>
       </section>
 
-      <Divider />
+      {SHOW_LOCAL_FIRST && (
+        <>
+          <Divider />
 
-      <section className={`${styles.section} ${styles.sectionRoomy}`}>
-        <div className={styles.sectionInner}>
-          <div className={`${styles.split} ${styles.splitFlip} ${styles.localSplit}`}>
-            <div>
-              <p className={styles.eyebrow}>Local by default</p>
-              <h2>Integrated memory system. Stored on your Mac.</h2>
-              <p className={styles.prose}>
-             Everything is stored on your mac locally; every conversation, every session, tool call or context you added. There is no Verso server, and no way for anyone &mdash; including the person who
-                built it &mdash; to see your data. The code is public, so you don&rsquo;t have to
-                take that on faith.
-              </p>
-              <p className={styles.prose}>
-                
-              </p>
-            </div>
+          <section className={`${styles.section} ${styles.sectionRoomy}`}>
+            <div className={styles.sectionInner}>
+              <div className={`${styles.split} ${styles.splitFlip} ${styles.localSplit}`}>
+                <div>
+                  <p className={styles.eyebrow}>Local by default</p>
+                  <h2>Integrated memory system. Stored on your Mac.</h2>
+                  <p className={styles.prose}>
+                    Everything is stored on your mac locally; every conversation, every session, tool call or context you added. There is no Verso server, and no way for anyone &mdash; including the person who
+                    built it &mdash; to see your data. The code is public, so you don&rsquo;t have to
+                    take that on faith.
+                  </p>
+                </div>
 
-            <div className={styles.splitArt}>
-              <LocalFirstGraphic />
+                <div className={styles.splitArt}>
+                  <LocalFirstGraphic />
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
-      </section>
+          </section>
+        </>
+      )}
 
       {SHOW_TESTIMONIALS && (
         <>
@@ -253,7 +257,6 @@ export default function TriagePreviewPage() {
         <div className={styles.ctaInner}>
           <h2>Try it out.</h2>
           <h2>It's yours.</h2>
-          <p>One signed download, your own accounts, five minutes.</p>
           <a className={styles.secondaryButton} href={DOWNLOAD_URL} download>
             Download for Mac
             <ArrowRightIcon />
