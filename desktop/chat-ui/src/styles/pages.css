@@ -862,6 +862,12 @@
   font-weight: 500;
 }
 
+.settings-custom-value {
+  max-width: 70%;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
 .settings-footnote {
   font-size: 11px;
   color: var(--ink-dim);

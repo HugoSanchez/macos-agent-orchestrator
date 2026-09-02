@@ -189,6 +189,7 @@ from tools.mcp_tool import _build_safe_env
 verso_secrets = {
     "VERSO_MANAGED_SESSION_TOKEN": "managed-secret",
     "VERSO_SIDECAR_AUTH_SECRET": "sidecar-secret",
+    "VERSO_CUSTOM_MODEL_API_KEY": "model-secret",
     "VERSO_CC_smoke_TOKEN": "connector-secret",
     "VERSO_HERMES_API_SERVER_KEY": "gateway-secret",
 }

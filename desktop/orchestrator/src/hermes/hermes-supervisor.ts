@@ -10,7 +10,12 @@ import {
 import { isMemoryEnabled } from '../memory/lexical-provider.ts';
 import { findInertCorePins } from './hermes-pinned-tools.ts';
 import { CustomConnectorsStore } from '../connections/custom-connectors-store.ts';
-import { CustomConnectorKeychain } from '../connections/keychain.ts';
+import { CustomConnectorKeychain, KeychainSecretStore } from '../connections/keychain.ts';
+import {
+  CUSTOM_MODEL_KEYCHAIN_SERVICE,
+  CUSTOM_MODEL_KEY_ENV,
+  CustomModelProviderStore,
+} from '../models/custom-model-provider-store.ts';
 import { fetchRegisteredToolNames, hermesGatewayAuthHeaders } from './hermes-gateway-client.ts';
 import {
   HermesManagedProfile,
@@ -52,6 +57,7 @@ const ORCHESTRATOR_ONLY_HERMES_ENV_KEYS = [
   'VERSO_SIDECAR_AUTH_SECRET',
   'VERSO_DRAFT_APPROVAL_TOKEN_SHA256',
   'VERSO_HERMES_API_SERVER_KEY',
+  CUSTOM_MODEL_KEY_ENV,
 ] as const;
 
 /**
@@ -99,6 +105,8 @@ export interface HermesSupervisorOptions {
   memoryToolsMode?: 'full' | 'none';
   customConnectorsStore?: CustomConnectorsStore;
   customConnectorKeychain?: CustomConnectorKeychain;
+  customModelProviderStore?: CustomModelProviderStore;
+  customModelKeychain?: KeychainSecretStore;
   /** Resolved on each spawn so browser setup and settings changes take effect after restart. */
   browserRuntime?: { cdpUrl(): string | null; allowPrivateUrls(): boolean };
 }
@@ -113,6 +121,8 @@ export class HermesSupervisor {
   private readonly memoryToolsMode: 'full' | 'none';
   private readonly customConnectorsStore: CustomConnectorsStore;
   private readonly customConnectorKeychain: CustomConnectorKeychain;
+  private readonly customModelProviderStore: CustomModelProviderStore;
+  private readonly customModelKeychain: KeychainSecretStore;
   private readonly browserRuntime: { cdpUrl(): string | null; allowPrivateUrls(): boolean } | null;
   private readonly managedProfile: HermesManagedProfile;
 
@@ -147,12 +157,17 @@ export class HermesSupervisor {
     this.manualMode = isManagedDisabled();
     this.templateHermesHome = getTemplateHermesHome();
     this.managedHermesHome = getVersoHermesHome(this.templateHermesHome, this.runtimeMode);
+    this.customModelProviderStore = options.customModelProviderStore
+      ?? new CustomModelProviderStore(CustomModelProviderStore.pathForHermesHome(this.managedHermesHome));
+    this.customModelKeychain = options.customModelKeychain
+      ?? new KeychainSecretStore(CUSTOM_MODEL_KEYCHAIN_SERVICE);
     this.managedProfile = new HermesManagedProfile({
       templateHome: this.templateHermesHome,
       managedHome: this.managedHermesHome,
       runtimeMode: this.runtimeMode,
       memoryToolsMode: this.memoryToolsMode,
       customConnectorsStore: this.customConnectorsStore,
+      customModelProviderStore: this.customModelProviderStore,
       browserRuntime: this.browserRuntime ?? undefined,
     });
     this.state = this.launch.command || this.manualMode ? 'idle' : 'unavailable';
@@ -595,7 +610,11 @@ export class HermesSupervisor {
   }
 
   private async spawnManagedProcess(): Promise<ChildProcess> {
-    this.ensureManagedHermesHome();
+    const customModel = this.customModelProviderStore.get();
+    const customModelApiKey = customModel?.usesApiKey
+      ? await this.customModelKeychain.getSecret(customModel.id)
+      : null;
+    this.ensureManagedHermesHome(!customModel?.usesApiKey || Boolean(customModelApiKey));
     const gatewayUrl = new URL(this.config.baseUrl);
     const port = gatewayUrl.port || (gatewayUrl.protocol === 'https:' ? '443' : '80');
     const host = gatewayUrl.hostname;
@@ -613,6 +632,7 @@ export class HermesSupervisor {
       ...buildHermesInheritedEnvironment(),
       ...pythonEnv,
       ...customConnectorEnv,
+      ...(customModelApiKey ? { [CUSTOM_MODEL_KEY_ENV]: customModelApiKey } : {}),
       PATH: [
         fileURLToPath(new URL('../../node_modules/.bin/', import.meta.url)),
         dirname(process.execPath),
@@ -657,8 +677,8 @@ export class HermesSupervisor {
     return child;
   }
 
-  private ensureManagedHermesHome(): void {
-    this.managedProfile.prepare(this.orchestratorBaseUrl);
+  private ensureManagedHermesHome(customModelAvailable = true): void {
+    this.managedProfile.prepare(this.orchestratorBaseUrl, customModelAvailable);
   }
 
   private captureLog(stream: 'stdout' | 'stderr', chunk: string): void {

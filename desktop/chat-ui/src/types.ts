@@ -241,9 +241,9 @@ export const REASONING_EFFORT_LABELS: Record<ReasoningEffort, string> = {
 export const CODEX_CHAT_MODELS = ['gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini'] as const;
 export const ANTHROPIC_CHAT_MODELS = ['claude-opus-4-8', 'claude-fable-5', 'claude-sonnet-5', 'claude-haiku-4-5'] as const;
 export const CHAT_MODELS = [...CODEX_CHAT_MODELS, ...ANTHROPIC_CHAT_MODELS] as const;
-export type ChatModel = (typeof CHAT_MODELS)[number];
+export type ChatModel = string;
 
-export const CHAT_MODEL_LABELS: Record<ChatModel, string> = {
+export const CHAT_MODEL_LABELS: Record<string, string> = {
   'gpt-5.5': 'GPT-5.5',
   'gpt-5.4': 'GPT-5.4',
   'gpt-5.4-mini': 'GPT-5.4 mini',
@@ -252,6 +252,10 @@ export const CHAT_MODEL_LABELS: Record<ChatModel, string> = {
   'claude-sonnet-5': 'Claude Sonnet 5',
   'claude-haiku-4-5': 'Claude Haiku 4.5',
 };
+
+export function chatModelLabel(model: ChatModel): string {
+  return CHAT_MODEL_LABELS[model] ?? model;
+}
 
 export const DEFAULT_ANTHROPIC_CHAT_MODEL: ChatModel = ANTHROPIC_CHAT_MODELS[0];
 

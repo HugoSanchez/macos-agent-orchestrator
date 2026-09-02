@@ -20,6 +20,11 @@ import { computePinnedToolNames } from './hermes-pinned-tools.ts';
 import { ANTHROPIC_CHAT_MODELS, CODEX_CHAT_MODELS } from '../models/model-catalog.ts';
 import { readAnthropicKeyFromEnvFile } from '../models/model-auth.ts';
 import { CustomConnectorsStore } from '../connections/custom-connectors-store.ts';
+import {
+  CUSTOM_MODEL_KEY_ENV,
+  CUSTOM_MODEL_PROVIDER_NAME,
+  CustomModelProviderStore,
+} from '../models/custom-model-provider-store.ts';
 
 const LEGACY_DEFAULT_SOUL_MD = '# Verso\n\nYou are a helpful research assistant running inside the Verso macOS app.\n';
 
@@ -54,6 +59,7 @@ export interface HermesManagedProfileOptions {
   runtimeMode: RuntimeMode;
   memoryToolsMode: 'full' | 'none';
   customConnectorsStore: CustomConnectorsStore;
+  customModelProviderStore?: CustomModelProviderStore;
   /** Current agent-browser policy; read at each prepare() so toggles land on the next spawn. */
   browserRuntime?: { allowPrivateUrls(): boolean };
 }
@@ -72,6 +78,7 @@ export class HermesManagedProfile {
   private readonly runtimeMode: RuntimeMode;
   private readonly memoryToolsMode: 'full' | 'none';
   private readonly customConnectorsStore: CustomConnectorsStore;
+  private readonly customModelProviderStore: CustomModelProviderStore | null;
   private readonly browserRuntime: { allowPrivateUrls(): boolean } | null;
 
   constructor(options: HermesManagedProfileOptions) {
@@ -80,6 +87,7 @@ export class HermesManagedProfile {
     this.runtimeMode = options.runtimeMode;
     this.memoryToolsMode = options.memoryToolsMode;
     this.customConnectorsStore = options.customConnectorsStore;
+    this.customModelProviderStore = options.customModelProviderStore ?? null;
     this.browserRuntime = options.browserRuntime ?? null;
   }
 
@@ -87,7 +95,7 @@ export class HermesManagedProfile {
     return join(this.managedHome, 'verso-composio-tools.json');
   }
 
-  prepare(orchestratorBaseUrl: string | null): void {
+  prepare(orchestratorBaseUrl: string | null, customModelAvailable = true): void {
     this.migrateLegacyVervoProfile();
     mkdirSync(this.managedHome, { recursive: true });
     const configExistedBeforeSeed = existsSync(join(this.managedHome, 'config.yaml'));
@@ -102,7 +110,7 @@ export class HermesManagedProfile {
     this.syncVersoSkill();
     this.configureManagedMcpServers(orchestratorBaseUrl);
     this.configureBrowserRuntime();
-    this.configureModelRoutes();
+    this.configureModelRoutes(customModelAvailable);
     this.restoreManagedModelConfigIfProxyOwned();
     this.seedDefaultDisabledSkillsIfNeeded(configExistedBeforeSeed);
     this.enforceAlwaysDisabledSkills();
@@ -208,7 +216,7 @@ export class HermesManagedProfile {
     }
   }
 
-  private configureModelRoutes(): void {
+  private configureModelRoutes(customModelAvailable: boolean): void {
     const configPath = join(this.managedHome, 'config.yaml');
     if (!existsSync(configPath)) return;
 
@@ -238,6 +246,46 @@ export class HermesManagedProfile {
       if (hasAnthropic) routes[model] = { model, provider: 'anthropic' };
       else delete routes[model];
     }
+
+    const customModel = customModelAvailable ? this.customModelProviderStore?.get() ?? null : null;
+    const customProvider = `custom:${CUSTOM_MODEL_PROVIDER_NAME}`;
+    for (const [routeModel, routeValue] of Object.entries(routes)) {
+      const route = asRecord(routeValue);
+      if (route?.provider === customProvider && routeModel !== customModel?.model) {
+        delete routes[routeModel];
+      }
+    }
+    const legacyCustomProviders = Array.isArray(config.custom_providers)
+      ? config.custom_providers.filter((entry) => asRecord(entry)?.name !== CUSTOM_MODEL_PROVIDER_NAME)
+      : [];
+    const providers = asRecord(config.providers) ?? {};
+    delete providers[CUSTOM_MODEL_PROVIDER_NAME];
+    if (customModel) {
+      providers[CUSTOM_MODEL_PROVIDER_NAME] = {
+        name: CUSTOM_MODEL_PROVIDER_NAME,
+        api: customModel.baseUrl,
+        ...(customModel.usesApiKey ? { key_env: CUSTOM_MODEL_KEY_ENV } : {}),
+        transport: 'chat_completions',
+        default_model: customModel.model,
+        discover_models: false,
+        models: { [customModel.model]: {} },
+      };
+      routes[customModel.model] = { model: customModel.model, provider: customProvider };
+      config.model = {
+        provider: customProvider,
+        default: customModel.model,
+        base_url: customModel.baseUrl,
+        api_mode: 'chat_completions',
+      };
+    } else if (asRecord(config.model)?.provider === customProvider) {
+      const templateModel = asRecord(readYamlRecord(join(this.templateHome, 'config.yaml'))?.model);
+      if (templateModel) config.model = templateModel;
+      else delete config.model;
+    }
+    if (legacyCustomProviders.length > 0) config.custom_providers = legacyCustomProviders;
+    else delete config.custom_providers;
+    if (Object.keys(providers).length > 0) config.providers = providers;
+    else delete config.providers;
 
     if (Object.keys(routes).length > 0) extra.model_routes = routes;
     else delete extra.model_routes;

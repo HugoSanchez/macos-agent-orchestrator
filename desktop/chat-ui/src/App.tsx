@@ -22,7 +22,7 @@ import type {
   ConnectionRequestView,
   ReasoningEffort,
 } from './types';
-import { ANTHROPIC_CHAT_MODELS, CHAT_MODEL_LABELS, CODEX_CHAT_MODELS } from './types';
+import { ANTHROPIC_CHAT_MODELS, chatModelLabel, CODEX_CHAT_MODELS } from './types';
 import type { ShellCommand, ShellState } from './shell-protocol';
 import { useBrowserShellHost } from './browser-shell-host';
 import { hasNativeShell, postShellAction } from './shell-bridge';
@@ -130,6 +130,7 @@ export function App() {
     connected,
     codexConnected,
     anthropicConnected,
+    customModelStatus,
     connections,
     customConnectors,
     toolkitCatalog,
@@ -147,15 +148,17 @@ export function App() {
   const isLoadingSessions = connected && shellState === null;
   const availableModels = useMemo<readonly ChatModel[]>(() => {
     const models: ChatModel[] = [];
+    if (customModelStatus?.connected && customModelStatus.model) models.push(customModelStatus.model);
     if (codexConnected === true) models.push(...CODEX_CHAT_MODELS);
     if (anthropicConnected === true) models.push(...ANTHROPIC_CHAT_MODELS);
     return models;
-  }, [anthropicConnected, codexConnected]);
+  }, [anthropicConnected, codexConnected, customModelStatus]);
   const defaultModel = useMemo<ChatModel | null>(() => {
+    if (customModelStatus?.connected && customModelStatus.model) return customModelStatus.model;
     if (codexConnected === true) return CODEX_CHAT_MODELS[0];
     if (anthropicConnected === true) return ANTHROPIC_CHAT_MODELS[0];
     return null;
-  }, [anthropicConnected, codexConnected]);
+  }, [anthropicConnected, codexConnected, customModelStatus]);
 
   // In browser mode this hook plays Swift's role: owns the sessions list,
   // dispatches `verso:shell-state` snapshots, and handles `verso:shell-action`
@@ -181,11 +184,9 @@ export function App() {
   useEffect(() => {
     if (selectedSessionId !== null || !defaultModel) return;
     setModel((current) => {
-      if (!current) return defaultModel;
-      if (defaultModel === CODEX_CHAT_MODELS[0] && current.startsWith('claude-')) return defaultModel;
-      return current;
+      return current && availableModels.includes(current) ? current : defaultModel;
     });
-  }, [defaultModel, selectedSessionId]);
+  }, [availableModels, defaultModel, selectedSessionId]);
 
   // Intra-app `verso:select-session` event (currently fired by
   // `CronDetailPage`'s "Edit in Chat" after creating a fresh session). In
@@ -371,11 +372,13 @@ export function App() {
     if (!model) {
       setModel(selectedModel);
     }
-    const providerUnavailable = selectedModel.startsWith('claude-')
-      ? anthropicConnected === false
-      : codexConnected === false;
+    const providerUnavailable = selectedModel === customModelStatus?.model
+      ? customModelStatus.connected === false
+      : selectedModel.startsWith('claude-')
+        ? anthropicConnected === false
+        : codexConnected === false;
     if (providerUnavailable) {
-      setSessionError(`${CHAT_MODEL_LABELS[selectedModel]} is not currently connected. Choose an available model before sending.`);
+      setSessionError(`${chatModelLabel(selectedModel)} is not currently connected. Choose an available model before sending.`);
       return;
     }
 
@@ -404,7 +407,7 @@ export function App() {
     // message on the synthetic widget so we can replay the send once they
     // finish auth. An Anthropic API key counts as connected: Claude models
     // route to it, and it may even be the default provider.
-    if (codexConnected === false && anthropicConnected !== true) {
+    if (codexConnected === false && anthropicConnected !== true && customModelStatus?.connected !== true) {
       const userMsg: ChatMessage = { id: nextId(), role: 'user', content: displayText };
       const widgetMsg: ChatMessage = {
         id: nextId(),
@@ -431,7 +434,7 @@ export function App() {
 
     updateSessionMessages(sessionKey, (prev) => [...prev, userMsg, assistantMsg]);
     streamInto(assistantMsg.id, text, attached, attachments);
-  }, [anthropicConnected, codexConnected, connected, defaultModel, getCurrentSessionId, getCurrentSessionKey, model, streamInto, streamingSessions, updateSessionMessages]);
+  }, [anthropicConnected, codexConnected, connected, customModelStatus, defaultModel, getCurrentSessionId, getCurrentSessionKey, model, streamInto, streamingSessions, updateSessionMessages]);
 
   const handleCodexConnected = useCallback((widgetId: string) => {
     setCodexConnected(true);

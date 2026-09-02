@@ -12,4 +12,8 @@ export const ANTHROPIC_CHAT_MODELS = ['claude-opus-4-8', 'claude-fable-5', 'clau
 
 export const VALID_CHAT_MODELS = [...CODEX_CHAT_MODELS, ...ANTHROPIC_CHAT_MODELS] as const;
 
-export type ChatModel = (typeof VALID_CHAT_MODELS)[number];
+export type ChatModel = string;
+
+export function isAllowedChatModel(value: string, customModel: string | null = null): boolean {
+  return (VALID_CHAT_MODELS as readonly string[]).includes(value) || value === customModel;
+}

@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import YAML from 'yaml';
 import { HermesSupervisor } from '../src/hermes/hermes-supervisor.ts';
+import { CustomModelProviderStore } from '../src/models/custom-model-provider-store.ts';
 
 /**
  * Verifies that HermesSupervisor's managed-mode seeding preserves Hermes'
@@ -152,6 +153,71 @@ describe('HermesSupervisor: managed config override', () => {
     expect(extra.model_routes).toEqual({
       'custom-model': { model: 'custom-model', provider: 'custom' },
     });
+  });
+
+  it('routes a configured custom model without persisting its API key', () => {
+    const store = new CustomModelProviderStore(path.join(tempRoot, 'custom-model.json'));
+    store.set('https://modal.example/v1', 'Qwen/Qwen3.5-4B', true);
+    const supervisor = new HermesSupervisor({
+      runtimeMode: 'managed',
+      customModelProviderStore: store,
+    });
+    (supervisor as unknown as { ensureManagedHermesHome: () => void }).ensureManagedHermesHome();
+
+    const raw = readFileSync(path.join(managedHome, 'config.yaml'), 'utf8');
+    const parsed = YAML.parse(raw) as {
+      model?: Record<string, unknown>;
+      providers?: Record<string, Record<string, unknown>>;
+      platforms?: { api_server?: { extra?: { model_routes?: Record<string, unknown> } } };
+    };
+    expect(raw).not.toContain('secret');
+    expect(parsed.model).toMatchObject({
+      provider: 'custom:verso-custom',
+      default: 'Qwen/Qwen3.5-4B',
+      base_url: 'https://modal.example/v1',
+      api_mode: 'chat_completions',
+    });
+    expect(parsed.providers?.['verso-custom']).toEqual({
+      name: 'verso-custom',
+      api: 'https://modal.example/v1',
+      key_env: 'VERSO_CUSTOM_MODEL_API_KEY',
+      transport: 'chat_completions',
+      default_model: 'Qwen/Qwen3.5-4B',
+      discover_models: false,
+      models: { 'Qwen/Qwen3.5-4B': {} },
+    });
+    expect(parsed.platforms?.api_server?.extra?.model_routes).toMatchObject({
+      'Qwen/Qwen3.5-4B': {
+        model: 'Qwen/Qwen3.5-4B',
+        provider: 'custom:verso-custom',
+      },
+    });
+
+    (supervisor as unknown as { ensureManagedHermesHome: (available: boolean) => void })
+      .ensureManagedHermesHome(false);
+    const withoutSecret = YAML.parse(readFileSync(path.join(managedHome, 'config.yaml'), 'utf8')) as {
+      model?: Record<string, unknown>;
+      providers?: Record<string, Record<string, unknown>>;
+      platforms?: { api_server?: { extra?: { model_routes?: Record<string, unknown> } } };
+    };
+    expect(withoutSecret.providers?.['verso-custom']).toBeUndefined();
+    expect(withoutSecret.platforms?.api_server?.extra?.model_routes?.['Qwen/Qwen3.5-4B']).toBeUndefined();
+    expect(withoutSecret.model?.provider).not.toBe('custom:verso-custom');
+  });
+
+  it('omits key_env for an unauthenticated custom model', () => {
+    const store = new CustomModelProviderStore(path.join(tempRoot, 'custom-model.json'));
+    store.set('https://public.example/v1', 'public-model', false);
+    const supervisor = new HermesSupervisor({
+      runtimeMode: 'managed',
+      customModelProviderStore: store,
+    });
+    (supervisor as unknown as { ensureManagedHermesHome: () => void }).ensureManagedHermesHome();
+
+    const parsed = YAML.parse(readFileSync(path.join(managedHome, 'config.yaml'), 'utf8')) as {
+      providers?: Record<string, Record<string, unknown>>;
+    };
+    expect(parsed.providers?.['verso-custom']).not.toHaveProperty('key_env');
   });
 
   it('replaces old managed auth.json with the template Hermes auth store', () => {

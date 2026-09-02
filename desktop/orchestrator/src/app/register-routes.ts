@@ -26,6 +26,8 @@ import type { MemoryProvider } from '../memory/memory-provider.ts';
 import { buildMemoryRoutes } from '../memory/memory-routes.ts';
 import type { AnthropicAuthService, CodexAuthService } from '../models/model-auth.ts';
 import { buildModelAuthRoutes } from '../models/model-auth.ts';
+import type { CustomModelProviderService } from '../models/custom-model-provider.ts';
+import { buildCustomModelProviderRoutes } from '../models/custom-model-provider-routes.ts';
 import { ANTHROPIC_CHAT_MODELS, CODEX_CHAT_MODELS } from '../models/model-catalog.ts';
 import { buildSkillsHubRoutes } from '../skills/skills-hub.ts';
 import type { PinnedSkillsStore } from '../skills/pinned-skills-store.ts';
@@ -57,6 +59,7 @@ export interface RouteDependencies {
   browserSettings: BrowserSettingsStore;
   codexAuth: CodexAuthService;
   anthropicAuth: AnthropicAuthService;
+  customModelProvider: CustomModelProviderService;
 }
 
 /** Assemble the sidecar's HTTP surface from already-created feature services. */
@@ -118,6 +121,7 @@ export function registerRoutes(deps: RouteDependencies): Route[] {
     ...buildCronsRoutes(deps.hermes, deps.cronDescriptions),
     ...buildBrowserRoutes(deps.browserHost, deps.browserSettings, deps.hermes),
     ...buildModelAuthRoutes(deps.codexAuth, deps.anthropicAuth),
+    ...buildCustomModelProviderRoutes(deps.customModelProvider),
     ...buildChatRoutes(
       deps.store,
       deps.hermes,
@@ -125,12 +129,15 @@ export function registerRoutes(deps: RouteDependencies): Route[] {
       deps.chatRequests,
       deps.memoryExtraction,
       async () => {
+        const custom = await deps.customModelProvider.getStatus();
+        if (custom.connected && custom.model) return custom.model;
         const codex = await deps.codexAuth.getStatus();
         if (codex.connected) return CODEX_CHAT_MODELS[0];
         const anthropic = await deps.anthropicAuth.getStatus();
         if (anthropic.connected) return ANTHROPIC_CHAT_MODELS[0];
         return null;
       },
+      () => deps.customModelProvider.getConfiguredModel(),
     ),
   ];
 }
