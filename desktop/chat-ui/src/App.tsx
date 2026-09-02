@@ -6,7 +6,7 @@ import { SkillsCatalogOverlay } from './SkillsCatalogOverlay';
 import { SkillDetailPage } from './SkillDetailPage';
 import { HubSkillDetailPage } from './HubSkillDetailPage';
 import { CronDetailPage } from './CronDetailPage';
-import { SettingsPage } from './SettingsPage';
+import { SettingsPage, type SettingsPanelId } from './SettingsPage';
 import {
   cancelChatRequest,
   createChatSession,
@@ -87,6 +87,26 @@ export function App() {
     : null;
   const selectedCronId = navigation.page.kind === 'cron' ? navigation.page.id : null;
   const isSettingsOpen = navigation.page.kind === 'settings';
+
+  // The shell collapses the sessions sidebar while settings is open (the
+  // settings rail replaces it). Posted on every transition — including the
+  // initial mount, which lets a reloaded WebView reset stale shell state.
+  useEffect(() => {
+    postShellAction({ kind: 'settings-visibility', open: isSettingsOpen });
+  }, [isSettingsOpen]);
+
+  // Which panel settings should open on. Deep-links (the provider nudge) set
+  // this before opening; it reverts to the default once settings closes so a
+  // later gear-open lands on Account again.
+  const [settingsInitialPanel, setSettingsInitialPanel] = useState<SettingsPanelId>('account');
+  useEffect(() => {
+    if (!isSettingsOpen) setSettingsInitialPanel('account');
+  }, [isSettingsOpen]);
+
+  const handleOpenProviderSettings = useCallback(() => {
+    setSettingsInitialPanel('models');
+    dispatchNavigation({ type: 'shell-command', command: { kind: 'open-settings' } });
+  }, []);
   const activelyViewedSessionId = selectedSessionId && isChatSurfaceActive(navigation)
     ? selectedSessionId
     : null;
@@ -159,6 +179,15 @@ export function App() {
     if (anthropicConnected === true) return ANTHROPIC_CHAT_MODELS[0];
     return null;
   }, [anthropicConnected, codexConnected, customModelStatus]);
+
+  // First-run nudge pointing at Settings → Model providers. Only once every
+  // provider status has resolved — an async-loading gap must not flash the
+  // nudge at connected users on launch.
+  const showProviderNudge = connected
+    && codexConnected !== null
+    && anthropicConnected !== null
+    && customModelStatus !== null
+    && availableModels.length === 0;
 
   // In browser mode this hook plays Swift's role: owns the sessions list,
   // dispatches `verso:shell-state` snapshots, and handles `verso:shell-action`
@@ -586,7 +615,7 @@ export function App() {
       )}
 
       {isSettingsOpen ? (
-        <SettingsPage onBack={handleCloseSettings} />
+        <SettingsPage onBack={handleCloseSettings} initialPanel={settingsInitialPanel} />
       ) : selectedCronId ? (
         <CronDetailPage
           id={selectedCronId}
@@ -615,6 +644,26 @@ export function App() {
               toolkitCatalog={toolkitCatalog}
             />
           </div>
+
+          {showProviderNudge ? (
+            <div className="provider-nudge">
+              <div className="provider-nudge-card">
+                <div className="provider-nudge-text">
+                  <span className="provider-nudge-label">Connect a model provider</span>
+                  <span className="provider-nudge-detail">
+                    Chat needs a provider — Codex, Anthropic, or a custom endpoint.
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  className="settings-button settings-button-primary"
+                  onClick={handleOpenProviderSettings}
+                >
+                  Open settings
+                </button>
+              </div>
+            </div>
+          ) : null}
 
           <InputBar
             text={currentDraft.text}

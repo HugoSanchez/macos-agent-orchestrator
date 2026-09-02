@@ -60,4 +60,8 @@ export type ShellAction =
   // User dismissed the catalog via the chat-ui's close button (rather
   // than via a Swift-side leftbar toggle).
   | { kind: 'catalog-closed' }
-  | { kind: 'skills-catalog-closed' };
+  | { kind: 'skills-catalog-closed' }
+  // Settings page visibility. The native shell hides the sessions sidebar
+  // while settings is open so the settings rail is the window's only left
+  // column; the chat-ui owns navigation state, so it reports transitions.
+  | { kind: 'settings-visibility'; open: boolean };

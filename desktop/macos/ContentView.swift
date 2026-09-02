@@ -31,6 +31,10 @@ struct ContentView: View {
     // session in the leftbar — selection doesn't change, so there's no shell
     // state delta to clear the overlay, yet the user clearly wants to go back.
     @State private var pendingChatFocus: ChatFocusRequest?
+    // While the WebView shows the settings page its own rail is the window's
+    // left column, so the sessions sidebar hides. Transient (not @AppStorage):
+    // the user's expand/collapse preference must survive a settings visit.
+    @State private var isSettingsSurfaceOpen = false
 
     init(sidecar: SidecarManager, managedSessionStore: ManagedSessionStore) {
         self.sidecar = sidecar
@@ -57,15 +61,21 @@ struct ContentView: View {
         )
     }
 
+    // Effective visibility: the persisted preference, overridden while the
+    // settings page owns the left column.
+    private var isLeftSidebarVisible: Bool {
+        isLeftSidebarExpanded && !isSettingsSurfaceOpen
+    }
+
     private var leftSidebarWidth: CGFloat {
-        isLeftSidebarExpanded ? 320 : 0
+        isLeftSidebarVisible ? 320 : 0
     }
 
     var body: some View {
         HSplitView {
             // Left sidebar
             VStack(spacing: 0) {
-                if isLeftSidebarExpanded {
+                if isLeftSidebarVisible {
                     TopChromeControls(
                         isLeftSidebarExpanded: $isLeftSidebarExpanded,
                         iconColor: theme.footerIcon,
@@ -76,7 +86,7 @@ struct ContentView: View {
                     .padding(.bottom, 10)
                 }
 
-                if isLeftSidebarExpanded {
+                if isLeftSidebarVisible {
                     SessionSidebar(
                         theme: theme,
                         isDarkMode: isDarkMode,
@@ -150,7 +160,7 @@ struct ContentView: View {
 
                 Spacer(minLength: 0)
 
-                if isLeftSidebarExpanded {
+                if isLeftSidebarVisible {
                     SidebarFooter(
                         isDarkMode: $isDarkMode,
                         sidecarState: sidecar.state,
@@ -178,7 +188,7 @@ struct ContentView: View {
                 Rectangle()
                     .fill(theme.verticalDivider)
                     .frame(width: isDarkMode ? 1 : 0.5)
-                    .opacity(isLeftSidebarExpanded ? (isDarkMode ? 1 : 0.00) : 0)
+                    .opacity(isLeftSidebarVisible ? (isDarkMode ? 1 : 0.00) : 0)
             }
             .overlay(alignment: .bottom) {
                 if let sidebarToast {
@@ -210,7 +220,9 @@ struct ContentView: View {
                 onShellAction: handleShellAction
             )
             .overlay(alignment: .topLeading) {
-                if !isLeftSidebarExpanded {
+                // Hidden while settings is open: re-expanding the sessions
+                // sidebar next to the settings rail would show two sidebars.
+                if !isLeftSidebarVisible && !isSettingsSurfaceOpen {
                     TopChromeControls(
                         isLeftSidebarExpanded: $isLeftSidebarExpanded,
                         iconColor: theme.footerIcon,
@@ -390,6 +402,11 @@ struct ContentView: View {
             isConnectionsCatalogExpanded = false
         case .skillsCatalogClosed:
             isSkillsCatalogExpanded = false
+        case .settingsVisibility(let open):
+            guard open != isSettingsSurfaceOpen else { return }
+            withAnimation(.easeInOut(duration: 0.18)) {
+                isSettingsSurfaceOpen = open
+            }
         }
     }
 
@@ -416,6 +433,7 @@ struct ContentView: View {
         pendingCronOpen = nil
         pendingSettingsOpen = nil
         pendingChatFocus = nil
+        isSettingsSurfaceOpen = false
     }
 
     private func showSidebarToast(_ message: String) {

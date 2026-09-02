@@ -247,7 +247,7 @@ describe('Hermes Chat Streaming', () => {
     const created = await fetchJson('/chat/sessions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: 'Inflation', model: 'gpt-5.4' }),
+      body: JSON.stringify({ title: 'Inflation', model: 'gpt-5.6-sol' }),
     });
     const sessionId = created.body.session.id as string;
 
@@ -283,7 +283,7 @@ describe('Hermes Chat Streaming', () => {
     const created = await fetchJson('/chat/sessions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: 'gpt-5.4' }),
+      body: JSON.stringify({ model: 'gpt-5.6-sol' }),
     });
     const sessionId = created.body.session.id as string;
 
@@ -323,7 +323,7 @@ describe('Hermes Chat Streaming', () => {
     const created = await fetchJson('/chat/sessions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: 'Concurrent send', model: 'gpt-5.4' }),
+      body: JSON.stringify({ title: 'Concurrent send', model: 'gpt-5.6-sol' }),
     });
     const sessionId = created.body.session.id as string;
     holdResponseStream = true;
@@ -381,7 +381,7 @@ describe('Hermes Chat Streaming', () => {
     const created = await fetchJson('/chat/sessions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: 'Screenshot', model: 'gpt-5.4' }),
+      body: JSON.stringify({ title: 'Screenshot', model: 'gpt-5.6-sol' }),
     });
     const sessionId = created.body.session.id as string;
 
@@ -422,7 +422,7 @@ describe('Hermes Chat Streaming', () => {
     const created = await fetchJson('/chat/sessions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: 'Image only', model: 'gpt-5.4' }),
+      body: JSON.stringify({ title: 'Image only', model: 'gpt-5.6-sol' }),
     });
     const sessionId = created.body.session.id as string;
 
@@ -451,7 +451,7 @@ describe('Hermes Chat Streaming', () => {
     const created = await fetchJson('/chat/sessions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: 'Report', model: 'gpt-5.4' }),
+      body: JSON.stringify({ title: 'Report', model: 'gpt-5.6-sol' }),
     });
     const sessionId = created.body.session.id as string;
 
@@ -486,7 +486,7 @@ describe('Hermes Chat Streaming', () => {
     const created = await fetchJson('/chat/sessions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: 'Mixed', model: 'gpt-5.4' }),
+      body: JSON.stringify({ title: 'Mixed', model: 'gpt-5.6-sol' }),
     });
     const sessionId = created.body.session.id as string;
 
@@ -530,7 +530,7 @@ describe('Hermes Chat Streaming', () => {
     const created = await fetchJson('/chat/sessions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: 'Recovery', model: 'gpt-5.4' }),
+      body: JSON.stringify({ title: 'Recovery', model: 'gpt-5.6-sol' }),
     });
     const sessionId = created.body.session.id as string;
 
@@ -569,7 +569,7 @@ describe('Hermes Chat Streaming', () => {
     const created = await fetchJson('/chat/sessions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: 'Memory', model: 'gpt-5.4' }),
+      body: JSON.stringify({ title: 'Memory', model: 'gpt-5.6-sol' }),
     });
     const sessionId = created.body.session.id as string;
 
