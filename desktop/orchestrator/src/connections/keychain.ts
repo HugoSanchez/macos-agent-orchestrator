@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 
-const SERVICE = 'com.verso.custom-connectors';
+const CUSTOM_CONNECTORS_SERVICE = 'com.verso.custom-connectors';
 
 export type KeychainExec = (
   file: string,
@@ -8,10 +8,13 @@ export type KeychainExec = (
   callback: (error: Error | null, stdout: string, stderr: string) => void,
 ) => void;
 
-export class CustomConnectorKeychain {
+export class KeychainSecretStore {
   private readonly exec: KeychainExec;
 
-  constructor(exec: KeychainExec = execFile) {
+  constructor(
+    private readonly service: string,
+    exec: KeychainExec = execFile,
+  ) {
     this.exec = exec;
   }
 
@@ -20,7 +23,7 @@ export class CustomConnectorKeychain {
       'add-generic-password',
       '-U',
       '-s',
-      SERVICE,
+      this.service,
       '-a',
       account,
       '-w',
@@ -32,7 +35,7 @@ export class CustomConnectorKeychain {
     const result = await this.run([
       'find-generic-password',
       '-s',
-      SERVICE,
+      this.service,
       '-a',
       account,
       '-w',
@@ -45,7 +48,7 @@ export class CustomConnectorKeychain {
     await this.run([
       'delete-generic-password',
       '-s',
-      SERVICE,
+      this.service,
       '-a',
       account,
     ], { allowFailure: true });
@@ -65,5 +68,11 @@ export class CustomConnectorKeychain {
         resolve({ stdout, failed: false });
       });
     });
+  }
+}
+
+export class CustomConnectorKeychain extends KeychainSecretStore {
+  constructor(exec: KeychainExec = execFile) {
+    super(CUSTOM_CONNECTORS_SERVICE, exec);
   }
 }

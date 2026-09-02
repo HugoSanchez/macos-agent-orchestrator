@@ -34,7 +34,7 @@ import {
   readHermesChatMessages,
   readHermesSessionModelFromHomes,
 } from './hermes-history.ts';
-import { VALID_CHAT_MODELS, type ChatModel } from '../models/model-catalog.ts';
+import { isAllowedChatModel, type ChatModel } from '../models/model-catalog.ts';
 import {
   buildSkillInvocationPrompt,
   extractSlashSkillRequest,
@@ -63,6 +63,7 @@ export function buildChatRoutes(
   requests: ChatRequestRegistry,
   memoryExtraction?: MemoryExtractionScheduler,
   defaultModelForNewSession?: () => Promise<ChatModel | null>,
+  getCustomModel?: () => string | null,
 ): Route[] {
   return [
     route('GET', '/chat/status', async (_req, res) => {
@@ -85,7 +86,7 @@ export function buildChatRoutes(
     }),
 
     route('GET', '/chat/sessions', async (_req, res) => {
-      const sessions = hydrateSessionSummaries(store);
+      const sessions = hydrateSessionSummaries(store, getCustomModel);
       json(res, 200, { sessions });
     }),
 
@@ -93,7 +94,7 @@ export function buildChatRoutes(
       const title = typeof (body as { title?: unknown } | null)?.title === 'string'
         ? ((body as { title?: string }).title ?? undefined)
         : undefined;
-      const requestedModel = parseChatModel(body);
+      const requestedModel = parseChatModel(body, getCustomModel);
       if (hasModelField(body) && !requestedModel) {
         return json(res, 400, { error: 'bad_request', message: 'Invalid "model"' });
       }
@@ -110,7 +111,7 @@ export function buildChatRoutes(
       if (!record) {
         return json(res, 404, { error: 'not_found', message: `Unknown session: ${params.id}` });
       }
-      const session = hydrateSessionSummary(record, store);
+      const session = hydrateSessionSummary(record, store, getCustomModel);
       json(res, 200, { session });
     }),
 
@@ -136,7 +137,7 @@ export function buildChatRoutes(
         return json(res, 404, { error: 'not_found', message: `Unknown session: ${params.id}` });
       }
 
-      const session = hydrateSessionSummary(record, store);
+      const session = hydrateSessionSummary(record, store, getCustomModel);
       json(res, 200, { session });
     }),
 
@@ -145,7 +146,7 @@ export function buildChatRoutes(
       if (!record) {
         return json(res, 404, { error: 'not_found', message: `Unknown session: ${params.id}` });
       }
-      const session = hydrateSessionSummary(record, store);
+      const session = hydrateSessionSummary(record, store, getCustomModel);
       json(res, 200, { session });
     }),
 
@@ -154,12 +155,12 @@ export function buildChatRoutes(
       if (!record) {
         return json(res, 404, { error: 'not_found', message: `Unknown session: ${params.id}` });
       }
-      const session = hydrateSessionSummary(record, store);
+      const session = hydrateSessionSummary(record, store, getCustomModel);
       json(res, 200, { session });
     }),
 
     route('POST', '/chat/sessions/:id/model', async (_req, res, params, body) => {
-      const model = parseChatModel(body);
+      const model = parseChatModel(body, getCustomModel);
       if (!model) {
         return json(res, 400, { error: 'bad_request', message: 'Invalid "model"' });
       }
@@ -167,7 +168,7 @@ export function buildChatRoutes(
       if (!record) {
         return json(res, 404, { error: 'not_found', message: `Unknown session: ${params.id}` });
       }
-      json(res, 200, { session: hydrateSessionSummary(record, store) });
+      json(res, 200, { session: hydrateSessionSummary(record, store, getCustomModel) });
     }),
 
     route('POST', '/chat/sessions/:id/messages', async (req, res, params, body) => {
@@ -198,23 +199,23 @@ export function buildChatRoutes(
       // immediate send are atomic from the user's perspective. Persist it
       // before dispatching so a relaunch or reopen cannot route this session
       // through a different provider later.
-      const requestedModel = parseChatModel(body);
+      const requestedModel = parseChatModel(body, getCustomModel);
       if (requestedModel && requestedModel !== record.model) {
         record = store.setSessionModel(params.id, requestedModel) ?? record;
       }
       // A sidecar can remain alive during an upgrade, so recover from Hermes
       // here too instead of relying solely on the startup migration.
-      if (!requestedModel && !parseStoredChatModel(record.model)) {
+      if (!requestedModel && !parseStoredChatModel(record.model, getCustomModel)) {
         const hermesModel = readHermesSessionModelFromHomes({
           hermesHomes: hermesHistoryHomeCandidates(hermes.hermesHome),
           hermesSessionId: record.hermesSessionId,
         });
-        const recoveredModel = parseStoredChatModel(hermesModel);
+        const recoveredModel = parseStoredChatModel(hermesModel, getCustomModel);
         if (recoveredModel) {
           record = store.setSessionModel(params.id, recoveredModel) ?? record;
         }
       }
-      const model = requestedModel ?? parseStoredChatModel(record.model);
+      const model = requestedModel ?? parseStoredChatModel(record.model, getCustomModel);
       if (!model) {
         return json(res, 409, {
           error: 'model_required',
@@ -278,7 +279,7 @@ export function buildChatRoutes(
             : documentContext;
         }
 
-        const session = hydrateSessionSummary(record, store);
+        const session = hydrateSessionSummary(record, store, getCustomModel);
 
         res.writeHead(200, {
           'Content-Type': 'text/event-stream',
@@ -383,13 +384,12 @@ function parseReasoningEffort(body: unknown): HermesReasoningEffort | null {
 // the supervisor writes — the gateway re-resolves provider credentials per
 // routed alias.
 
-function parseChatModel(body: unknown): ChatModel | null {
+function parseChatModel(body: unknown, getCustomModel?: () => string | null): ChatModel | null {
   const raw = body && typeof body === 'object' && !Array.isArray(body)
     ? (body as Record<string, unknown>).model
     : undefined;
   if (typeof raw !== 'string') return null;
-  const value = raw.trim().toLowerCase();
-  return parseStoredChatModel(value);
+  return parseStoredChatModel(raw.trim(), getCustomModel);
 }
 
 function hasModelField(body: unknown): boolean {
@@ -397,9 +397,12 @@ function hasModelField(body: unknown): boolean {
     && Object.hasOwn(body as Record<string, unknown>, 'model'));
 }
 
-function parseStoredChatModel(value: string | null | undefined): ChatModel | null {
-  return typeof value === 'string' && (VALID_CHAT_MODELS as readonly string[]).includes(value)
-    ? (value as ChatModel)
+function parseStoredChatModel(
+  value: string | null | undefined,
+  getCustomModel?: () => string | null,
+): ChatModel | null {
+  return typeof value === 'string' && isAllowedChatModel(value, getCustomModel?.() ?? null)
+    ? value
     : null;
 }
 
@@ -464,8 +467,11 @@ function formatCronContextLines(cron: HermesCronJob): string[] {
   return lines;
 }
 
-function hydrateSessionSummaries(store: ChatStore): ChatSessionSummary[] {
-  return store.listSessionRecords().map((record) => hydrateSessionSummary(record, store));
+function hydrateSessionSummaries(
+  store: ChatStore,
+  getCustomModel?: () => string | null,
+): ChatSessionSummary[] {
+  return store.listSessionRecords().map((record) => hydrateSessionSummary(record, store, getCustomModel));
 }
 
 function hydrateSessionMessages(
@@ -508,6 +514,7 @@ function addLocalResponseTimings(messages: ChatMessageRecord[]): ChatMessageReco
 function hydrateSessionSummary(
   record: ChatSessionRecord,
   store: ChatStore,
+  getCustomModel?: () => string | null,
 ): ChatSessionSummary {
   const messages = store.getMessages(record.id) ?? [];
   const lastMessage = messages[messages.length - 1];
@@ -525,7 +532,7 @@ function hydrateSessionSummary(
     createdAt: record.createdAt,
     updatedAt,
     archivedAt: record.archivedAt,
-    model: parseStoredChatModel(record.model),
+    model: parseStoredChatModel(record.model, getCustomModel),
     messageCount: messages.length,
     lastMessagePreview: lastMessage ? preview(lastMessage.content) : null,
   };

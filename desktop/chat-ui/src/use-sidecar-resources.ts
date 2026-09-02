@@ -4,6 +4,7 @@ import {
   disconnectCustomConnector,
   getAnthropicStatus,
   getCodexStatus,
+  getCustomModelStatus,
   getConnectionRequest,
   getConnections,
   getCustomConnectors,
@@ -16,6 +17,7 @@ import {
   setDraftApprovalToken,
   setSidecarPort,
 } from './chat';
+import type { CustomModelStatus } from './chat';
 import { postShellAction } from './shell-bridge';
 import type {
   ConnectionRequestView,
@@ -32,6 +34,7 @@ export function useSidecarResources({ onError }: UseSidecarResourcesOptions) {
   const [connected, setConnected] = useState(false);
   const [codexConnected, setCodexConnected] = useState<boolean | null>(null);
   const [anthropicConnected, setAnthropicConnected] = useState<boolean | null>(null);
+  const [customModelStatus, setCustomModelStatus] = useState<CustomModelStatus | null>(null);
   const [connections, setConnections] = useState<ConnectionView[]>([]);
   const [customConnectors, setCustomConnectors] = useState<CustomConnectorView[]>([]);
   const [toolkitCatalog, setToolkitCatalog] = useState<ToolkitView[]>([]);
@@ -59,18 +62,15 @@ export function useSidecarResources({ onError }: UseSidecarResourcesOptions) {
 
   const refreshModelStatus = useCallback(async () => {
     if (!getSidecarPort()) return;
-    try {
-      const next = await getCodexStatus();
-      setCodexConnected(next.connected);
-    } catch {
-      // Unknown is safer than turning a transient failure into a send block.
-    }
-    try {
-      const anthropic = await getAnthropicStatus();
-      setAnthropicConnected(anthropic.connected);
-    } catch {
-      // Same best-effort stance as Codex.
-    }
+    const [codex, anthropic, custom] = await Promise.all([
+      getCodexStatus().catch(() => null),
+      getAnthropicStatus().catch(() => null),
+      getCustomModelStatus().catch(() => null),
+    ]);
+    // Unknown is safer than turning a transient failure into a send block.
+    if (codex) setCodexConnected(codex.connected);
+    if (anthropic) setAnthropicConnected(anthropic.connected);
+    if (custom) setCustomModelStatus(custom);
   }, []);
 
   const refreshToolkitCatalog = useCallback(async () => {
@@ -257,6 +257,7 @@ export function useSidecarResources({ onError }: UseSidecarResourcesOptions) {
     connected,
     codexConnected,
     anthropicConnected,
+    customModelStatus,
     connections,
     customConnectors,
     toolkitCatalog,

@@ -1,9 +1,8 @@
 import { useState, useRef, useCallback, useEffect, useMemo, useLayoutEffect } from 'react';
 import { getSkills } from './chat';
 import { useToast } from './Toaster';
-import type { AttachedContext, ChatModel, OutgoingAttachment, ReasoningEffort, SkillSummaryView } from './types';
+import { chatModelLabel, type AttachedContext, type ChatModel, type OutgoingAttachment, type ReasoningEffort, type SkillSummaryView } from './types';
 import {
-  CHAT_MODEL_LABELS,
   REASONING_EFFORTS,
   REASONING_EFFORT_LABELS,
 } from './types';
@@ -762,7 +761,7 @@ function ModelMenu({
                 <span className="model-menu-logo-slot">
                   <ModelProviderLogo model={m} />
                 </span>
-                <span>{CHAT_MODEL_LABELS[m]}</span>
+                <span>{chatModelLabel(m)}</span>
               </button>
             ))}
         </div>
@@ -774,12 +773,12 @@ function ModelMenu({
           setOpen((v) => !v);
         }}
         disabled={disabled}
-        aria-label={value ? `Model: ${CHAT_MODEL_LABELS[value]} (click to choose)` : 'Choose model before sending'}
+        aria-label={value ? `Model: ${chatModelLabel(value)} (click to choose)` : 'Choose model before sending'}
         aria-expanded={open}
         title="Model"
         className="footer-cycle-button footer-model-button"
       >
-        <span>{value ? CHAT_MODEL_LABELS[value] : 'Choose model'}</span>
+        <span>{value ? chatModelLabel(value) : 'Choose model'}</span>
       </button>
     </div>
   );

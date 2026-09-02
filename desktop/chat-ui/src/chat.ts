@@ -574,6 +574,37 @@ export async function disconnectAnthropic(): Promise<void> {
   await requestJson<void>('/model-auth/anthropic/disconnect', 'Failed to disconnect Anthropic', { method: 'POST' });
 }
 
+export interface CustomModelStatus {
+  connected: boolean;
+  baseUrl: string | null;
+  model: string | null;
+}
+
+export async function getCustomModelStatus(): Promise<CustomModelStatus> {
+  return requestJson('/model-auth/custom/status', 'Failed to load custom provider status');
+}
+
+export async function discoverCustomModels(baseUrl: string, apiKey: string): Promise<string[]> {
+  const body = await requestJson<{ models: string[] }>(
+    '/model-auth/custom/discover',
+    'Failed to discover models',
+    jsonInit('POST', { baseUrl, apiKey }),
+  );
+  return body.models;
+}
+
+export async function connectCustomModel(baseUrl: string, apiKey: string, model: string): Promise<void> {
+  await requestJson<void>(
+    '/model-auth/custom/connect',
+    'Failed to connect custom provider',
+    jsonInit('POST', { baseUrl, apiKey, model }),
+  );
+}
+
+export async function disconnectCustomModel(): Promise<void> {
+  await requestJson<void>('/model-auth/custom/disconnect', 'Failed to disconnect custom provider', { method: 'POST' });
+}
+
 export interface DraftSendInput {
   channel: string;
   targetKind?: string;

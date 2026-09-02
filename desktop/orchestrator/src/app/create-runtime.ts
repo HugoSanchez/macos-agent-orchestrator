@@ -8,9 +8,10 @@ import { ComposioManifestCoordinator } from '../connections/composio-manifest.ts
 import { ComposioToolUsageStore } from '../connections/composio-tool-usage-store.ts';
 import { ConnectionsStore } from '../connections/connections-store.ts';
 import { CustomConnectorsStore } from '../connections/custom-connectors-store.ts';
-import { CustomConnectorKeychain } from '../connections/keychain.ts';
+import { CustomConnectorKeychain, KeychainSecretStore } from '../connections/keychain.ts';
 import { CronDescriptionsStore } from '../crons/cron-descriptions-store.ts';
 import { HermesSupervisor } from '../hermes/hermes-supervisor.ts';
+import { getTemplateHermesHome, getVersoHermesHome } from '../hermes/hermes-managed-profile.ts';
 import type { Route } from '../http/router.ts';
 import { ComposioBridgeService } from '../integrations/composio-bridge.ts';
 import { ConnectionsService } from '../integrations/composio.ts';
@@ -32,7 +33,12 @@ import { isChatCaptureEnabled, LexicalMemoryProvider, resolveLexicalMemoryConfig
 import { MemoryExtractionScheduler } from '../memory/memory-extraction.ts';
 import type { MemoryProvider } from '../memory/memory-provider.ts';
 import { AnthropicAuthService, CodexAuthService } from '../models/model-auth.ts';
-import { VALID_CHAT_MODELS } from '../models/model-catalog.ts';
+import { isAllowedChatModel } from '../models/model-catalog.ts';
+import { CustomModelProviderService } from '../models/custom-model-provider.ts';
+import {
+  CUSTOM_MODEL_KEYCHAIN_SERVICE,
+  CustomModelProviderStore,
+} from '../models/custom-model-provider-store.ts';
 import { PinnedSkillsStore } from '../skills/pinned-skills-store.ts';
 import { HermesSkillsConfig } from '../skills/skills-store.ts';
 import { setSkillsDir } from '../skills/skills.ts';
@@ -60,6 +66,11 @@ export async function createSidecarRuntime(): Promise<SidecarRuntime> {
   const managedBackend = new ManagedBackendClient({ runtimeMode });
   const customConnectorsStore = new CustomConnectorsStore();
   const customConnectorKeychain = new CustomConnectorKeychain();
+  const hermesHome = getVersoHermesHome(getTemplateHermesHome(), runtimeMode);
+  const customModelProviderStore = new CustomModelProviderStore(
+    CustomModelProviderStore.pathForHermesHome(hermesHome),
+  );
+  const customModelKeychain = new KeychainSecretStore(CUSTOM_MODEL_KEYCHAIN_SERVICE);
   const browserSettings = new BrowserSettingsStore();
   const browserHost = new BrowserHost();
   await browserHost.prepareCdpEndpoint().catch((error: unknown) => {
@@ -73,13 +84,15 @@ export async function createSidecarRuntime(): Promise<SidecarRuntime> {
     runtimeMode,
     customConnectorsStore,
     customConnectorKeychain,
+    customModelProviderStore,
+    customModelKeychain,
     browserRuntime: {
       cdpUrl: () => browserHost.cdpUrl(),
       allowPrivateUrls: () => browserSettings.get().allowPrivateUrls,
     },
   });
 
-  restoreLegacySessionModels(store, hermes);
+  restoreLegacySessionModels(store, hermes, customModelProviderStore);
 
   const embedderConfig = resolveEmbedderConfig(hermes.hermesHome);
   const memoryProvider: MemoryProvider = new LexicalMemoryProvider(
@@ -154,6 +167,11 @@ export async function createSidecarRuntime(): Promise<SidecarRuntime> {
     hermes,
     async () => (await codexAuth.getStatus()).connected,
   );
+  const customModelProvider = new CustomModelProviderService(
+    customModelProviderStore,
+    hermes,
+    customModelKeychain,
+  );
 
   const routes = registerRoutes({
     runtimeMode,
@@ -178,6 +196,7 @@ export async function createSidecarRuntime(): Promise<SidecarRuntime> {
     browserSettings,
     codexAuth,
     anthropicAuth,
+    customModelProvider,
   });
 
   let cleanupPromise: Promise<void> | null = null;
@@ -221,11 +240,15 @@ export async function createSidecarRuntime(): Promise<SidecarRuntime> {
   };
 }
 
-function restoreLegacySessionModels(store: ChatStore, hermes: HermesSupervisor): void {
+function restoreLegacySessionModels(
+  store: ChatStore,
+  hermes: HermesSupervisor,
+  customModelProviderStore: CustomModelProviderStore,
+): void {
   const hermesHomes = hermesHistoryHomeCandidates(hermes.hermesHome);
   const recoveredModels = store.backfillSessionModels((hermesSessionId) => {
     const model = readHermesSessionModelFromHomes({ hermesHomes, hermesSessionId });
-    return model && (VALID_CHAT_MODELS as readonly string[]).includes(model) ? model : null;
+    return model && isAllowedChatModel(model, customModelProviderStore.get()?.model ?? null) ? model : null;
   });
   if (recoveredModels > 0) {
     console.info(`[chat] restored persisted Hermes model for ${recoveredModels} legacy session(s)`);

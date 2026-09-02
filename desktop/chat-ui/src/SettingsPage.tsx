@@ -1,11 +1,15 @@
 import { useEffect, useState } from 'react';
 import {
   connectAnthropic,
+  connectCustomModel,
+  discoverCustomModels,
   disconnectAnthropic,
   disconnectCodex,
+  disconnectCustomModel,
   getAgentBrowserStatus,
   getAnthropicStatus,
   getCodexStatus,
+  getCustomModelStatus,
   getIngestionSources,
   getSidecarPort,
   openAgentBrowser,
@@ -15,6 +19,7 @@ import {
   type AgentBrowserStatus,
   type AnthropicStatus,
   type CodexStatus,
+  type CustomModelStatus,
   type IngestionSourceView,
 } from './chat';
 import { CodexMark, CodexConnectFlow, useCodexConnect } from './CodexConnect';
@@ -178,6 +183,8 @@ export function SettingsPage({ onBack }: Props) {
           <CodexSection />
 
           <AnthropicSection />
+
+          <CustomModelSection />
 
           <IngestionSection />
 
@@ -522,6 +529,183 @@ function AnthropicSection() {
             Paste an Anthropic API key to use Claude models. The key is verified,
             then stored locally with your Hermes profile.
           </p>
+        </>
+      )}
+    </section>
+  );
+}
+
+function CustomModelSection() {
+  const [status, setStatus] = useState<CustomModelStatus | null>(null);
+  const [baseUrl, setBaseUrl] = useState('');
+  const [apiKey, setApiKey] = useState('');
+  const [models, setModels] = useState<string[]>([]);
+  const [model, setModel] = useState('');
+  const [discoveryAttempted, setDiscoveryAttempted] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [isBusy, setIsBusy] = useState(false);
+
+  useEffect(() => { void refreshStatus(); }, []);
+
+  async function refreshStatus() {
+    try {
+      const next = await getCustomModelStatus();
+      setStatus(next);
+      if (next.baseUrl) setBaseUrl(next.baseUrl);
+      if (next.model) setModel(next.model);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function save(selectedModel: string) {
+    await connectCustomModel(baseUrl.trim(), apiKey.trim(), selectedModel);
+    setApiKey('');
+    setModels([]);
+    setDiscoveryAttempted(false);
+    await refreshStatus();
+    notifyModelAuthChanged();
+  }
+
+  async function handleDiscover() {
+    if (isBusy || !baseUrl.trim()) return;
+    setIsBusy(true);
+    setError(null);
+    try {
+      const discovered = await discoverCustomModels(baseUrl.trim(), apiKey.trim());
+      setModels(discovered);
+      setDiscoveryAttempted(true);
+      setModel(discovered[0] ?? '');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function handleConnect() {
+    if (isBusy || !model.trim()) return;
+    setIsBusy(true);
+    setError(null);
+    try {
+      await save(model.trim());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function handleDisconnect() {
+    if (isBusy) return;
+    setIsBusy(true);
+    setError(null);
+    try {
+      await disconnectCustomModel();
+      setBaseUrl('');
+      setApiKey('');
+      setModels([]);
+      setModel('');
+      setDiscoveryAttempted(false);
+      await refreshStatus();
+      notifyModelAuthChanged();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  return (
+    <section className="settings-section">
+      <h2>Custom provider</h2>
+      {error ? <p className="settings-footnote codex-error">{error}</p> : null}
+
+      {status?.connected ? (
+        <>
+          <div className="settings-row">
+            <span className="settings-label">Endpoint</span>
+            <span className="settings-value settings-custom-value">{status.baseUrl}</span>
+          </div>
+          <div className="settings-row">
+            <span className="settings-label">Model</span>
+            <span className="settings-value settings-custom-value">{status.model}</span>
+          </div>
+          <div className="settings-row">
+            <span className="settings-label">Connection</span>
+            <button
+              type="button"
+              className="settings-button settings-button-primary"
+              onClick={handleDisconnect}
+              disabled={isBusy}
+            >
+              {isBusy ? 'Disconnecting…' : 'Disconnect'}
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
+          <input
+            type="url"
+            className="settings-key-input"
+            placeholder="https://example.modal.direct"
+            aria-label="Custom provider base URL"
+            value={baseUrl}
+            onChange={(event) => setBaseUrl(event.target.value)}
+            disabled={isBusy}
+          />
+          <input
+            type="password"
+            className="settings-key-input"
+            placeholder="API key or proxy token (optional)"
+            aria-label="Custom provider API key"
+            value={apiKey}
+            autoComplete="off"
+            spellCheck={false}
+            onChange={(event) => setApiKey(event.target.value)}
+            disabled={isBusy}
+          />
+
+          {models.length > 0 ? (
+            <select
+              className="settings-key-input"
+              aria-label="Custom provider model"
+              value={model}
+              onChange={(event) => setModel(event.target.value)}
+              disabled={isBusy}
+            >
+              {models.map((item) => <option key={item} value={item}>{item}</option>)}
+            </select>
+          ) : discoveryAttempted && models.length === 0 ? (
+            <input
+              type="text"
+              className="settings-key-input"
+              placeholder="Model ID"
+              aria-label="Custom provider model ID"
+              value={model}
+              onChange={(event) => setModel(event.target.value)}
+              disabled={isBusy}
+            />
+          ) : null}
+
+          <div className="settings-row">
+            <p className="settings-footnote">
+              {discoveryAttempted && models.length === 0
+                ? 'This endpoint does not advertise its models. Enter the model ID supplied by the provider.'
+                : 'Verso discovers available models. Modal dashboard URLs automatically use /v1; paste the combined proxy token or its full Bearer header.'}
+            </p>
+            <button
+              type="button"
+              className="settings-button settings-button-primary"
+              onClick={discoveryAttempted ? handleConnect : handleDiscover}
+              disabled={isBusy
+                || !baseUrl.trim()
+                || (discoveryAttempted && !model.trim())}
+            >
+              {isBusy ? 'Connecting…' : 'Connect'}
+            </button>
+          </div>
         </>
       )}
     </section>
