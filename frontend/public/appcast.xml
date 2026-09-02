@@ -3,6 +3,15 @@
     <channel>
         <title>verso</title>
         <item>
+            <title>1.0.26</title>
+            <pubDate>Wed, 02 Sep 2026 10:40:18 +0200</pubDate>
+            <sparkle:version>27</sparkle:version>
+            <sparkle:shortVersionString>1.0.26</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <enclosure url="https://github.com/HugoSanchez/macos-agent-orchestrator/releases/download/v1.0.26/verso-1.0.26.dmg" length="395177776" type="application/octet-stream" sparkle:edSignature="THUElNs/38PRBju/OVj47QTH9FaMO1kpl2uJgRFEGXb3JhcHEQHiyKiw521394bJ7XY+btzprg/55DNZC9WEAQ=="/>
+        </item>
+        <item>
             <title>1.0.25</title>
             <pubDate>Tue, 01 Sep 2026 15:15:56 +0200</pubDate>
             <sparkle:version>26</sparkle:version>
@@ -19,15 +28,6 @@
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
             <enclosure url="https://github.com/HugoSanchez/macos-agent-orchestrator/releases/download/v1.0.24/verso-1.0.24.dmg" length="382012114" type="application/octet-stream" sparkle:edSignature="KGFBoaS7Q9GOWsLasJ5dK6w7CQZ0w6fWQoPEONQIxLkyP2gh/SDRM44IYYvZk9r97gV02DwDs1LEhK3eh4ebCw=="/>
-        </item>
-        <item>
-            <title>1.0.23</title>
-            <pubDate>Thu, 27 Aug 2026 15:29:31 +0200</pubDate>
-            <sparkle:version>24</sparkle:version>
-            <sparkle:shortVersionString>1.0.23</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <enclosure url="https://github.com/HugoSanchez/macos-agent-orchestrator/releases/download/v1.0.23/verso-1.0.23.dmg" length="383969069" type="application/octet-stream" sparkle:edSignature="bGX4SI9LD+/tI17N3Pk26dCF8hVVlXfRjgGOYDEr66QYdf6RraIzcbdRheXoG2FiynP09ybwgvcxqiA+uQuFDA=="/>
         </item>
     </channel>
 </rss>
