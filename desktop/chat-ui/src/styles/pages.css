@@ -774,20 +774,32 @@
 /* Settings page                                                  */
 /* ============================================================== */
 
+/* Two-pane editorial layout: a fixed left rail with the section list, and a
+   scrolling content pane. Sections are ruled groups (kicker + hairline), not
+   boxed cards. */
 .settings-page {
-  display: flex;
-  flex-direction: column;
+  position: relative;
   flex: 1 1 auto;
   min-height: 0;
-  overflow-y: auto;
-  padding: 16px 32px 40px;
-  gap: 16px;
+  overflow: hidden;
 }
 
-.settings-header {
+.settings-rail {
+  /* Overlay column matching the native sessions sidebar (320pt in
+     ContentView) so the left column keeps its footprint when settings takes
+     over the window. Absolute so the pane below can span the full width and
+     center its content on the window, like the chat column. */
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 320px;
+  padding: 20px 12px 24px 20px;
+  border-right: 1px solid var(--line-soft);
   display: flex;
-  align-items: center;
-  gap: 12px;
+  flex-direction: column;
+  gap: 2px;
+  overflow-y: auto;
 }
 
 .settings-back {
@@ -795,15 +807,92 @@
   background: transparent;
   border: 0;
   padding: 6px 10px;
+  margin-bottom: 10px;
   border-radius: 6px;
   color: var(--ink-dim);
   cursor: pointer;
   font-size: 12px;
+  align-self: flex-start;
 }
 
 .settings-back:hover {
   color: var(--ink);
   background: var(--settings-hover-bg);
+}
+
+.settings-rail-title {
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  margin: 0 0 18px 10px;
+}
+
+.settings-rail-item {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink-dim);
+  text-align: left;
+  padding: 7px 10px;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: color 0.12s ease, background-color 0.12s ease;
+}
+
+.settings-rail-item:hover {
+  color: var(--ink);
+  background: var(--settings-hover-bg);
+}
+
+.settings-rail-item.is-active {
+  color: var(--ink);
+  background: var(--settings-hover-bg);
+  font-weight: 500;
+}
+
+.settings-rail-item svg {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+  opacity: 0.75;
+}
+
+.settings-rail-spacer {
+  flex: 1 1 auto;
+}
+
+.settings-pane {
+  height: 100%;
+  overflow-y: auto;
+  padding: 32px 44px 48px;
+  /* Center the content column on the window (like chat messages): its left
+     edge sits at half the window minus half the 560px cap — but never under
+     the 320px rail (+44px gutter) on narrow windows. */
+  padding-left: max(364px, calc(50% - 280px));
+}
+
+.settings-pane-inner {
+  max-width: 560px;
+}
+
+.settings-panel-title {
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  margin: 0 0 4px;
+}
+
+.settings-panel-sub {
+  font-size: 13px;
+  color: var(--ink-dim);
+  margin: 0 0 24px;
 }
 
 .settings-loading,
@@ -819,59 +908,166 @@
   align-items: flex-start;
 }
 
-.settings-body {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  width: 100%;
+.settings-group {
+  margin-bottom: 32px;
 }
 
-.settings-section {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 18px 20px;
-  border-radius: 10px;
-  background: var(--paper-2);
-  border: 1px solid var(--line-soft);
-}
-
-.settings-section h2 {
+.settings-kicker {
   font-size: 11px;
   font-weight: 500;
   letter-spacing: 0.14em;
   text-transform: lowercase;
   color: var(--ink-dim);
+  margin: 0 0 6px;
+}
+
+.settings-rule {
+  border: 0;
+  border-top: 1px solid var(--line);
   margin: 0 0 4px;
 }
 
 .settings-row {
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  justify-content: space-between;
   gap: 16px;
+  padding: 13px 0;
   font-size: 13px;
+  border-bottom: 1px solid var(--line-soft);
 }
 
-.settings-label {
-  color: var(--ink-dim);
+.settings-row:last-child {
+  border-bottom: 0;
 }
 
-.settings-value {
+/* When a connect form expands under a row, the form carries the hairline. */
+.settings-row.is-expanded {
+  border-bottom: 0;
+}
+
+.settings-row-main {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.settings-row-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.settings-row-label {
   color: var(--ink);
   font-weight: 500;
 }
 
-.settings-custom-value {
-  max-width: 70%;
-  overflow-wrap: anywhere;
+.settings-row-detail {
+  font-size: 12px;
+  color: var(--ink-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-row-value {
+  color: var(--ink);
+  font-weight: 500;
   text-align: right;
 }
 
-.settings-footnote {
-  font-size: 11px;
+.settings-row-value.is-dim {
   color: var(--ink-dim);
-  margin: 4px 0 0;
+  font-weight: 400;
+}
+
+.settings-status-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  color: var(--ink-dim);
+}
+
+.settings-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  display: inline-block;
+}
+
+.settings-dot.is-on { background: var(--green); }
+.settings-dot.is-warn { background: var(--orange); }
+.settings-dot.is-off { background: var(--ink-faint); }
+
+.settings-mark {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: var(--logo-fallback-bg);
+  border: 1px solid var(--line-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-2);
+  flex: 0 0 auto;
+}
+
+.settings-mark svg {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+
+.settings-mark img {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  object-fit: contain;
+  display: block;
+}
+
+/* Monochrome marks (OpenAI, asterisk) render in ink so they flip correctly
+   between light and dark. */
+.settings-mark.is-mono {
+  color: var(--ink);
+}
+
+.settings-connect-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 0 16px 42px; /* aligns under row text, past the mark */
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.settings-connect-form:last-child {
+  border-bottom: 0;
+}
+
+.settings-connect-form-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+  margin-top: 2px;
+}
+
+.settings-connect-form-actions .settings-footnote {
+  margin: 0;
+  flex: 1;
+}
+
+.settings-footnote {
+  font-size: 11.5px;
+  color: var(--ink-dim);
+  margin: 10px 0 0;
+  line-height: 1.55;
 }
 
 .settings-key-input {
@@ -882,28 +1078,25 @@
   background: var(--paper-2);
   border: 1px solid var(--line-soft);
   border-radius: 8px;
-  padding: 8px 10px;
+  padding: 8px 11px;
   outline: none;
-  flex: 1;
+  width: 100%;
   min-width: 0;
 }
 
+/* Editorial focus: hairline goes to full ink on focus. */
 .settings-key-input:focus {
-  border-color: var(--line);
+  border-color: var(--ink);
 }
 
 .settings-key-input::placeholder {
-  color: var(--ink-dim);
+  color: var(--ink-faint);
 }
 
 .settings-key-input:disabled {
   opacity: 1;
   color: var(--ink-dim);
   cursor: default;
-}
-
-.settings-key-input-saved {
-  max-width: 360px;
 }
 
 .settings-button {
@@ -915,11 +1108,12 @@
   border: 1px solid var(--line);
   background: transparent;
   border-radius: 8px;
-  padding: 8px 14px;
-  font-size: 13px;
+  padding: 6px 13px;
+  font-size: 12.5px;
   font-weight: 500;
   color: var(--ink);
   cursor: pointer;
+  white-space: nowrap;
   transition: background-color 0.12s ease, opacity 0.12s ease;
 }
 
@@ -933,14 +1127,13 @@
 }
 
 .settings-button-primary {
-  background: var(--ink);
-  color: var(--paper);
+  background: var(--primary-btn-bg);
+  color: var(--primary-btn-text);
   border-color: transparent;
 }
 
 .settings-button-primary:hover:not(:disabled) {
-  background: var(--ink);
-  opacity: 0.88;
+  background: var(--primary-btn-bg-hover);
 }
 
 .settings-button-primary svg {
@@ -962,7 +1155,7 @@
   background: none;
   padding: 0;
   font: inherit;
-  font-size: 13px;
+  font-size: 12.5px;
   color: var(--ink-dim);
   text-decoration: underline;
   text-underline-offset: 2px;
@@ -1078,11 +1271,4 @@
 
 .codex-error {
   color: var(--danger-btn-text);
-}
-
-@media (prefers-color-scheme: dark) {
-  /* Slightly stronger press feedback in dark; not a color, so kept as a rule. */
-  .settings-button-primary:hover:not(:disabled) {
-    opacity: 0.85;
-  }
 }

@@ -238,15 +238,21 @@ export const REASONING_EFFORT_LABELS: Record<ReasoningEffort, string> = {
 // gateway over its config.yaml default (validated server-side too; the
 // orchestrator mirror lives in src/models/model-catalog.ts). The selector
 // only cycles models whose provider is connected.
-export const CODEX_CHAT_MODELS = ['gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini'] as const;
+export const CODEX_CHAT_MODELS = [
+  'gpt-5.5',
+  'gpt-5.6-sol',
+  'gpt-5.6-terra',
+  'gpt-5.6-luna',
+] as const;
 export const ANTHROPIC_CHAT_MODELS = ['claude-opus-4-8', 'claude-fable-5', 'claude-sonnet-5', 'claude-haiku-4-5'] as const;
 export const CHAT_MODELS = [...CODEX_CHAT_MODELS, ...ANTHROPIC_CHAT_MODELS] as const;
 export type ChatModel = string;
 
 export const CHAT_MODEL_LABELS: Record<string, string> = {
+  'gpt-5.6-sol': 'GPT-5.6 Sol',
+  'gpt-5.6-terra': 'GPT-5.6 Terra',
+  'gpt-5.6-luna': 'GPT-5.6 Luna',
   'gpt-5.5': 'GPT-5.5',
-  'gpt-5.4': 'GPT-5.4',
-  'gpt-5.4-mini': 'GPT-5.4 mini',
   'claude-opus-4-8': 'Claude Opus 4.8',
   'claude-fable-5': 'Claude Fable 5',
   'claude-sonnet-5': 'Claude Sonnet 5',

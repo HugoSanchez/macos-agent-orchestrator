@@ -28,6 +28,7 @@ enum ShellAction: Equatable {
     case signOut
     case catalogClosed
     case skillsCatalogClosed
+    case settingsVisibility(open: Bool)
 }
 
 /// Strict decoder for the untyped WKScriptMessage boundary. Required fields
@@ -79,6 +80,9 @@ enum ShellActionDecoder {
             return .catalogClosed
         case "skills-catalog-closed":
             return .skillsCatalogClosed
+        case "settings-visibility":
+            guard let open = payload["open"] as? Bool else { return nil }
+            return .settingsVisibility(open: open)
         default:
             return nil
         }

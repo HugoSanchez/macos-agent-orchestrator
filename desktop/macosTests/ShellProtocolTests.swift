@@ -32,6 +32,8 @@ final class ShellProtocolTests: XCTestCase {
             (["kind": "sign-out"], .signOut),
             (["kind": "catalog-closed"], .catalogClosed),
             (["kind": "skills-catalog-closed"], .skillsCatalogClosed),
+            (["kind": "settings-visibility", "open": true], .settingsVisibility(open: true)),
+            (["kind": "settings-visibility", "open": false], .settingsVisibility(open: false)),
         ]
 
         for (payload, expected) in fixtures {
@@ -52,5 +54,7 @@ final class ShellProtocolTests: XCTestCase {
             "streaming": "yes",
         ]))
         XCTAssertNil(ShellActionDecoder.decode(["kind": "open-external-url"]))
+        XCTAssertNil(ShellActionDecoder.decode(["kind": "settings-visibility"]))
+        XCTAssertNil(ShellActionDecoder.decode(["kind": "settings-visibility", "open": "yes"]))
     }
 }

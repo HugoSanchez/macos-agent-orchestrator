@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { json, route, type Route } from '../http/router.ts';
-import { ANTHROPIC_CHAT_MODELS } from './model-catalog.ts';
+import { ANTHROPIC_CHAT_MODELS, CODEX_CHAT_MODELS } from './model-catalog.ts';
 import type { HermesSupervisor } from '../hermes/hermes-supervisor.ts';
 
 const execFile = promisify(execFileCb);
@@ -395,8 +395,8 @@ export class AnthropicAuthError extends Error {
 
 // _update_config_for_provider deliberately preserves an existing
 // model.default unless it is empty or OpenRouter-formatted ("vendor/model"),
-// so switching providers can leave e.g. provider=anthropic with
-// default=gpt-5.4 — every unrouted request (crons, side tasks) would then
+// so switching providers can leave e.g. provider=anthropic with a Codex
+// default — every unrouted request (crons, side tasks) would then
 // send the wrong model name to the new provider. Force the default
 // explicitly using Hermes's own atomic config writer.
 function forceDefaultModelScript(defaultModel: string): string {
@@ -428,10 +428,8 @@ export function readAnthropicKeyFromEnvFile(hermesHome: string): string | null {
   return null;
 }
 
-// Default Codex model to write into config.yaml after a successful auth.
-// Keep this aligned with the managed entitlement returned by the Verso backend;
-// gpt-5.5 can silently hang on accounts that are only entitled for gpt-5.4.
-const DEFAULT_CODEX_MODEL = 'gpt-5.4';
+// Keep auth-driven defaults aligned with the first model shown in the picker.
+const DEFAULT_CODEX_MODEL = CODEX_CHAT_MODELS[0];
 
 // Bridge to Hermes's own _update_config_for_provider helper — the
 // canonical way to mutate config.yaml after an auth flow. We invoke it

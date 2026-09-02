@@ -57,7 +57,7 @@ describe('Managed Hermes authentication recovery', () => {
     const created = await fetch(`${baseUrl}/chat/sessions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: 'Recovery', model: 'gpt-5.4' }),
+      body: JSON.stringify({ title: 'Recovery', model: 'gpt-5.6-sol' }),
     });
     const sessionId = (await created.json() as { session: { id: string } }).session.id;
 

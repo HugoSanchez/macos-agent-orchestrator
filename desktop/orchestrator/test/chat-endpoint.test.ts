@@ -118,15 +118,22 @@ describe('Chat HTTP Endpoints', () => {
     expect(listed.body.sessions.find((session: { id: string }) => session.id === sessionId)?.model).toBe('gpt-5.5');
   });
 
-  it('rejects an unsupported session model', async () => {
+  it('rejects unsupported and retired session models', async () => {
     const created = await fetchJson('/chat/sessions', { method: 'POST' });
     const sessionId = created.body.session.id as string;
-    const result = await fetchJson(`/chat/sessions/${sessionId}/model`, {
+    const retired = await fetchJson(`/chat/sessions/${sessionId}/model`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: 'gpt-5.4' }),
+    });
+    expect(retired.status).toBe(400);
+
+    const unknown = await fetchJson(`/chat/sessions/${sessionId}/model`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ model: 'not-a-real-model' }),
     });
-    expect(result.status).toBe(400);
+    expect(unknown.status).toBe(400);
   });
 
   it('requires an explicit choice for a legacy session with no stored model', async () => {
@@ -241,7 +248,7 @@ describe('Chat HTTP Endpoints', () => {
     const created = await fetchJson('/chat/sessions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: 'gpt-5.4' }),
+      body: JSON.stringify({ model: 'gpt-5.6-sol' }),
     });
     const sessionId = created.body.session.id as string;
 

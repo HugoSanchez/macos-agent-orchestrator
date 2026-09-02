@@ -363,3 +363,42 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* ---- Provider nudge -------------------------------------------------------
+   First-run card above the composer pointing at Settings → Model providers.
+   Shares the composer's gutter and column so it reads as part of the input
+   area, not a floating toast. */
+.provider-nudge {
+  padding: 0 64px 12px;
+  background: var(--paper);
+}
+
+.provider-nudge-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  max-width: var(--assistant-content-max-width);
+  margin: 0 auto;
+  padding: 12px 16px;
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  background: var(--paper-2);
+}
+
+.provider-nudge-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.provider-nudge-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.provider-nudge-detail {
+  font-size: 12px;
+  color: var(--ink-dim);
+}

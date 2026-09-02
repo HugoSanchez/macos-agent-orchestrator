@@ -68,6 +68,13 @@ describe('HermesManagedProfile: model_routes reconciliation', () => {
     return parsed.platforms?.api_server?.extra?.model_routes;
   }
 
+  function managedDefaultModel(): string | undefined {
+    const parsed = YAML.parse(readFileSync(path.join(managedHome, 'config.yaml'), 'utf8')) as {
+      model?: { default?: string };
+    };
+    return parsed.model?.default;
+  }
+
   function writeManagedCreds(opts: { codex?: boolean; anthropic?: boolean }): void {
     mkdirSync(managedHome, { recursive: true });
     writeFileSync(
@@ -97,6 +104,7 @@ describe('HermesManagedProfile: model_routes reconciliation', () => {
     for (const model of ANTHROPIC_CHAT_MODELS) {
       expect(routes?.[model]).toBeUndefined();
     }
+    expect(managedDefaultModel()).toBe('gpt-5.5');
   });
 
   it('routes Claude models when the Anthropic key exists, and drops them on disconnect', () => {
@@ -126,12 +134,14 @@ describe('HermesManagedProfile: model_routes reconciliation', () => {
     writeFileSync(path.join(managedHome, 'config.yaml'), YAML.stringify({
       model: { provider: 'openai-codex', default: 'gpt-5.4' },
       platforms: { api_server: { extra: { model_routes: {
+        'gpt-5.4': { model: 'gpt-5.4', provider: 'openai-codex' },
         'my-alias': { model: 'minimax/minimax-m1', provider: 'openrouter' },
       } } } },
     }), 'utf8');
     seed();
     const routes = managedRoutes();
     expect(routes?.['my-alias']).toEqual({ model: 'minimax/minimax-m1', provider: 'openrouter' });
-    expect(routes?.['gpt-5.4']).toEqual({ model: 'gpt-5.4', provider: 'openai-codex' });
+    expect(routes?.['gpt-5.4']).toBeUndefined();
+    expect(managedDefaultModel()).toBe('gpt-5.5');
   });
 });

@@ -164,6 +164,7 @@ export function useBrowserShellHost(opts: UseBrowserShellHostOptions): void {
         case 'sign-out':
         case 'catalog-closed':
         case 'skills-catalog-closed':
+        case 'settings-visibility':
           // No browser-mode equivalent; the chat-ui handles overlay close
           // state itself and there's no managed session to sign out of.
           return;

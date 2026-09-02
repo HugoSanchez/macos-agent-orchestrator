@@ -75,7 +75,7 @@ describe('Managed Hermes Startup', () => {
     const created = await fetchJson('/chat/sessions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: 'Managed', model: 'gpt-5.4' }),
+      body: JSON.stringify({ title: 'Managed', model: 'gpt-5.6-sol' }),
     });
     const sessionId = created.body.session.id as string;
 

@@ -106,7 +106,7 @@ describe('AnthropicAuthService', () => {
     expect(script).toContain('save_provider_env_credential("ANTHROPIC_API_KEY"');
     expect(script).toContain('_update_config_for_provider("anthropic", "https://api.anthropic.com"');
     // _update_config_for_provider preserves non-slash defaults (e.g. a
-    // lingering gpt-5.4), so the script must force model.default itself.
+    // lingering Codex model), so the script must force model.default itself.
     expect(script).toContain('_m["default"] = "claude-opus-4-8"');
     // The secret must never be inlined into the python source.
     expect(script).not.toContain('sk-ant-live-key');
@@ -127,7 +127,7 @@ describe('AnthropicAuthService', () => {
     const script = capturedScripts();
     expect(script).toContain('save_env_value("ANTHROPIC_API_KEY", "")');
     expect(script).toContain('_update_config_for_provider("openai-codex"');
-    expect(script).toContain('_m["default"] = "gpt-5.4"');
+    expect(script).toContain('_m["default"] = "gpt-5.5"');
     expect(restart).toHaveBeenCalledTimes(1);
   });
 

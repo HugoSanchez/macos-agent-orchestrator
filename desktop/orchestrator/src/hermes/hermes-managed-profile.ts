@@ -227,6 +227,7 @@ export class HermesManagedProfile {
     const apiServer = asRecord(platforms.api_server) ?? {};
     const extra = asRecord(apiServer.extra) ?? {};
     const routes = asRecord(extra.model_routes) ?? {};
+    const supportedCodexModels = new Set<string>(CODEX_CHAT_MODELS);
 
     const removedManagedGatewayOverrides = ['host', 'port', 'key']
       .filter((field) => Object.hasOwn(extra, field));
@@ -238,6 +239,13 @@ export class HermesManagedProfile {
       );
     }
 
+    // The managed profile owns Codex routes. Remove retired entries left by an
+    // older Verso release before adding the currently supported catalog.
+    for (const [routeModel, routeValue] of Object.entries(routes)) {
+      if (asRecord(routeValue)?.provider === 'openai-codex' && !supportedCodexModels.has(routeModel)) {
+        delete routes[routeModel];
+      }
+    }
     for (const model of CODEX_CHAT_MODELS) {
       if (hasCodex) routes[model] = { model, provider: 'openai-codex' };
       else delete routes[model];
@@ -299,7 +307,7 @@ export class HermesManagedProfile {
       const provider = typeof modelCfg.provider === 'string' ? modelCfg.provider : '';
       const baseUrl = typeof modelCfg.base_url === 'string' ? modelCfg.base_url : '';
       const codexBackend = provider === 'openai-codex' || baseUrl.includes('chatgpt.com');
-      if (codexBackend && defaultModel.startsWith('claude-')) {
+      if (codexBackend && !supportedCodexModels.has(defaultModel)) {
         modelCfg.default = CODEX_CHAT_MODELS[0];
         config.model = modelCfg;
       }

@@ -2,10 +2,15 @@
 // provider that serves them. Consumed by:
 //   - chat/chat.ts        — per-request model allowlist
 //   - hermes-supervisor   — api_server model_routes (cross-provider routing)
-//   - model-auth.ts       — default model written on Anthropic connect
+//   - model-auth.ts       — default model written on provider connect
 // The chat-ui mirror lives in desktop/chat-ui/src/types.ts (CHAT_MODELS).
 
-export const CODEX_CHAT_MODELS = ['gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini'] as const;
+export const CODEX_CHAT_MODELS = [
+  'gpt-5.5',
+  'gpt-5.6-sol',
+  'gpt-5.6-terra',
+  'gpt-5.6-luna',
+] as const;
 
 // First entry doubles as the model.default written on Anthropic connect.
 export const ANTHROPIC_CHAT_MODELS = ['claude-opus-4-8', 'claude-fable-5', 'claude-sonnet-5', 'claude-haiku-4-5'] as const;
