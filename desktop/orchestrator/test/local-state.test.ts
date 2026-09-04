@@ -198,7 +198,9 @@ describe('local state isolation', () => {
       expect(env.VERSO_CONNECTIONS_STORE_PATH).toBe(path.join(accountRoot, 'connections.json'));
       expect(env.VERSO_COMPOSIO_TOOLS_REFRESH_MARKER_PATH).toBe(path.join(accountRoot, 'composio-tools-refresh.marker'));
       expect(env.VERSO_HERMES_HOME).toBe(path.join(accountRoot, 'hermes-home'));
+      expect(env.VERSO_WORKSPACES_ROOT).toBe(path.join(accountRoot, 'workspaces'));
       expect(existsSync(path.join(accountRoot, 'hermes-home', 'home'))).toBe(true);
+      expect(existsSync(path.join(accountRoot, 'workspaces'))).toBe(true);
     } finally {
       fixture.cleanup();
     }
@@ -287,6 +289,7 @@ describe('local state isolation', () => {
       'VERSO_CONNECTIONS_STORE_PATH',
       'VERSO_COMPOSIO_TOOLS_REFRESH_MARKER_PATH',
       'VERSO_HERMES_HOME',
+      'VERSO_WORKSPACES_ROOT',
       'VERSO_LEGACY_CHAT_STORE_PATH',
       'VERSO_LEGACY_CONNECTIONS_STORE_PATH',
       'VERSO_LEGACY_COMPOSIO_TOOLS_REFRESH_MARKER_PATH',
@@ -321,6 +324,7 @@ describe('local state isolation', () => {
             connectionsStore: string;
             composioToolsRefreshMarker: string;
             hermesHome: string;
+            workspacesRoot: string;
           };
         };
       };
@@ -333,6 +337,7 @@ describe('local state isolation', () => {
       expect(body.localState.paths.connectionsStore).toBe(path.join(accountRoot, 'connections.json'));
       expect(body.localState.paths.composioToolsRefreshMarker).toBe(path.join(accountRoot, 'composio-tools-refresh.marker'));
       expect(body.localState.paths.hermesHome).toBe(path.join(accountRoot, 'hermes-home'));
+      expect(body.localState.paths.workspacesRoot).toBe(path.join(accountRoot, 'workspaces'));
       expect(body.chat.storePath).toBe(body.localState.paths.chatStore);
     } finally {
       await result?.close();
@@ -365,6 +370,7 @@ describe('local state isolation', () => {
       expect(env.VERSO_INGESTION_STORE_PATH).toBe(path.join(runtimeRoot, 'ingestion.sqlite'));
       expect(env.VERSO_BROWSER_SETTINGS_PATH).toBe(path.join(runtimeRoot, 'browser-settings.json'));
       expect(env.VERSO_BROWSER_DATA_ROOT).toBe(path.join(runtimeRoot, 'browser'));
+      expect(env.VERSO_WORKSPACES_ROOT).toBe(path.join(runtimeRoot, 'workspaces'));
       expect(readFileSync(fixture.legacyChatStore, 'utf8')).toBe('managed-data');
       expect(existsSync(fixture.ownerMarker)).toBe(false);
     } finally {

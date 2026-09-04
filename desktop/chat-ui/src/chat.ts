@@ -74,7 +74,7 @@ export function sidecarFetch(input: RequestInfo | URL, init: RequestInit = {}): 
 // non-OK response into an Error carrying the server's message (falling back
 // to `errorMsg`), then parse the JSON body. 204/no-content responses resolve
 // to `undefined` so body-less endpoints can share it.
-async function requestJson<T>(path: string, errorMsg: string, init?: RequestInit): Promise<T> {
+export async function requestJson<T>(path: string, errorMsg: string, init?: RequestInit): Promise<T> {
   const res = await sidecarFetch(`${baseURL()}${path}`, init);
   if (!res.ok) {
     throw new Error(await readError(res, errorMsg));
@@ -83,7 +83,7 @@ async function requestJson<T>(path: string, errorMsg: string, init?: RequestInit
   return await res.json() as T;
 }
 
-function jsonInit(method: string, payload: unknown): RequestInit {
+export function jsonInit(method: string, payload: unknown): RequestInit {
   return {
     method,
     headers: { 'Content-Type': 'application/json' },

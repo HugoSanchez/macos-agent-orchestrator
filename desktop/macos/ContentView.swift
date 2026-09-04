@@ -13,8 +13,6 @@ struct ContentView: View {
     @StateObject private var sidebarStore: SidebarStore
     @AppStorage("isDarkMode") private var isDarkMode = true
     @AppStorage("isLeftSidebarExpanded") private var isLeftSidebarExpanded = true
-    @AppStorage("isRightSidebarExpanded") private var isRightSidebarExpanded = false
-    @AppStorage("didApplyRightSidebarClosedDefault") private var didApplyRightSidebarClosedDefault = false
     @AppStorage("isConnectionsCatalogExpanded") private var isConnectionsCatalogExpanded = false
     @AppStorage("isConnectionsListExpanded") private var isConnectionsListExpanded = true
     @AppStorage("isSessionsListExpanded") private var isSessionsListExpanded = true
@@ -214,6 +212,7 @@ struct ContentView: View {
                 pendingSettingsOpen: pendingSettingsOpen,
                 pendingChatFocus: pendingChatFocus,
                 shellState: ShellState(
+                    accountId: managedSessionStore.currentSession?.userId,
                     sessions: sidebarStore.sessions,
                     selectedSessionId: sidebarStore.selectedSessionId
                 ),
@@ -232,52 +231,7 @@ struct ContentView: View {
                     .padding(.top, 14)
                 }
             }
-            .overlay(alignment: .topTrailing) {
-                Button(action: { isRightSidebarExpanded.toggle() }) {
-                    SidebarToggleIcon(side: .right, color: theme.footerIcon)
-                        .frame(width: 18, height: 14)
-                        .padding(3)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .padding(.trailing, 14)
-                .padding(.top, 14)
-            }
-            .overlay(alignment: .trailing) {
-                Rectangle()
-                    .fill(theme.verticalDivider)
-                    .frame(width: isRightSidebarExpanded ? theme.centerRightDividerThickness : 0)
-            }
             .frame(minWidth: 400, idealWidth: 600)
-
-            // Right panel (vertical split)
-            VSplitView {
-                // Top: file tree area
-                theme.rightTop
-                    .overlay(alignment: .bottom) {
-                        Rectangle()
-                            .fill(theme.horizontalDivider)
-                            .frame(height: theme.rightDividerThickness)
-                    }
-                    .frame(minHeight: 120)
-
-                // Bottom: tabbed area
-                theme.rightBottom
-                    .frame(minHeight: 120)
-            }
-            .overlay(alignment: .leading) {
-                // Keep the center/right split in light mode almost invisible.
-                Rectangle()
-                    .fill(theme.rightTop)
-                    .frame(width: 1)
-                    .opacity(isRightSidebarExpanded ? (isDarkMode ? 0 : 0.92) : 0)
-            }
-            .frame(
-                minWidth: isRightSidebarExpanded ? 300 : 0,
-                idealWidth: isRightSidebarExpanded ? 380 : 0,
-                maxWidth: isRightSidebarExpanded ? 500 : 0
-            )
-            .clipped()
         }
         .preferredColorScheme(isDarkMode ? .dark : .light)
         .ignoresSafeArea()
@@ -286,12 +240,6 @@ struct ContentView: View {
         .overlay {
             RoundedRectangle(cornerRadius: ConductorThemePalette.windowCornerRadius, style: .continuous)
                 .strokeBorder(theme.windowBorder, lineWidth: 1)
-        }
-        .onAppear {
-            if !didApplyRightSidebarClosedDefault {
-                isRightSidebarExpanded = false
-                didApplyRightSidebarClosedDefault = true
-            }
         }
         .task(id: sidebarLoadIdentity) {
             let appUserId = managedSessionStore.currentSession?.userId

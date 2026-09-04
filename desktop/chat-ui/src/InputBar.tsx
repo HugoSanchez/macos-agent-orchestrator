@@ -2,6 +2,8 @@ import { useState, useRef, useCallback, useEffect, useMemo, useLayoutEffect } fr
 import { getSkills } from './chat';
 import { useToast } from './Toaster';
 import { chatModelLabel, type AttachedContext, type ChatModel, type OutgoingAttachment, type ReasoningEffort, type SkillSummaryView } from './types';
+import { getWorkspaceAttachment } from './workspace-api';
+import { isWorkspaceFileDrag, readWorkspaceFileDrag } from './workspace-file-drag';
 import {
   REASONING_EFFORTS,
   REASONING_EFFORT_LABELS,
@@ -106,6 +108,7 @@ export function InputBar({
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [attachRowHeight, setAttachRowHeight] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fieldRef = useRef<HTMLDivElement>(null);
   const chipRef = useRef<HTMLSpanElement>(null);
   const attachRowRef = useRef<HTMLDivElement>(null);
   const toast = useToast();
@@ -169,30 +172,51 @@ export function InputBar({
     }
   }, [attachments, toast]);
 
+  const addWorkspaceFile = useCallback(async (workspaceId: string, path: string) => {
+    try {
+      await addFiles([await getWorkspaceAttachment(workspaceId, path)]);
+    } catch (error: unknown) {
+      toast.show({
+        title: 'File was not attached',
+        description: error instanceof Error ? error.message : 'Failed to read workspace file',
+        tone: 'error',
+      });
+    }
+  }, [addFiles, toast]);
+
   // The whole window is the drop target — dropping an image anywhere attaches
   // it. The window-level preventDefault also stops WebKit from navigating to
   // the dropped file, which is the default behavior in WKWebView.
   useEffect(() => {
     let depth = 0;
     const hasFiles = (event: DragEvent) => Array.from(event.dataTransfer?.types ?? []).includes('Files');
+    const hasAcceptedDrag = (event: DragEvent) => hasFiles(event) || isWorkspaceFileDrag(event.dataTransfer);
     const onDragEnter = (event: DragEvent) => {
-      if (!hasFiles(event)) return;
+      if (!hasAcceptedDrag(event)) return;
       depth += 1;
       setIsDraggingOver(true);
     };
     const onDragOver = (event: DragEvent) => {
-      if (hasFiles(event)) event.preventDefault();
+      if (hasAcceptedDrag(event)) event.preventDefault();
     };
     const onDragLeave = (event: DragEvent) => {
-      if (!hasFiles(event)) return;
+      if (!hasAcceptedDrag(event)) return;
       depth = Math.max(0, depth - 1);
       if (depth === 0) setIsDraggingOver(false);
     };
     const onDrop = (event: DragEvent) => {
-      if (!hasFiles(event)) return;
+      if (!hasAcceptedDrag(event)) return;
       event.preventDefault();
       depth = 0;
       setIsDraggingOver(false);
+      const workspaceFile = readWorkspaceFileDrag(event.dataTransfer);
+      if (workspaceFile) {
+        const target = event.target;
+        if (target instanceof Node && fieldRef.current?.contains(target)) {
+          void addWorkspaceFile(workspaceFile.workspaceId, workspaceFile.path);
+        }
+        return;
+      }
       const files = Array.from(event.dataTransfer?.files ?? []);
       if (files.length > 0) void addFiles(files);
     };
@@ -206,7 +230,7 @@ export function InputBar({
       window.removeEventListener('dragleave', onDragLeave);
       window.removeEventListener('drop', onDrop);
     };
-  }, [addFiles]);
+  }, [addFiles, addWorkspaceFile]);
 
   // Skills fetch races the sidecar port assignment in App.tsx — if our
   // mount fires before the port is set, getSkills() throws (silently),
@@ -452,6 +476,7 @@ export function InputBar({
   return (
     <div className="input-bar">
       <div
+        ref={fieldRef}
         onMouseDown={(event) => {
           const target = event.target;
           if (target instanceof HTMLElement && target.closest('button')) return;

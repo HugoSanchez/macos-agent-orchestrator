@@ -312,8 +312,15 @@ final class SidecarManager: ObservableObject {
             throw SidecarError.directoryNotFound(serverDirectory)
         }
 
+        #if DEBUG
+        let allowDevelopmentRuntime = true
+        #else
+        let allowDevelopmentRuntime = false
+        #endif
         guard let nodePath = SidecarRuntimeResolver.nodePath(
-            bundleResourcePath: Bundle.main.resourcePath
+            bundleResourcePath: Bundle.main.resourcePath,
+            sourceFilePath: #filePath,
+            allowDevelopmentFallback: allowDevelopmentRuntime
         ) else {
             throw SidecarError.executableNotFound("node")
         }
@@ -327,11 +334,6 @@ final class SidecarManager: ObservableObject {
             throw SidecarError.authTokenUnavailable
         }
 
-        #if DEBUG
-        let allowDevelopmentRuntime = true
-        #else
-        let allowDevelopmentRuntime = false
-        #endif
         let bundleRoot = SidecarRuntimeResolver.bundleRoot(
             bundleResourcePath: Bundle.main.resourcePath,
             sourceFilePath: #filePath,

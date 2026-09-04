@@ -39,6 +39,8 @@ import { useSessionStreamRegistry } from './use-session-stream-registry';
 import { useChatResponseStream } from './use-chat-response-stream';
 import { useSidecarResources } from './use-sidecar-resources';
 import { useChatInputDrafts } from './use-chat-input-drafts';
+import { useWorkspacePanel } from './use-workspace-panel';
+import { WorkspacePanel, WorkspacePanelToggle } from './WorkspacePanel';
 import { BrowserSidebar } from './BrowserSidebar';
 import { formatSessionSummary } from './session-format';
 
@@ -59,6 +61,20 @@ declare global {
     __versoPendingShellState?: ShellState | null;
     __versoPendingShellCommands?: ShellCommand[];
     __versoShellCommandReady?: boolean;
+  }
+}
+
+// The workspace panel is chat-ui-owned chrome, not shell state: its
+// visibility persists here the same way the browser shell persists its
+// session selection. localStorage may be unavailable (private mode); the
+// panel then simply starts closed.
+const WORKSPACE_PANEL_OPEN_KEY = 'verso.workspaces.panelOpen';
+
+function readStoredWorkspacePanelOpen(): boolean {
+  try {
+    return window.localStorage.getItem(WORKSPACE_PANEL_OPEN_KEY) === 'true';
+  } catch {
+    return false;
   }
 }
 
@@ -193,6 +209,27 @@ export function App() {
   // dispatches `verso:shell-state` snapshots, and handles `verso:shell-action`
   // posts from `postShellAction`. No-op in native (Swift is the host).
   useBrowserShellHost({ isNativeShell, sidecarReady: connected });
+
+  const [isWorkspacePanelOpen, setWorkspacePanelOpen] = useState(readStoredWorkspacePanelOpen);
+  const handleToggleWorkspacePanel = useCallback(() => {
+    setWorkspacePanelOpen((open) => {
+      const next = !open;
+      try {
+        window.localStorage.setItem(WORKSPACE_PANEL_OPEN_KEY, String(next));
+      } catch {
+        // Private mode: the toggle still works for this session.
+      }
+      return next;
+    });
+  }, []);
+  // Workspaces are panel state only; the selected workspace never feeds the
+  // active conversation or its prompt context. The hook lives here (not in
+  // the panel) so drafts and selection survive closing the panel.
+  const workspacePanel = useWorkspacePanel({
+    open: isWorkspacePanelOpen,
+    connected,
+    accountId: shellState?.accountId ?? null,
+  });
 
   const handleCloseCatalog = useCallback(() => {
     dispatchNavigation({ type: 'close-connections-catalog' });
@@ -594,23 +631,30 @@ export function App() {
 
   const mainPanel = (
     <main className="chat-panel">
-      {isNativeShell && <ChatHeaderScaffold title={headerTitle} />}
+      {isNativeShell && (
+        <ChatHeaderScaffold title={headerTitle}>
+          <WorkspacePanelToggle open={isWorkspacePanelOpen} onToggle={handleToggleWorkspacePanel} />
+        </ChatHeaderScaffold>
+      )}
       {!isNativeShell && !selectedSkillSlug && !selectedHubSkillIdentifier && !selectedCronId && !isSettingsOpen && (
         <div className="chat-toolbar">
           <div>
             <div className="chat-toolbar-title">{selectedSession?.title ?? 'New Chat'}</div>
             <div className="chat-toolbar-subtitle">{headerSubtitle}</div>
           </div>
-          {selectedSession && (
-            <button
-              className="chat-toolbar-button"
-              type="button"
-              onClick={handleArchiveToggle}
-              disabled={isHydratingSession || (selectedSessionId !== null && streamingSessions.has(selectedSessionId))}
-            >
-              {selectedSession.archivedAt ? 'Restore' : 'Archive'}
-            </button>
-          )}
+          <div className="chat-toolbar-actions">
+            {selectedSession && (
+              <button
+                className="chat-toolbar-button"
+                type="button"
+                onClick={handleArchiveToggle}
+                disabled={isHydratingSession || (selectedSessionId !== null && streamingSessions.has(selectedSessionId))}
+              >
+                {selectedSession.archivedAt ? 'Restore' : 'Archive'}
+              </button>
+            )}
+            <WorkspacePanelToggle open={isWorkspacePanelOpen} onToggle={handleToggleWorkspacePanel} />
+          </div>
         </div>
       )}
 
@@ -710,10 +754,15 @@ export function App() {
     />
   );
 
+  const workspacePanelColumn = isWorkspacePanelOpen
+    ? <WorkspacePanel key={shellState?.accountId ?? 'local'} panel={workspacePanel} />
+    : null;
+
   if (isNativeShell) {
     return (
       <div className="chat-shell-native">
         {mainPanel}
+        {workspacePanelColumn}
         {catalog}
         {skillsCatalog}
       </div>
@@ -738,17 +787,19 @@ export function App() {
       />
 
       {mainPanel}
+      {workspacePanelColumn}
       {catalog}
       {skillsCatalog}
     </div>
   );
 }
 
-function ChatHeaderScaffold({ title }: { title?: string }) {
+function ChatHeaderScaffold({ title, children }: { title?: string; children?: React.ReactNode }) {
   return (
     <div className="chat-header-scaffold">
       <div className="chat-header-band-top" data-window-drag>
         {title && <span className="chat-header-title">{title}</span>}
+        {children}
       </div>
       {/* Second band (tabs) is hidden for launch — bring back when tabs ship.
       <div className="chat-header-band-tabs">

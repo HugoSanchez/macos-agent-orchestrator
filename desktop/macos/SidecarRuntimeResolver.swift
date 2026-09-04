@@ -36,11 +36,21 @@ struct SidecarRuntimeResolver {
 
     static func nodePath(
         bundleResourcePath: String?,
+        sourceFilePath: String,
+        allowDevelopmentFallback: Bool,
         fileManager: FileManager = .default
     ) -> String? {
         if let bundleResourcePath {
             let bundled = (bundleResourcePath as NSString).appendingPathComponent("node/bin/node")
             if fileManager.isExecutableFile(atPath: bundled) { return bundled }
+        }
+
+        if allowDevelopmentFallback {
+            let macosDirectory = (sourceFilePath as NSString).deletingLastPathComponent
+            let desktopDirectory = (macosDirectory as NSString).deletingLastPathComponent
+            let developmentNode = (desktopDirectory as NSString)
+                .appendingPathComponent("runtime-bundles/node/bin/node")
+            if fileManager.isExecutableFile(atPath: developmentNode) { return developmentNode }
         }
 
         for path in ["/opt/homebrew/bin/node", "/usr/local/bin/node", "/usr/bin/node"]

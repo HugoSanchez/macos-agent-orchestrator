@@ -42,6 +42,8 @@ import {
 import { PinnedSkillsStore } from '../skills/pinned-skills-store.ts';
 import { HermesSkillsConfig } from '../skills/skills-store.ts';
 import { setSkillsDir } from '../skills/skills.ts';
+import { WorkspaceIndexer } from '../workspaces/workspace-indexer.ts';
+import { WorkspaceStore } from '../workspaces/workspace-store.ts';
 import { applyLocalStateIsolation } from './local-state.ts';
 import { registerRoutes } from './register-routes.ts';
 
@@ -104,6 +106,10 @@ export async function createSidecarRuntime(): Promise<SidecarRuntime> {
     extractionGate,
     enabled: () => isChatCaptureEnabled() && memoryProvider.diagnostics().enabled,
   });
+  const workspaceStore = new WorkspaceStore(
+    localState.paths.workspacesRoot ?? path.join(localState.paths.root, 'workspaces'),
+  );
+  const workspaceIndexer = new WorkspaceIndexer(workspaceStore, memoryProvider);
 
   const connectionsStore = new ConnectionsStore();
   const activeToolkitSlugs = () => connectionsStore.listConnections()
@@ -197,6 +203,8 @@ export async function createSidecarRuntime(): Promise<SidecarRuntime> {
     codexAuth,
     anthropicAuth,
     customModelProvider,
+    workspaceStore,
+    workspaceIndexer,
   });
 
   let cleanupPromise: Promise<void> | null = null;
@@ -220,6 +228,7 @@ export async function createSidecarRuntime(): Promise<SidecarRuntime> {
       void codexAuth.getStatus().catch(() => undefined);
 
       await memoryProvider.start();
+      await workspaceIndexer.start();
       sourceIngestion.reconcileWithMemoryToken(memoryProvider.instanceToken?.() ?? null);
       memoryExtraction.start();
       sourceIngestion.start();
@@ -232,8 +241,9 @@ export async function createSidecarRuntime(): Promise<SidecarRuntime> {
         await Promise.all([
           hermes.shutdown(),
           browserHost.shutdown(),
-          memoryProvider.stop(),
+          workspaceIndexer.stop(),
         ]);
+        await memoryProvider.stop();
       })();
       return cleanupPromise;
     },

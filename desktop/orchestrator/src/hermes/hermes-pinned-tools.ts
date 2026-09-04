@@ -41,6 +41,16 @@ const MEMORY_PINNED_TOOLS = [
   'write_memory_page',
 ];
 
+const WORKSPACE_PINNED_TOOLS = [
+  'list_workspaces',
+  'search_workspaces',
+  'list_workspace_files',
+  'read_workspace_file',
+  'write_workspace_file',
+];
+
+const CORE_PINNED_TOOLS = [...STATIC_PINNED_TOOLS, ...WORKSPACE_PINNED_TOOLS];
+
 // Composio schemas riding in the prompt prefix on every turn. ~4 chars per
 // token puts this around 8K tokens — a few percent of context, and stable
 // across turns so it stays prompt-cache friendly.
@@ -71,7 +81,7 @@ export function computePinnedToolNames(
   manifestPath: string,
   opts: { includeMemoryTools: boolean },
 ): string[] {
-  const baseNames: string[] = [...STATIC_PINNED_TOOLS];
+  const baseNames = [...CORE_PINNED_TOOLS];
   if (opts.includeMemoryTools) baseNames.push(...MEMORY_PINNED_TOOLS);
 
   const tools = readManifestTools(manifestPath);
@@ -132,8 +142,8 @@ export function findInertCorePins(
 ): string[] {
   const registered = new Set(registeredToolNames);
   const coreBaseNames = opts.includeMemoryTools
-    ? [...STATIC_PINNED_TOOLS, ...MEMORY_PINNED_TOOLS]
-    : [...STATIC_PINNED_TOOLS];
+    ? [...CORE_PINNED_TOOLS, ...MEMORY_PINNED_TOOLS]
+    : CORE_PINNED_TOOLS;
   return coreBaseNames.filter(
     (name) => !PIN_PREFIXES.some((prefix) => registered.has(`${prefix}${name}`)),
   );

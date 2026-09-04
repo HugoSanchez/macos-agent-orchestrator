@@ -6,9 +6,9 @@
 #
 #   • All builds: copy Verso and third-party legal notices into the app.
 #
-#   • Debug builds: skip runtime components. SidecarManager.swift falls back to
-#     the developer's system `node` and `desktop/orchestrator/`, so daily Cmd+R
-#     in Xcode keeps working without bundling.
+#   • Debug builds: skip runtime components. SidecarManager.swift uses the
+#     validated `desktop/runtime-bundles/node` with `desktop/orchestrator/`,
+#     then falls back to system Node when no development bundle is available.
 #
 #   • Release builds: rsyncs desktop/runtime-bundles/ into the .app's
 #     Resources/ directory so the shipping bundle contains everything it needs

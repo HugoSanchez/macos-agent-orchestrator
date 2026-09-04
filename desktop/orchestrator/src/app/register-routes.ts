@@ -34,6 +34,9 @@ import type { PinnedSkillsStore } from '../skills/pinned-skills-store.ts';
 import type { HermesSkillsConfig } from '../skills/skills-store.ts';
 import { buildSkillsRoutes } from '../skills/skills.ts';
 import { readComposioManifestSummary } from '../connections/composio-manifest.ts';
+import { buildWorkspaceRoutes } from '../workspaces/workspace-routes.ts';
+import type { WorkspaceIndexer } from '../workspaces/workspace-indexer.ts';
+import type { WorkspaceStore } from '../workspaces/workspace-store.ts';
 import type { LocalStateSnapshot } from './local-state.ts';
 
 export interface RouteDependencies {
@@ -60,6 +63,8 @@ export interface RouteDependencies {
   codexAuth: CodexAuthService;
   anthropicAuth: AnthropicAuthService;
   customModelProvider: CustomModelProviderService;
+  workspaceStore: WorkspaceStore;
+  workspaceIndexer: WorkspaceIndexer;
 }
 
 /** Assemble the sidecar's HTTP surface from already-created feature services. */
@@ -96,6 +101,7 @@ export function registerRoutes(deps: RouteDependencies): Route[] {
   return [
     ...coreRoutes,
     ...buildMemoryRoutes(deps.memoryProvider),
+    ...buildWorkspaceRoutes(deps.workspaceStore, deps.workspaceIndexer),
     ...buildComposioBridgeRoutes(deps.composioBridge),
     ...buildDraftsRoutes(deps.composioBridge, deps.store),
     ...buildManagedAccountRoutes(deps.managedBackend, {

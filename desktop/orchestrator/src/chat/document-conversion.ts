@@ -21,6 +21,10 @@ import { AttachmentValidationError } from './attachments.ts';
 // window on their own. On overflow we keep the head and add a visible note.
 export const MAX_DOCUMENT_MARKDOWN_CHARS = 150_000;
 
+// Bump whenever a dependency or post-processing change can alter the Markdown.
+// Workspace indexing includes this in its persistent cache key.
+export const DOCUMENT_MARKDOWN_CACHE_VERSION = '@firecrawl/anydoc-wasm@0.1.6:markdown-v1';
+
 // Below this many non-whitespace characters we treat the extraction as empty
 // (a scanned / image-only document) rather than a real text document.
 const NEAR_EMPTY_NON_WHITESPACE_CHARS = 20;
@@ -93,8 +97,12 @@ function nonWhitespaceLength(text: string): number {
 // documents is "conversion succeeds with readable text" — a file that passes
 // the magic sniff but yields nothing is rejected here, not silently accepted.
 export async function convertDocumentToMarkdown(dataBase64: string): Promise<string> {
+  return convertDocumentBytesToMarkdown(new Uint8Array(Buffer.from(dataBase64, 'base64')));
+}
+
+/** Convert local document bytes without needlessly round-tripping through base64. */
+export async function convertDocumentBytesToMarkdown(bytes: Uint8Array): Promise<string> {
   const anydoc = await loadAnydoc();
-  const bytes = new Uint8Array(Buffer.from(dataBase64, 'base64'));
 
   let markdown: string;
   try {
