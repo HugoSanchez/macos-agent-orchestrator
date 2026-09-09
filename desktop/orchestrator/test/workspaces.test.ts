@@ -108,12 +108,38 @@ describe('workspaces', () => {
       expect(await indexer.search('systems thinking', 5, first.id)).toEqual([]);
       expect(indexer.status(first.id, 'assumptions.md')).toBe('ready');
 
+      const revisionBeforeScheduledSync = store.get(first.id)?.revision ?? 0;
+      indexer.scheduleWorkspaceSync(first.id, 'assumptions.md');
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      await indexer.syncWorkspace(first.id);
+      expect(store.get(first.id)?.revision).toBeGreaterThan(revisionBeforeScheduledSync);
+
       store.deleteEntry(first.id, 'assumptions.md');
       await indexer.syncWorkspace(first.id);
       expect(await indexer.search('revenue assumption', 5)).toEqual([]);
     } finally {
       await memory.stop();
     }
+  });
+
+  it('reports unavailable indexing without leaving files permanently indexing', async () => {
+    const root = makeRoot();
+    const workspaceRoot = path.join(root, 'workspaces');
+    const store = new WorkspaceStore(workspaceRoot);
+    const workspace = store.create('Offline');
+    store.writeText(workspace.id, 'notes.md', 'Still available without search.');
+
+    const disabledMemory = new LexicalMemoryProvider({
+      enabled: false,
+      dbPath: path.join(root, 'disabled.sqlite'),
+    });
+    await disabledMemory.start();
+    expect(new WorkspaceIndexer(store, disabledMemory).status(workspace.id, 'notes.md')).toBe('unsupported');
+
+    const failedMemory = new LexicalMemoryProvider({ enabled: true, dbPath: workspaceRoot });
+    await failedMemory.start();
+    expect(failedMemory.getState()).toBe('error');
+    expect(new WorkspaceIndexer(store, failedMemory).status(workspace.id, 'notes.md')).toBe('error');
   });
 
   it('indexes PDF text through the isolated document worker', async () => {
@@ -361,6 +387,62 @@ describe('workspaces', () => {
     await memory.stop();
   });
 
+  it('returns file mutations before document indexing finishes and refreshes the revision afterward', async () => {
+    const root = makeRoot();
+    const workspaceRoot = path.join(root, 'workspaces');
+    const sourceRoot = makeRoot();
+    const sourcePath = path.join(sourceRoot, 'report.pdf');
+    writeFileSync(sourcePath, 'PDF bytes');
+    const store = new WorkspaceStore(workspaceRoot);
+    const workspace = store.create('Research');
+    const memory = new LexicalMemoryProvider({ enabled: true, dbPath: path.join(root, 'memory.sqlite') });
+    await memory.start();
+
+    const conversionStarted = deferred<void>();
+    const releaseConversion = deferred<void>();
+    const indexer = new WorkspaceIndexer(store, memory, {
+      convertDocument: async () => {
+        conversionStarted.resolve();
+        await releaseConversion.promise;
+        return 'Background document contents';
+      },
+    });
+    const server = http.createServer((req, res) => dispatch(
+      buildWorkspaceRoutes(store, indexer),
+      req,
+      res,
+      { allowUnauthenticated: true },
+    ));
+    servers.push(server);
+    const port = await new Promise<number>((resolve) => {
+      server.listen(0, '127.0.0.1', () => resolve((server.address() as { port: number }).port));
+    });
+
+    try {
+      const imported = await jsonRequest(
+        `http://127.0.0.1:${port}/workspaces/${workspace.id}/import`,
+        'POST',
+        { sourcePaths: [sourcePath] },
+      );
+      expect(imported.status).toBe(200);
+      expect(imported.body.entries).toEqual([
+        expect.objectContaining({ path: 'report.pdf', indexStatus: 'indexing' }),
+      ]);
+      const mutationRevision = imported.body.workspace.revision as number;
+
+      await conversionStarted.promise;
+      releaseConversion.resolve();
+      await indexer.syncWorkspace(workspace.id);
+
+      expect(store.get(workspace.id)?.revision).toBeGreaterThan(mutationRevision);
+      expect(indexer.status(workspace.id, 'report.pdf')).toBe('ready');
+    } finally {
+      releaseConversion.resolve();
+      await indexer.stop();
+      await memory.stop();
+    }
+  });
+
   it('exposes workspace CRUD, file, and search operations over the local API', async () => {
     const root = makeRoot();
     const store = new WorkspaceStore(path.join(root, 'workspaces'));
@@ -388,6 +470,7 @@ describe('workspaces', () => {
         'POST',
         { path: 'plan.md', content: 'Launch in November with a private beta.' },
       )).status).toBe(200);
+      await indexer.syncWorkspace(workspaceId);
 
       const duplicate = await jsonRequest(
         `http://127.0.0.1:${port}/workspaces/${workspaceId}/file`,
@@ -453,6 +536,7 @@ describe('workspaces', () => {
       expect(removed.status).toBe(200);
       expect((await removed.json()).entries).toEqual([]);
     } finally {
+      await indexer.stop();
       await memory.stop();
     }
   });
@@ -468,4 +552,10 @@ async function jsonRequest(url: string, method: string, body: unknown): Promise<
     body: JSON.stringify(body),
   });
   return { status: response.status, body: await response.json() };
+}
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((next) => { resolve = next; });
+  return { promise, resolve };
 }

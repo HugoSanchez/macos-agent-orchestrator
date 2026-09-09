@@ -50,6 +50,8 @@ type HermesRuntimeSource = 'none' | 'managed' | 'manual';
 type HermesGatewayProbe = 'ready' | 'unauthorized' | 'unreachable';
 
 const ORCHESTRATOR_ONLY_HERMES_ENV_KEYS = [
+  'COMPOSIO_API_KEY',
+  'VERSO_COMPOSIO_API_KEY',
   'VERSO_MANAGED_SESSION_TOKEN',
   'VERSO_MANAGED_SESSION_EXPIRES_AT',
   'VERSO_MANAGED_USER_ID',

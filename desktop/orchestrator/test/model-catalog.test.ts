@@ -2,12 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { CODEX_CHAT_MODELS, isAllowedChatModel } from '../src/models/model-catalog.ts';
 
 describe('Codex model catalog', () => {
-  it('offers the GPT-5.6 family and GPT-5.5 in preference order', () => {
+  it('offers GPT-6 Astra alongside the GPT-5.6 family and GPT-5.5', () => {
     expect(CODEX_CHAT_MODELS).toEqual([
       'gpt-5.5',
       'gpt-5.6-sol',
       'gpt-5.6-terra',
       'gpt-5.6-luna',
+      'gpt-6-astra',
     ]);
   });
 

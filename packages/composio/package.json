@@ -1,0 +1,17 @@
+{
+  "name": "@verso/composio",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "AGPL-3.0-only",
+  "exports": {
+    ".": "./src/service.ts"
+  },
+  "files": [
+    "src",
+    "LICENSE"
+  ],
+  "dependencies": {
+    "@composio/core": "0.9.1"
+  }
+}

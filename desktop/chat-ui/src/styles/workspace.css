@@ -65,9 +65,6 @@
 }
 
 .workspace-panel-header {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
   padding: 16px 16px 12px;
 }
 
@@ -81,6 +78,17 @@
 .workspace-menu {
   position: relative;
   min-width: 0;
+}
+
+.workspace-title-menu {
+  flex: 1 1 auto;
+}
+
+.workspace-header-controls {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .workspace-menu-trigger {
@@ -97,6 +105,7 @@
 }
 
 .workspace-menu-trigger-name {
+  min-width: 0;
   font-size: 13px;
   font-weight: 700;
   color: var(--ink);
@@ -179,7 +188,7 @@
 .workspace-panel-actions {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 6px;
 }
 
 .workspace-icon-button {
@@ -211,8 +220,26 @@
 .workspace-tree {
   flex: 1;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
   overflow-y: auto;
-  padding: 0 10px 12px;
+  padding: 0 12px 12px;
+}
+
+.workspace-root-drop-zone {
+  flex: 1 0 28px;
+  min-height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 5px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.workspace-root-drop-zone.is-drop-target {
+  background: var(--hover-soft);
+  box-shadow: inset 0 0 0 1px var(--line);
 }
 
 .workspace-entry-row {
@@ -245,6 +272,10 @@
 
 .workspace-entry-row.is-selected {
   background: var(--line-soft);
+}
+
+.workspace-entry-row.is-drop-target {
+  background: var(--hover-soft);
 }
 
 .workspace-entry-chevron {
@@ -464,7 +495,7 @@ span.workspace-preview-glyph svg {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.28);
+  background: var(--workspace-dialog-backdrop);
 }
 
 .workspace-dialog {

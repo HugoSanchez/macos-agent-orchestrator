@@ -1,10 +1,11 @@
 import { spawn, execFile as execFileCb } from 'node:child_process';
 import { promisify } from 'node:util';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { json, route, type Route } from '../http/router.ts';
-import { ANTHROPIC_CHAT_MODELS, CODEX_CHAT_MODELS } from './model-catalog.ts';
+import { ANTHROPIC_CHAT_MODELS, CODEX_ASTRA_MODEL, CODEX_CHAT_MODELS } from './model-catalog.ts';
 import type { HermesSupervisor } from '../hermes/hermes-supervisor.ts';
 
 const execFile = promisify(execFileCb);
@@ -17,6 +18,7 @@ const USER_CODE_PATTERN = /\b([A-Z0-9]{4,8}-[A-Z0-9]{4,8})\b/;
 interface CodexStatus {
   connected: boolean;
   count: number;
+  astraAvailable: boolean;
 }
 
 // How long a cached Codex status is served without kicking a background
@@ -95,9 +97,9 @@ export class CodexAuthService {
         const stripped = stdout.replace(ANSI_PATTERN, '');
         const match = stripped.match(/\((\d+)\s+credentials?\)/);
         const count = match ? parseInt(match[1], 10) : 0;
-        status = { connected: count > 0, count };
+        status = { connected: count > 0, count, astraAvailable: count > 0 && isAstraAvailableForCodexUser() };
       } catch {
-        status = { connected: false, count: 0 };
+        status = { connected: false, count: 0, astraAvailable: false };
       }
       this.statusCache = { status, at: Date.now() };
       return status;
@@ -250,6 +252,30 @@ export class CodexAuthService {
       }
       closeOnce();
     });
+  }
+}
+
+/**
+ * Codex refreshes this cache from its account-scoped model endpoint. It is the
+ * only local source that tells us whether a rolling-release model is enabled
+ * for this ChatGPT user; never surface Astra from the static route alone.
+ */
+export function isAstraAvailableForCodexUser(
+  codexHome = process.env.CODEX_HOME?.trim() || join(homedir(), '.codex'),
+): boolean {
+  const cachePath = join(codexHome, 'models_cache.json');
+  if (!existsSync(cachePath)) return false;
+  try {
+    const parsed = JSON.parse(readFileSync(cachePath, 'utf8')) as { models?: unknown };
+    if (!Array.isArray(parsed.models)) return false;
+    return parsed.models.some((entry) => {
+      if (!entry || typeof entry !== 'object') return false;
+      const model = entry as { slug?: unknown; visibility?: unknown };
+      return model.slug === CODEX_ASTRA_MODEL
+        && !(typeof model.visibility === 'string' && /^(hide|hidden)$/i.test(model.visibility.trim()));
+    });
+  } catch {
+    return false;
   }
 }
 

@@ -1,3 +1,4 @@
+import type { ConnectedAppsProvider } from './connected-apps-provider.ts';
 import {
   RemoteBridgeHttpError,
   RemoteComposioBridgeClient,
@@ -59,12 +60,6 @@ export interface NativeToolManifestRefreshStatus {
 }
 
 /**
- * Local MCP-facing Composio bridge. The desktop never talks to Composio
- * directly; it forwards search/schema/execute calls to the authenticated
- * backend bridge so the Composio project API key stays server-side.
- */
-
-/**
  * Deterministic id for a draft, derived from the agent's tool args. The chat
  * UI computes the same id from the same args (via stableStringify + FNV-1a)
  * so neither side needs to coordinate with the other. The hash space is
@@ -92,8 +87,9 @@ function fnv1a32(input: string): string {
   return hash.toString(16).padStart(8, '0');
 }
 
+/** MCP-facing tools and reviewed-send policy shared by managed and local providers. */
 export class ComposioBridgeService {
-  private readonly bridgeClient: RemoteComposioBridgeClient;
+  private readonly bridgeClient: ConnectedAppsProvider;
   private readonly usage: ComposioBridgeUsageOptions | null;
   private readonly toolMetadataBySlug = new Map<string, ToolUsageMetadata>();
   private readonly materializedManifestTools = new Map<string, ComposioNativeToolManifestTool>();
@@ -107,8 +103,8 @@ export class ComposioBridgeService {
     error: null,
   };
 
-  constructor(managedBackend: ManagedBackendClient, usage: ComposioBridgeUsageOptions | null = null) {
-    this.bridgeClient = new RemoteComposioBridgeClient(managedBackend);
+  constructor(managedBackend: ManagedBackendClient, usage: ComposioBridgeUsageOptions | null = null, provider?: ConnectedAppsProvider) {
+    this.bridgeClient = provider ?? new RemoteComposioBridgeClient(managedBackend);
     this.usage = usage;
   }
 
@@ -348,7 +344,7 @@ export class ComposioBridgeService {
 
   private assertConfigured(): void {
     if (this.bridgeClient.configured) return;
-    throw new ComposioBridgeHttpError(503, 'Managed backend URL is not configured.');
+    throw new ComposioBridgeHttpError(503, 'Connected apps are not configured. Check Settings → Connected apps.');
   }
 
   private async recordSuccessfulToolUse(toolSlug: string): Promise<void> {

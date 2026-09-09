@@ -5,11 +5,14 @@
 //   - model-auth.ts       — default model written on provider connect
 // The chat-ui mirror lives in desktop/chat-ui/src/types.ts (CHAT_MODELS).
 
+export const CODEX_ASTRA_MODEL = 'gpt-6-astra';
+
 export const CODEX_CHAT_MODELS = [
   'gpt-5.5',
   'gpt-5.6-sol',
   'gpt-5.6-terra',
   'gpt-5.6-luna',
+  CODEX_ASTRA_MODEL,
 ] as const;
 
 // First entry doubles as the model.default written on Anthropic connect.

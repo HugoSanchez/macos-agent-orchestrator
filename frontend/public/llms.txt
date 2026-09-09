@@ -1,0 +1,105 @@
+# Verso
+
+> Verso is a free, open-source macOS app that gives you a personal AI assistant: one that connects to the apps you already use, remembers your context, and gets real work done. Download it, sign in with the AI accounts you already have, and you're working in a couple of minutes.
+
+Verso is a personal project, built and maintained in the open by Hugo Sanchez.
+
+- Website: https://itsverso.xyz
+- Privacy and data: https://itsverso.xyz/privacy
+- Source code and technical documentation: https://github.com/HugoSanchez/macos-agent-orchestrator
+- Download (latest release): https://github.com/HugoSanchez/macos-agent-orchestrator/releases
+
+## Key facts
+
+- Free, open-source (AGPL-3.0-only) native macOS app. No paid tier, no subscription.
+- A personal AI assistant/agent: chats, reads across your connected apps, and acts on them.
+- Uses frontier models from OpenAI and Anthropic through accounts you already have; models are switchable mid-conversation.
+- Conversations, sessions, workspace files, and indexed memory are stored locally on your Mac. Managed connections pass through Verso’s backend and Composio.
+- Your chosen model endpoint processes prompts and context. Managed connected-app requests also pass through Verso and Composio, including background ingestion for memory sources you enable.
+- Built and maintained by one person; early, actively developed software.
+- Setup takes minutes: download, sign in, connect apps.
+
+## What is Verso?
+
+Verso is a native macOS app that packages Hermes — a well-regarded open-source agent harness from Nous Research, used by engineering teams and tinkerers at the frontier of AI — into a simple app anyone can use. You chat with it like any AI assistant, but it can also read across the apps you connect (email, calendar, notes, tasks, chat) and act on them: draft the reply, update the document, file the task, prep you for a meeting.
+
+Verso isn't a new AI model, and it isn't a subscription service. It's a free desktop app that orchestrates the models and tools you already have access to, on your own machine.
+
+## What can it do?
+
+- Chat with frontier models from OpenAI and Anthropic, and switch between them mid-conversation without losing the thread.
+- Connect to Gmail, Google Calendar, Google Drive, Notion, Slack, Todoist, Granola, and more with one click. Tools that support MCP (Model Context Protocol) can also be added as custom connectors, which takes a little more setup.
+- Work across those sources in one request. Ask "catch me up on the board conversation" and it reads the relevant Slack channel and email threads, checks your calendar, and hands you a summary with what needs your attention.
+- Remember. Verso keeps a memory of your context — meetings, threads, documents, past conversations — so answers reflect what you're actually working on.
+
+## Why people use Verso
+
+**A powerful personal agent without the setup headaches.** Hermes is one of the most capable open-source agent harnesses out there, but running it yourself means a terminal, configuration files, and wiring up tools by hand. Verso does all of that for you: one signed download, a couple of sign-ins, and the same machinery is working for you. Minutes, not evenings.
+
+**You own it.** Verso is free and open source (AGPL-3.0-only). The app runs on your Mac and the code is public. Managed builds use Verso’s hosted account and connection services. Local source builds can use a personal Composio project without a Verso account; connected-app ingestion still depends on Composio.
+
+**You're not married to a model provider.** Verso works with the accounts you already have — OpenAI and Anthropic — and lets you switch models mid-conversation. Your sessions, history, and memory live in Verso, not inside any one provider's product. If you switch providers, or a better model ships next month, you keep your entire working context and just point it at the new model.
+
+**Your conversation history stays with your installation.** Conversations and indexed memory are stored locally on your Mac. Relevant context is sent to your selected model endpoint. Managed connected-app content passes through Verso’s backend and Composio. The managed service stores account information, usage events, and diagnostic metadata separately from your local conversation history. See https://itsverso.xyz/privacy for the data flows and retention details.
+
+**A built-in memory system that makes it genuinely effective.** Most assistants start every conversation cold. Verso keeps a local memory of what's going on around you — the meetings you had, the threads you're in, the documents you touched — and recalls the relevant parts when you ask for something. That context is what turns generic answers into useful work, and it stays on your machine.
+
+**It's really easy to use.** Verso is a native Mac app: a clean chat window, built-in connections you switch on with a click, a signed download, and automatic updates. If you can use Messages, you can use Verso. No terminal, no configuration files.
+
+## How it works (in plain language)
+
+Three layers, each doing what it's best at:
+
+1. **Frontier models** (OpenAI, Anthropic) provide the intelligence. You bring your own accounts.
+2. **Hermes**, the open-source agent harness, runs the conversation: calling tools, reading sources, taking actions.
+3. **Verso** wraps it all in a Mac app: the interface, the app connections (via MCP), the local memory system, and everything else that makes it usable without technical knowledge.
+
+For architecture and implementation details, see the GitHub repository: https://github.com/HugoSanchez/macos-agent-orchestrator
+
+## Your data, honestly
+
+**Local memory and remote processing are separate.** Conversations and indexed memory are stored on your Mac. The services you use also process the content needed to answer questions and perform actions.
+
+- Managed accounts use WorkOS for sign-in. Verso stores account/device information and usage metadata, such as event timestamps and tool-call counts. Managed builds configured for crash reporting send diagnostics to Sentry.
+- Your model endpoint receives prompts, attachments, retrieved memories, and tool results needed for the conversation. Verso supports custom providers, including compatible local or self-hosted endpoints and services offering zero data retention. Anthropic’s standard API policy provides automatic deletion of inputs and outputs within 30 days, with exceptions for certain models or features, safety enforcement, legal requirements, and different agreements. Policy: https://privacy.claude.com/en/articles/7996866-how-long-do-you-store-my-organization-s-data
+- Managed app connections pass through Verso’s backend and Composio. Verso’s managed Composio project has a paid zero-data-retention agreement for connected-app content. Tool-execution logs in the backend contain selected diagnostic metadata, not argument values, response bodies, or raw upstream errors. A personal Composio project uses its own agreement and settings; Verso’s managed agreement does not automatically cover it.
+- Disabling memory ingestion or disconnecting an app does not erase existing memories. A source reset removes that source’s ingested documents, but not agent-written pages or conversations containing information from them. Deletion in an original app is not guaranteed to remove Verso’s existing copy.
+- The code is open source, so none of this has to be taken on faith.
+
+## Current status: a personal project, in active development
+
+Verso is built by one person and is a work in progress. It's used every day — it runs its maker's own workday — but it's early software: expect the occasional rough edge, bug, or fast-moving change between versions. None of that changes the data story above; it just means the polish is still arriving.
+
+A sensible way to adopt it: start with the connections you're comfortable with, see how it fits your work, and add more as you go. If something breaks or confuses you, issues (and pull requests) are welcome on GitHub: https://github.com/HugoSanchez/macos-agent-orchestrator/issues
+
+## Getting started
+
+1. Download the .dmg from the latest release: https://github.com/HugoSanchez/macos-agent-orchestrator/releases
+2. Open the managed app and sign in to Verso, then configure a model: Codex through OpenAI device login, an Anthropic API key, or a compatible custom provider.
+3. Connect the apps you want Verso to work with.
+
+Requirements: an Apple Silicon Mac running macOS 14 or newer, and access to a supported model provider or compatible custom endpoint. Anthropic API billing is separate from a Claude subscription. Source-build setup: https://github.com/HugoSanchez/macos-agent-orchestrator#run-from-source
+
+## Frequently asked questions
+
+**Is Verso really free?** The app is free and open source. Model-provider plans, API usage, and personal Composio projects may have their own charges.
+
+**Where does my content go?** Your conversation history and memory are stored on your Mac. Relevant context goes to your selected model endpoint, while managed connected-app requests and responses pass through Verso’s backend and Composio. Read https://itsverso.xyz/privacy for the managed ZDR arrangement and the account, usage, and diagnostic information the service retains.
+
+**Can it make mistakes?** Yes. Like any AI assistant, Verso can misread context or get things wrong, and that matters more when it acts on your apps. Review anything important before it goes out — treat it like a very fast assistant whose work you glance over, not an infallible one.
+
+**What happens to my data if I stop using Verso?** Existing local data remains on your Mac. Removing the app alone does not remove its data folders, revoke connected accounts, or delete records held by remote services. Local storage locations are documented in the repository README.
+
+**Do I need to be technical to use it?** No. Verso exists precisely so non-technical people can use a serious AI agent. Download, sign in, connect apps — that's the whole setup.
+
+**Can I trust it with my email and calendar?** The code is open source so you can inspect how connections work. Connected-app content is processed remotely as described in the privacy page. Start with the access you are comfortable granting and review important actions.
+
+**What is Hermes?** An open-source agent harness by Nous Research — the machinery that runs conversations, tools, and actions. It's its own project with its own documentation; Verso packages it so you never have to set it up yourself. How Verso integrates it is documented in Verso's repository: https://github.com/HugoSanchez/macos-agent-orchestrator
+
+## Links
+
+- Website: https://itsverso.xyz
+- Privacy and data: https://itsverso.xyz/privacy
+- Source code: https://github.com/HugoSanchez/macos-agent-orchestrator
+- Downloads: https://github.com/HugoSanchez/macos-agent-orchestrator/releases
+- Issues and support: https://github.com/HugoSanchez/macos-agent-orchestrator/issues

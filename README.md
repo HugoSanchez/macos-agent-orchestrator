@@ -13,6 +13,7 @@ React chat interface.
 - Claude through your own Anthropic API key
 - Hermes tools, skills, routines, memory, and browser automation
 - Custom MCP connectors
+- Connected apps through Verso’s managed service or your own Composio project
 
 ## Run from source
 
@@ -60,7 +61,23 @@ In Xcode, select the `verso` scheme and **My Mac**, then press **Cmd+R**.
 When Verso opens, go to **Settings** and connect either Codex or Anthropic.
 Return to the chat, select a model, and send a message.
 
+### Optional: connect apps with your own Composio project
+
+In a source build, open **Settings → Connected apps**, enter your Composio
+project API key, and select **Verify & save**. Quit and reopen Verso, connect
+apps from the sidebar, then enable the sources you want in **Settings → App
+memory**. The key is stored in macOS Keychain; no Verso account is required.
+
+This path sends connected-app requests directly to Composio using your project.
+Composio’s processing, retention settings, and project charges still apply.
+
+See [connected apps](docs/connected-apps.md) for data flows,
+key changes, and development details.
+
 ## Local data
+
+Read [Privacy & data](https://itsverso.xyz/privacy) for how local storage,
+managed connections, model providers, and service metadata are handled.
 
 Source builds keep their state separate from the hosted Verso product.
 
@@ -100,6 +117,12 @@ If the embedded chat interface looks stale after a UI change, rebuild it:
 ```sh
 ./scripts/build/build-chat-ui.sh
 ```
+
+## Contributing
+
+Bug reports, documentation improvements, and focused fixes are welcome. Please
+discuss substantial features or refactors in an issue before implementing them.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the workflow and review expectations.
 
 ## Development
 
@@ -142,6 +165,7 @@ Release and notarization instructions are in
 - `desktop/chat-ui/` — embedded React chat interface
 - `desktop/runtime-patches/` — patches for the bundled Hermes runtime
 - `backend/` — hosted API used by the managed product
+- `packages/composio/` — shared Composio integration used by desktop and backend
 - `frontend/` — hosted website
 
 ## License

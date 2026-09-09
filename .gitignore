@@ -10,6 +10,8 @@ xcuserdata/
 # Swift Package Manager
 .build/
 Packages/
+# First-party JavaScript packages (also on case-insensitive macOS filesystems).
+!/packages/
 
 # Node / Bun
 node_modules/

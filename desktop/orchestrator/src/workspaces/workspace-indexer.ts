@@ -34,6 +34,7 @@ export class WorkspaceIndexer {
   private watcher: FSWatcher | null = null;
   private refreshTimer: NodeJS.Timeout | null = null;
   private queue: Promise<unknown> = Promise.resolve();
+  private readonly scheduledWorkspaceIds = new Set<string>();
   private stopping = false;
   private prepared = false;
   private readonly statuses = new Map<string, WorkspaceIndexStatus>();
@@ -81,6 +82,12 @@ export class WorkspaceIndexer {
   }
 
   status(workspaceId: string, relativePath: string): WorkspaceIndexStatus | undefined {
+    switch (this.memory.getState()) {
+      case 'disabled': return 'unsupported';
+      case 'error': return 'error';
+      case 'idle': return 'indexing';
+      case 'ready': break;
+    }
     return this.statuses.get(sourceRef(workspaceId, relativePath));
   }
 
@@ -89,6 +96,27 @@ export class WorkspaceIndexer {
       await this.prepare();
       await this.syncOne(workspaceId, false);
     });
+  }
+
+  /** Queue mutation-driven indexing after the HTTP response can be returned. */
+  scheduleWorkspaceSync(workspaceId: string, changedPath?: string): void {
+    if (changedPath) this.statuses.delete(sourceRef(workspaceId, changedPath));
+    if (this.stopping || this.scheduledWorkspaceIds.has(workspaceId)) return;
+    this.scheduledWorkspaceIds.add(workspaceId);
+    const timer = setTimeout(() => {
+      this.scheduledWorkspaceIds.delete(workspaceId);
+      if (this.stopping) return;
+      void this.enqueue(async () => {
+        await this.prepare();
+        await this.syncOne(workspaceId, false);
+        // The mutation response carries the file-operation revision. A second
+        // revision tells open panels that the advertised index status settled.
+        this.store.touch(workspaceId);
+      }).catch((error: unknown) => {
+        console.warn(`[workspaces] sync failed: ${formatError(error)}`);
+      });
+    }, 0);
+    timer.unref();
   }
 
   async search(query: string, limit: number, workspaceId?: string): Promise<MemorySearchResult[]> {

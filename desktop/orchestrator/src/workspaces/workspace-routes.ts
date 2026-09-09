@@ -33,7 +33,7 @@ export function buildWorkspaceRoutes(store: WorkspaceStore, indexer: WorkspaceIn
       await respond(res, async () => {
         const sourcePaths = stringArray(body, 'sourcePaths');
         store.importFiles(params.id, sourcePaths);
-        await indexer.syncWorkspace(params.id);
+        indexer.scheduleWorkspaceSync(params.id);
         return treeEnvelope(store, indexer, params.id);
       });
     }),
@@ -47,12 +47,13 @@ export function buildWorkspaceRoutes(store: WorkspaceStore, indexer: WorkspaceIn
 
     route('PATCH', '/workspaces/:id/entry', async (_req, res, params, body) => {
       await respond(res, async () => {
+        const destinationPath = requiredString(body, 'destinationPath');
         store.moveEntry(
           params.id,
           requiredString(body, 'path'),
-          requiredString(body, 'destinationPath'),
+          destinationPath,
         );
-        await indexer.syncWorkspace(params.id);
+        indexer.scheduleWorkspaceSync(params.id, destinationPath);
         return treeEnvelope(store, indexer, params.id);
       });
     }),
@@ -60,7 +61,7 @@ export function buildWorkspaceRoutes(store: WorkspaceStore, indexer: WorkspaceIn
     route('DELETE', '/workspaces/:id/entry', async (_req, res, params) => {
       await respond(res, async () => {
         store.deleteEntry(params.id, requiredParam(params, 'path'));
-        await indexer.syncWorkspace(params.id);
+        indexer.scheduleWorkspaceSync(params.id);
         return treeEnvelope(store, indexer, params.id);
       });
     }),
@@ -98,7 +99,7 @@ export function buildWorkspaceRoutes(store: WorkspaceStore, indexer: WorkspaceIn
         const filePath = requiredString(body, 'path');
         const content = requiredString(body, 'content', true);
         const workspace = store.createText(params.id, filePath, content);
-        await indexer.syncWorkspace(params.id);
+        indexer.scheduleWorkspaceSync(params.id, filePath);
         return { workspace, file: store.readText(params.id, filePath) };
       });
     }),
@@ -108,7 +109,7 @@ export function buildWorkspaceRoutes(store: WorkspaceStore, indexer: WorkspaceIn
         const filePath = requiredString(body, 'path');
         const content = requiredString(body, 'content', true);
         const workspace = store.writeText(params.id, filePath, content);
-        await indexer.syncWorkspace(params.id);
+        indexer.scheduleWorkspaceSync(params.id, filePath);
         return { workspace, file: store.readText(params.id, filePath) };
       });
     }),

@@ -13,7 +13,7 @@ export function writeWorkspaceFileDrag(
   dataTransfer: Pick<DataTransfer, 'effectAllowed' | 'setData'>,
   payload: WorkspaceFileDragPayload,
 ): void {
-  dataTransfer.effectAllowed = 'copy';
+  dataTransfer.effectAllowed = 'copyMove';
   dataTransfer.setData(WORKSPACE_FILE_DRAG_TYPE, JSON.stringify(payload));
   dataTransfer.setData('text/plain', payload.path);
 }
@@ -30,4 +30,11 @@ export function readWorkspaceFileDrag(
   } catch {
     return null;
   }
+}
+
+export function workspaceMoveDestination(sourcePath: string, targetFolder: string): string | null {
+  const name = sourcePath.split('/').pop();
+  if (!name) return null;
+  const destinationPath = targetFolder ? `${targetFolder}/${name}` : name;
+  return destinationPath === sourcePath ? null : destinationPath;
 }

@@ -3,6 +3,7 @@ import {
   WORKSPACE_FILE_DRAG_TYPE,
   isWorkspaceFileDrag,
   readWorkspaceFileDrag,
+  workspaceMoveDestination,
   writeWorkspaceFileDrag,
 } from './workspace-file-drag';
 
@@ -27,7 +28,7 @@ describe('workspace file drag payloads', () => {
     const transfer = dataTransfer();
     writeWorkspaceFileDrag(transfer, { workspaceId: 'workspace-1', path: 'Sources/report.pdf' });
 
-    expect(transfer.effectAllowed).toBe('copy');
+    expect(transfer.effectAllowed).toBe('copyMove');
     expect(isWorkspaceFileDrag(transfer)).toBe(true);
     expect(readWorkspaceFileDrag(transfer)).toEqual({ workspaceId: 'workspace-1', path: 'Sources/report.pdf' });
     expect(transfer.getData('text/plain')).toBe('Sources/report.pdf');
@@ -37,5 +38,11 @@ describe('workspace file drag payloads', () => {
     const transfer = dataTransfer();
     transfer.setData(WORKSPACE_FILE_DRAG_TYPE, '{bad json');
     expect(readWorkspaceFileDrag(transfer)).toBeNull();
+  });
+
+  it('builds move destinations for folders and the workspace root', () => {
+    expect(workspaceMoveDestination('Sources/report.pdf', 'Archive')).toBe('Archive/report.pdf');
+    expect(workspaceMoveDestination('Sources/report.pdf', '')).toBe('report.pdf');
+    expect(workspaceMoveDestination('Sources/report.pdf', 'Sources')).toBeNull();
   });
 });

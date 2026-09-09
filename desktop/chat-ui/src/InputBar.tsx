@@ -190,22 +190,41 @@ export function InputBar({
   useEffect(() => {
     let depth = 0;
     const hasFiles = (event: DragEvent) => Array.from(event.dataTransfer?.types ?? []).includes('Files');
-    const hasAcceptedDrag = (event: DragEvent) => hasFiles(event) || isWorkspaceFileDrag(event.dataTransfer);
+    const isOverInput = (event: DragEvent) => {
+      const target = event.target;
+      return target instanceof Node && Boolean(fieldRef.current?.contains(target));
+    };
     const onDragEnter = (event: DragEvent) => {
-      if (!hasAcceptedDrag(event)) return;
+      if (isWorkspaceFileDrag(event.dataTransfer)) {
+        if (isOverInput(event)) setIsDraggingOver(true);
+        return;
+      }
+      if (!hasFiles(event)) return;
       depth += 1;
       setIsDraggingOver(true);
     };
     const onDragOver = (event: DragEvent) => {
-      if (hasAcceptedDrag(event)) event.preventDefault();
+      if (isWorkspaceFileDrag(event.dataTransfer)) {
+        event.preventDefault();
+        if (isOverInput(event) && event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+      } else if (hasFiles(event)) {
+        event.preventDefault();
+      }
     };
     const onDragLeave = (event: DragEvent) => {
-      if (!hasAcceptedDrag(event)) return;
+      if (isWorkspaceFileDrag(event.dataTransfer)) {
+        const nextTarget = event.relatedTarget;
+        if (!(nextTarget instanceof Node) || !fieldRef.current?.contains(nextTarget)) {
+          setIsDraggingOver(false);
+        }
+        return;
+      }
+      if (!hasFiles(event)) return;
       depth = Math.max(0, depth - 1);
       if (depth === 0) setIsDraggingOver(false);
     };
     const onDrop = (event: DragEvent) => {
-      if (!hasAcceptedDrag(event)) return;
+      if (!hasFiles(event) && !isWorkspaceFileDrag(event.dataTransfer)) return;
       event.preventDefault();
       depth = 0;
       setIsDraggingOver(false);

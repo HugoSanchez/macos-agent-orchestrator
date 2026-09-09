@@ -88,9 +88,14 @@ rsync -a --delete \
     --exclude '.DS_Store' \
     "${REPO_ROOT}/desktop/orchestrator/" "${BUNDLE_SRC}/orchestrator/"
 
+# Shared-package edits must refresh the installed snapshot even if its version
+# and lockfile have not changed.
+if ! diff -qr "${REPO_ROOT}/packages/composio/src" "${BUNDLE_SRC}/orchestrator/node_modules/@verso/composio/src" >/dev/null 2>&1; then
+    orchestrator_deps_changed=true
+fi
 if ${orchestrator_deps_changed}; then
     echo "[copy-bundles] orchestrator dependencies changed, reinstalling bundled node_modules"
-    ( cd "${BUNDLE_SRC}/orchestrator" && npm ci --include=dev --no-audit --no-fund --loglevel=error )
+    bash "${REPO_ROOT}/scripts/build/install-orchestrator-deps.sh" "${BUNDLE_SRC}/orchestrator"
 fi
 
 if [ -z "$(find "${BUNDLE_SRC}/hermes-defaults/skills" -path '*/SKILL.md' -print -quit)" ]; then

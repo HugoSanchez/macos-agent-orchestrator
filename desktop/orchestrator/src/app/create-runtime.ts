@@ -1,3 +1,6 @@
+import { ComposioProject } from '../connections/composio-project.ts';
+import { RemoteComposioBridgeClient } from '../integrations/composio-bridge-client.ts';
+import { scopeSource } from '../memory/ingestion/scoped-source.ts';
 import path from 'node:path';
 import { BrowserHost } from '../browser/browser-host.ts';
 import { BrowserSettingsStore } from '../browser/browser-settings-store.ts';
@@ -111,16 +114,26 @@ export async function createSidecarRuntime(): Promise<SidecarRuntime> {
   );
   const workspaceIndexer = new WorkspaceIndexer(workspaceStore, memoryProvider);
 
-  const connectionsStore = new ConnectionsStore();
-  const activeToolkitSlugs = () => connectionsStore.listConnections()
+  const composioProject = new ComposioProject(path.join(hermes.hermesHome, 'composio-project.json'), runtimeMode);
+  await composioProject.initialize();
+  const connectedApps = runtimeMode === 'managed'
+    ? new RemoteComposioBridgeClient(managedBackend)
+    : composioProject.connectedApps;
+  const projectRoot = composioProject.namespace
+    ? path.join(hermes.hermesHome, 'connected-apps', composioProject.namespace)
+    : null;
+  const connectionsStore = new ConnectionsStore(
+    projectRoot ? path.join(projectRoot, 'connections.json') : undefined,
+  );
+  const activeToolkitSlugs = () => (connectedApps.configured ? connectionsStore.listConnections() : [])
     .filter((connection) => connection.status === 'active')
     .map((connection) => connection.toolkitSlug);
-  const composioToolUsage = new ComposioToolUsageStore();
+  const composioToolUsage = new ComposioToolUsageStore(projectRoot ? path.join(projectRoot, 'tool-usage.sqlite') : undefined);
   const composioBridge = new ComposioBridgeService(managedBackend, {
     store: composioToolUsage,
     manifestPath: hermes.composioToolsManifestPath,
     getActiveToolkitSlugs: activeToolkitSlugs,
-  });
+  }, connectedApps);
   const composioManifest = new ComposioManifestCoordinator({
     manifestPath: hermes.composioToolsManifestPath,
     getActiveToolkitSlugs: activeToolkitSlugs,
@@ -136,9 +149,10 @@ export async function createSidecarRuntime(): Promise<SidecarRuntime> {
     managedBackend,
     connectionsStore,
     refreshComposioToolsManifest,
+    connectedApps,
   );
 
-  const ingestionStore = new IngestionStore();
+  const ingestionStore = new IngestionStore(projectRoot ? path.join(projectRoot, 'ingestion.sqlite') : undefined);
   const sourceIngestion = new SourceIngestionScheduler(
     ingestionStore,
     memoryProvider,
@@ -153,7 +167,7 @@ export async function createSidecarRuntime(): Promise<SidecarRuntime> {
       new GdriveSource(composioBridge),
       new OneDriveSource(composioBridge),
       new ClickupSource(composioBridge),
-    ],
+    ].map((source) => scopeSource(source, composioProject.namespace)),
     {
       extractionGate,
       connectionGate: (source) => {
@@ -188,6 +202,7 @@ export async function createSidecarRuntime(): Promise<SidecarRuntime> {
     memoryExtraction,
     managedBackend,
     composioBridge,
+    composioProject,
     memoryProvider,
     activeToolkitSlugs,
     connections,

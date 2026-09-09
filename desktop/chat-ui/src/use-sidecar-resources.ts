@@ -33,6 +33,7 @@ export interface UseSidecarResourcesOptions {
 export function useSidecarResources({ onError }: UseSidecarResourcesOptions) {
   const [connected, setConnected] = useState(false);
   const [codexConnected, setCodexConnected] = useState<boolean | null>(null);
+  const [codexAstraAvailable, setCodexAstraAvailable] = useState(false);
   const [anthropicConnected, setAnthropicConnected] = useState<boolean | null>(null);
   const [customModelStatus, setCustomModelStatus] = useState<CustomModelStatus | null>(null);
   const [connections, setConnections] = useState<ConnectionView[]>([]);
@@ -68,7 +69,10 @@ export function useSidecarResources({ onError }: UseSidecarResourcesOptions) {
       getCustomModelStatus().catch(() => null),
     ]);
     // Unknown is safer than turning a transient failure into a send block.
-    if (codex) setCodexConnected(codex.connected);
+    if (codex) {
+      setCodexConnected(codex.connected);
+      setCodexAstraAvailable(codex.connected && codex.astraAvailable === true);
+    }
     if (anthropic) setAnthropicConnected(anthropic.connected);
     if (custom) setCustomModelStatus(custom);
   }, []);
@@ -256,6 +260,7 @@ export function useSidecarResources({ onError }: UseSidecarResourcesOptions) {
   return {
     connected,
     codexConnected,
+    codexAstraAvailable,
     anthropicConnected,
     customModelStatus,
     connections,

@@ -1,3 +1,4 @@
+import type { ConnectedAppsProvider } from './connected-apps-provider.ts';
 import { ManagedBackendClient } from './managed-backend-client.ts';
 import {
   RemoteBridgeHttpError,
@@ -64,7 +65,7 @@ export class HttpError extends Error {
 export class ConnectionsService {
   private readonly store: ConnectionsStore;
 
-  private readonly bridgeClient: RemoteComposioBridgeClient;
+  private readonly bridgeClient: ConnectedAppsProvider;
   private readonly onConnectionsChanged: (() => void) | null;
   private readonly managedBackend: ManagedBackendClient;
 
@@ -72,9 +73,10 @@ export class ConnectionsService {
     managedBackend: ManagedBackendClient,
     store = new ConnectionsStore(),
     onConnectionsChanged: (() => void) | null = null,
+    provider?: ConnectedAppsProvider,
   ) {
     this.store = store;
-    this.bridgeClient = new RemoteComposioBridgeClient(managedBackend);
+    this.bridgeClient = provider ?? new RemoteComposioBridgeClient(managedBackend);
     this.onConnectionsChanged = onConnectionsChanged;
     this.managedBackend = managedBackend;
   }
@@ -98,6 +100,7 @@ export class ConnectionsService {
    * semantics. An empty cache (first ever run) always waits for the remote.
    */
   async listConnections(opts: { maxWaitMs?: number } = {}): Promise<ConnectionView[]> {
+    if (!this.configured) return [];
     const sync = this.syncFromRemote();
     const cached = this.store.listConnections().map(toConnectionView);
     if (typeof opts.maxWaitMs === 'number' && cached.length > 0) {
@@ -227,7 +230,7 @@ export class ConnectionsService {
 
   private assertConfigured(): void {
     if (this.bridgeClient.configured) return;
-    throw new HttpError(503, 'Managed backend URL is not configured.');
+    throw new HttpError(503, 'Connected apps are not configured. Check Settings → Connected apps.');
   }
 
   private notifyConnectionsChanged(): void {

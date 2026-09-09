@@ -106,8 +106,8 @@ export class ComposioToolRouter {
       } catch (error: unknown) {
         if (!isComposioSchemaValidationError(error)) throw error;
         this.log('composio.getSchemas.schemaUnavailable', {
-          toolSlug: slug,
-          error: error instanceof Error ? error.message : String(error),
+          toolSlug: diagnosticToolSlug(slug),
+          reason: 'upstream_schema_invalid',
         });
         return {
           slug,
@@ -131,7 +131,7 @@ export class ComposioToolRouter {
     if (!slug) throw new ComposioServiceError(400, 'Missing "toolSlug"');
     const argumentRecord = asRecord(arguments_);
     if (!argumentRecord) {
-      this.log('composio.execute.rejected', { toolSlug: slug, reason: 'missing_arguments' });
+      this.log('composio.execute.rejected', { toolSlug: diagnosticToolSlug(slug), reason: 'missing_arguments' });
       throw new ComposioServiceError(400, 'Missing required object "arguments".');
     }
 
@@ -141,8 +141,8 @@ export class ComposioToolRouter {
     } catch (error: unknown) {
       if (!isComposioSchemaValidationError(error)) throw error;
       this.log('composio.execute.schemaUnavailable', {
-        toolSlug: slug,
-        error: error instanceof Error ? error.message : String(error),
+        toolSlug: diagnosticToolSlug(slug),
+        reason: 'upstream_schema_invalid',
       });
     }
 
@@ -152,10 +152,10 @@ export class ComposioToolRouter {
       const missing = getMissingRequiredToolArguments(tool.inputParameters, argumentRecord);
       if (missing.length > 0) {
         this.log('composio.execute.rejected', {
-          toolSlug: tool.slug,
+          toolSlug: diagnosticToolSlug(tool.slug),
           reason: 'missing_required_arguments',
-          missingFields: missing,
-          argKeys: Object.keys(argumentRecord),
+          missingFieldCount: missing.length,
+          argCount: Object.keys(argumentRecord).length,
         });
         throw new ComposioServiceError(
           400,
@@ -172,10 +172,9 @@ export class ComposioToolRouter {
       const error = record ? asString(record.error) : null;
       const logId = record ? asString(record.logId ?? record.log_id) : null;
       this.log('composio.execute.completed', {
-        toolSlug: executionSlug,
-        argKeys: Object.keys(argumentRecord),
+        toolSlug: diagnosticToolSlug(executionSlug),
+        argCount: Object.keys(argumentRecord).length,
         hasError: Boolean(error),
-        logId,
       });
       return {
         data: record && 'data' in record ? record.data : result ?? null,
@@ -184,9 +183,9 @@ export class ComposioToolRouter {
       };
     } catch (error: unknown) {
       this.log('composio.execute.failed', {
-        toolSlug: executionSlug,
-        argKeys: Object.keys(argumentRecord),
-        error: error instanceof Error ? error.message : String(error),
+        toolSlug: diagnosticToolSlug(executionSlug),
+        argCount: Object.keys(argumentRecord).length,
+        reason: 'upstream_execution_failed',
       });
       throw error;
     }
@@ -324,6 +323,12 @@ function toSearchToolView(tool: ComposioToolView): BridgeSearchToolResult {
     toolkitSlug: tool.toolkit?.slug ?? null,
     toolkitName: tool.toolkit?.name ?? null,
   };
+}
+
+// Tool names are useful diagnostics, but a malformed caller-supplied slug
+// must not turn this field into a free-text content log.
+function diagnosticToolSlug(slug: string): string {
+  return /^[A-Z][A-Z0-9_]{0,127}$/.test(slug) ? slug : 'invalid_tool_slug';
 }
 
 function logToolEvent(event: string, details: Record<string, unknown>): void {

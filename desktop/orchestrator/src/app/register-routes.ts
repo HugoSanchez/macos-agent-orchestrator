@@ -1,3 +1,4 @@
+import { buildComposioProjectRoutes, type ComposioProject } from '../connections/composio-project.ts';
 import { buildManagedAccountRoutes } from '../account/managed-account.ts';
 import type { BrowserHost } from '../browser/browser-host.ts';
 import type { BrowserSettingsStore } from '../browser/browser-settings-store.ts';
@@ -48,6 +49,7 @@ export interface RouteDependencies {
   memoryExtraction: MemoryExtractionScheduler;
   managedBackend: ManagedBackendClient;
   composioBridge: ComposioBridgeService;
+  composioProject: ComposioProject;
   memoryProvider: MemoryProvider;
   activeToolkitSlugs: () => string[];
   connections: ConnectionsService;
@@ -114,6 +116,9 @@ export function registerRoutes(deps: RouteDependencies): Route[] {
           void deps.refreshComposioToolsManifest();
         });
       },
+    }),
+    ...buildComposioProjectRoutes(deps.composioProject, () => {
+      void deps.refreshComposioToolsManifest().catch(() => undefined);
     }),
     ...buildConnectionsRoutes(deps.connections),
     ...buildCustomConnectorRoutes(

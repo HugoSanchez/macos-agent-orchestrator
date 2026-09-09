@@ -18,6 +18,7 @@ grep -q 'AGPL-3.0-only' README.md \
     || fail "README does not declare AGPL-3.0-only"
 
 package_files=(
+    packages/composio/package.json
     backend/package.json
     frontend/package.json
     desktop/orchestrator/package.json
@@ -57,6 +58,8 @@ notice_files=(
 for notice_file in "${notice_files[@]}"; do
     [ -s "${notice_file}" ] || fail "missing third-party notice: ${notice_file}"
 done
+
+cmp -s LICENSE packages/composio/LICENSE || fail 'shared Composio package license differs from root'
 
 grep -q 'LEGAL_DST=' scripts/build/copy-runtime-bundles.sh \
     || fail "app build does not configure a legal-notices destination"

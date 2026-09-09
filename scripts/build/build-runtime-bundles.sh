@@ -135,7 +135,7 @@ echo "[bundle] installing orchestrator dependencies (npm ci --include=dev for ts
 # tsx lives in devDependencies, but we need it at runtime in the bundled app
 # (the orchestrator's entrypoint is `tsx src/http/server.ts`). --include=dev
 # pulls it in regardless of NODE_ENV.
-( cd "${ORCHESTRATOR_BUNDLE}" && npm ci --include=dev --no-audit --no-fund --loglevel=error )
+bash "${REPO_ROOT}/scripts/build/install-orchestrator-deps.sh" "${ORCHESTRATOR_BUNDLE}"
 
 # Sanity check: tsx should be present.
 if [ ! -x "${ORCHESTRATOR_BUNDLE}/node_modules/.bin/tsx" ]; then

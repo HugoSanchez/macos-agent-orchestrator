@@ -17,12 +17,25 @@ import {
   Plus,
 } from 'lucide-react';
 import type { WorkspaceEntryView, WorkspaceIndexStatus } from './workspace-api';
-import { writeWorkspaceFileDrag } from './workspace-file-drag';
+import {
+  isWorkspaceFileDrag,
+  readWorkspaceFileDrag,
+  workspaceMoveDestination,
+  writeWorkspaceFileDrag,
+} from './workspace-file-drag';
 import { childEntries } from './workspace-panel-model';
 import type { WorkspacePanelController } from './use-workspace-panel';
 
 export interface WorkspacePanelProps {
   panel: WorkspacePanelController;
+}
+
+interface WorkspaceDrag {
+  target: string | null;
+  over: (event: React.DragEvent<HTMLElement>, targetFolder: string) => void;
+  leave: (event: React.DragEvent<HTMLElement>, targetFolder: string) => void;
+  drop: (event: React.DragEvent<HTMLElement>, targetFolder: string) => void;
+  end: () => void;
 }
 
 const CONTEXT_MENU_MARGIN = 8;
@@ -61,16 +74,18 @@ export function WorkspacePanel({ panel }: WorkspacePanelProps) {
   const [dialog, setDialog] = useState<PanelDialog | null>(null);
   const [contextMenu, setContextMenu] = useState<EntryContextMenu | null>(null);
   const [isFileDragging, setIsFileDragging] = useState(false);
+  const [workspaceDropTarget, setWorkspaceDropTarget] = useState<string | null>(null);
   const [width, setWidth] = useState(readStoredWorkspacePanelWidth);
   const [resizeStart, setResizeStart] = useState<{ pointerId: number; x: number; width: number } | null>(null);
   const panelRef = useRef<HTMLElement | null>(null);
-  // Folders default to expanded (matching the native panel); this records the
-  // exceptions. Paths that disappear after a move/delete are harmless here.
-  const [collapsedFolders, setCollapsedFolders] = useState<ReadonlySet<string>>(() => new Set());
+  const [expandedFolders, setExpandedFolders] = useState<ReadonlySet<string>>(() => new Set());
 
   const closeContextMenu = useCallback(() => setContextMenu(null), []);
   const contextMenuRef = useOutsideDismiss<HTMLDivElement>(contextMenu !== null, closeContextMenu);
   const fileDragDepthRef = useRef(0);
+  const importDroppedFiles = panel.importDroppedFiles;
+
+  useEffect(() => setExpandedFolders(new Set()), [panel.selectedWorkspace?.id]);
 
   useEffect(() => {
     const constrain = () => setWidth((current) => constrainWorkspacePanelWidth(current));
@@ -177,7 +192,7 @@ export function WorkspacePanel({ panel }: WorkspacePanelProps) {
       if (!bounds
         || detail.x < bounds.left || detail.x > bounds.right
         || detail.y < bounds.top || detail.y > bounds.bottom) return;
-      panel.importDroppedFiles(paths);
+      importDroppedFiles(paths);
     };
     window.addEventListener('verso:native-file-drag-state', onNativeFileDragState);
     window.addEventListener('verso:native-files-dropped', onNativeFilesDropped);
@@ -185,7 +200,7 @@ export function WorkspacePanel({ panel }: WorkspacePanelProps) {
       window.removeEventListener('verso:native-file-drag-state', onNativeFileDragState);
       window.removeEventListener('verso:native-files-dropped', onNativeFilesDropped);
     };
-  }, [panel]);
+  }, [importDroppedFiles]);
 
   const isFileDrag = (event: React.DragEvent) => Array.from(event.dataTransfer.types).includes('Files');
   const handleFileDragEnter = (event: React.DragEvent) => {
@@ -215,7 +230,7 @@ export function WorkspacePanel({ panel }: WorkspacePanelProps) {
   };
 
   const toggleFolder = useCallback((path: string) => {
-    setCollapsedFolders((prev) => {
+    setExpandedFolders((prev) => {
       const next = new Set(prev);
       if (next.has(path)) next.delete(path);
       else next.add(path);
@@ -232,6 +247,48 @@ export function WorkspacePanel({ panel }: WorkspacePanelProps) {
         Math.min(y, window.innerHeight - CONTEXT_MENU_HEIGHT - CONTEXT_MENU_MARGIN)),
     });
   }, []);
+
+  const handleWorkspaceDragOver = useCallback((event: React.DragEvent<HTMLElement>, targetFolder: string) => {
+    if (!isWorkspaceFileDrag(event.dataTransfer)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    setWorkspaceDropTarget(targetFolder);
+  }, []);
+
+  const handleWorkspaceDragLeave = useCallback((event: React.DragEvent<HTMLElement>, targetFolder: string) => {
+    if (!isWorkspaceFileDrag(event.dataTransfer)) return;
+    const nextTarget = event.relatedTarget;
+    if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) return;
+    setWorkspaceDropTarget((current) => current === targetFolder ? null : current);
+  }, []);
+
+  const selectedWorkspaceId = panel.selectedWorkspace?.id;
+  const moveEntry = panel.moveEntry;
+  const handleWorkspaceDrop = useCallback((event: React.DragEvent<HTMLElement>, targetFolder: string) => {
+    if (!isWorkspaceFileDrag(event.dataTransfer)) return;
+    event.preventDefault();
+    setWorkspaceDropTarget(null);
+    const payload = readWorkspaceFileDrag(event.dataTransfer);
+    if (!payload || payload.workspaceId !== selectedWorkspaceId) return;
+    const destinationPath = workspaceMoveDestination(payload.path, targetFolder);
+    if (!destinationPath) return;
+    if (targetFolder) {
+      setExpandedFolders((current) => {
+        if (current.has(targetFolder)) return current;
+        const next = new Set(current);
+        next.add(targetFolder);
+        return next;
+      });
+    }
+    moveEntry(payload.path, destinationPath);
+  }, [moveEntry, selectedWorkspaceId]);
+  const workspaceDrag: WorkspaceDrag = {
+    target: workspaceDropTarget,
+    over: handleWorkspaceDragOver,
+    leave: handleWorkspaceDragLeave,
+    drop: handleWorkspaceDrop,
+    end: () => setWorkspaceDropTarget(null),
+  };
 
   return (
     <aside
@@ -268,10 +325,11 @@ export function WorkspacePanel({ panel }: WorkspacePanelProps) {
 
         <PanelContents
           panel={panel}
-          collapsedFolders={collapsedFolders}
+          expandedFolders={expandedFolders}
           onToggleFolder={toggleFolder}
           onEntryContextMenu={openEntryContextMenu}
           onCreateWorkspace={() => setDialog({ kind: 'create-workspace' })}
+          workspaceDrag={workspaceDrag}
         />
       </div>
 
@@ -365,7 +423,7 @@ function PanelHeader({
   return (
     <div className="workspace-panel-header" ref={menuRef}>
       <div className="workspace-panel-header-row">
-        <div className="workspace-menu">
+        <div className="workspace-menu workspace-title-menu">
           <button
             type="button"
             className="workspace-menu-trigger"
@@ -411,85 +469,86 @@ function PanelHeader({
         </div>
 
         {panel.selectedWorkspace && (
-          <div className="workspace-menu workspace-menu-actions">
-            <button
-              type="button"
-              className="workspace-icon-button"
-              aria-expanded={openMenu === 'actions'}
-              aria-label="Workspace actions"
-              title="Workspace actions"
-              onClick={() => setOpenMenu(openMenu === 'actions' ? null : 'actions')}
-            >
-              <MoreHorizontal size={13} />
-            </button>
-            {openMenu === 'actions' && (
-              <div className="workspace-menu-popover workspace-menu-popover-right" role="menu">
+          <div className="workspace-header-controls">
+            <div className="workspace-panel-actions">
+              {panel.canImportFiles && (
                 <button
                   type="button"
-                  role="menuitem"
-                  className="workspace-menu-row"
-                  onClick={() => {
-                    onOpenDialog({ kind: 'rename-workspace' });
-                    closeMenu();
-                  }}
+                  className="workspace-icon-button"
+                  aria-label="Import files"
+                  title="Import files"
+                  onClick={panel.importFiles}
                 >
-                  Rename Workspace…
+                  <Plus size={13} />
                 </button>
-              </div>
-            )}
+              )}
+              <button
+                type="button"
+                className="workspace-icon-button"
+                aria-label="New Markdown file"
+                title="New Markdown file"
+                onClick={() => onOpenDialog({ kind: 'create-file' })}
+              >
+                <FilePlus2 size={13} />
+              </button>
+              <button
+                type="button"
+                className="workspace-icon-button"
+                aria-label="New folder"
+                title="New folder"
+                onClick={() => onOpenDialog({ kind: 'create-folder' })}
+              >
+                <FolderPlus size={13} />
+              </button>
+            </div>
+            <div className="workspace-menu workspace-menu-actions">
+              <button
+                type="button"
+                className="workspace-icon-button"
+                aria-expanded={openMenu === 'actions'}
+                aria-label="Workspace actions"
+                title="Workspace actions"
+                onClick={() => setOpenMenu(openMenu === 'actions' ? null : 'actions')}
+              >
+                <MoreHorizontal size={13} />
+              </button>
+              {openMenu === 'actions' && (
+                <div className="workspace-menu-popover workspace-menu-popover-right" role="menu">
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="workspace-menu-row"
+                    onClick={() => {
+                      onOpenDialog({ kind: 'rename-workspace' });
+                      closeMenu();
+                    }}
+                  >
+                    Rename Workspace…
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>
-
-      {panel.selectedWorkspace && (
-        <div className="workspace-panel-actions">
-          {panel.canImportFiles && (
-            <button
-              type="button"
-              className="workspace-icon-button"
-              aria-label="Import files"
-              title="Import files"
-              onClick={panel.importFiles}
-            >
-              <Plus size={13} />
-            </button>
-          )}
-          <button
-            type="button"
-            className="workspace-icon-button"
-            aria-label="New Markdown file"
-            title="New Markdown file"
-            onClick={() => onOpenDialog({ kind: 'create-file' })}
-          >
-            <FilePlus2 size={13} />
-          </button>
-          <button
-            type="button"
-            className="workspace-icon-button"
-            aria-label="New folder"
-            title="New folder"
-            onClick={() => onOpenDialog({ kind: 'create-folder' })}
-          >
-            <FolderPlus size={13} />
-          </button>
-        </div>
-      )}
     </div>
   );
 }
 
 function PanelContents({
   panel,
-  collapsedFolders,
+  expandedFolders,
   onToggleFolder,
   onEntryContextMenu,
   onCreateWorkspace,
+  workspaceDrag,
 }: {
   panel: WorkspacePanelController;
-  collapsedFolders: ReadonlySet<string>;
+  expandedFolders: ReadonlySet<string>;
   onToggleFolder: (path: string) => void;
   onEntryContextMenu: (entry: WorkspaceEntryView, x: number, y: number) => void;
   onCreateWorkspace: () => void;
+  workspaceDrag: WorkspaceDrag;
 }) {
   if (panel.isLoading && panel.workspaces.length === 0) {
     return (
@@ -528,10 +587,20 @@ function PanelContents({
         panel={panel}
         parent=""
         depth={0}
-        collapsedFolders={collapsedFolders}
+        expandedFolders={expandedFolders}
         onToggleFolder={onToggleFolder}
         onEntryContextMenu={onEntryContextMenu}
+        workspaceDrag={workspaceDrag}
       />
+      <div
+        className={`workspace-root-drop-zone${workspaceDrag.target === '' ? ' is-drop-target' : ''}`}
+        aria-hidden="true"
+        onDragOver={(event) => workspaceDrag.over(event, '')}
+        onDragLeave={(event) => workspaceDrag.leave(event, '')}
+        onDrop={(event) => workspaceDrag.drop(event, '')}
+      >
+        {workspaceDrag.target === '' && 'Move to workspace root'}
+      </div>
     </div>
   );
 }
@@ -540,22 +609,24 @@ function EntryRows({
   panel,
   parent,
   depth,
-  collapsedFolders,
+  expandedFolders,
   onToggleFolder,
   onEntryContextMenu,
+  workspaceDrag,
 }: {
   panel: WorkspacePanelController;
   parent: string;
   depth: number;
-  collapsedFolders: ReadonlySet<string>;
+  expandedFolders: ReadonlySet<string>;
   onToggleFolder: (path: string) => void;
   onEntryContextMenu: (entry: WorkspaceEntryView, x: number, y: number) => void;
+  workspaceDrag: WorkspaceDrag;
 }) {
   return (
     <>
       {childEntries(panel.entries, parent).map((entry) => {
         const isFolder = entry.kind === 'folder';
-        const isExpanded = isFolder && !collapsedFolders.has(entry.path);
+        const isExpanded = isFolder && expandedFolders.has(entry.path);
         return (
           <div key={entry.path}>
             <button
@@ -563,10 +634,13 @@ function EntryRows({
               role="treeitem"
               aria-selected={entry.path === panel.selectedEntryPath}
               aria-expanded={isFolder ? isExpanded : undefined}
-              className={`workspace-entry-row${entry.path === panel.selectedEntryPath ? ' is-selected' : ''}`}
+              className={`workspace-entry-row${entry.path === panel.selectedEntryPath ? ' is-selected' : ''}${isFolder && workspaceDrag.target === entry.path ? ' is-drop-target' : ''}`}
               style={{ paddingLeft: 7 + depth * 13 }}
               draggable={!isFolder}
-              onClick={() => panel.selectEntry(entry.path)}
+              onClick={() => {
+                panel.selectEntry(entry.path);
+                if (isFolder) onToggleFolder(entry.path);
+              }}
               onDragStart={(event) => {
                 if (isFolder || !panel.selectedWorkspace) return;
                 writeWorkspaceFileDrag(event.dataTransfer, {
@@ -574,6 +648,10 @@ function EntryRows({
                   path: entry.path,
                 });
               }}
+              onDragEnd={isFolder ? undefined : workspaceDrag.end}
+              onDragOver={isFolder ? (event) => workspaceDrag.over(event, entry.path) : undefined}
+              onDragLeave={isFolder ? (event) => workspaceDrag.leave(event, entry.path) : undefined}
+              onDrop={isFolder ? (event) => workspaceDrag.drop(event, entry.path) : undefined}
               onContextMenu={(event) => {
                 event.preventDefault();
                 onEntryContextMenu(entry, event.clientX, event.clientY);
@@ -582,12 +660,6 @@ function EntryRows({
               {isFolder && (
                 <span
                   className={`workspace-entry-chevron${isExpanded ? ' is-expanded' : ''}`}
-                  // The chevron is a hit target inside the row button; toggling
-                  // expansion must not also change the selection.
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onToggleFolder(entry.path);
-                  }}
                 >
                   <ChevronRight size={10} strokeWidth={1.75} />
                 </span>
@@ -605,9 +677,10 @@ function EntryRows({
                 panel={panel}
                 parent={entry.path}
                 depth={depth + 1}
-                collapsedFolders={collapsedFolders}
+                expandedFolders={expandedFolders}
                 onToggleFolder={onToggleFolder}
                 onEntryContextMenu={onEntryContextMenu}
+                workspaceDrag={workspaceDrag}
               />
             )}
           </div>
