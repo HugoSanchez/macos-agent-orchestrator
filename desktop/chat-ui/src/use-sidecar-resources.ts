@@ -33,6 +33,7 @@ export interface UseSidecarResourcesOptions {
 export function useSidecarResources({ onError }: UseSidecarResourcesOptions) {
   const [connected, setConnected] = useState(false);
   const [codexConnected, setCodexConnected] = useState<boolean | null>(null);
+  const [codexAstraAvailable, setCodexAstraAvailable] = useState<boolean | null>(null);
   const [anthropicConnected, setAnthropicConnected] = useState<boolean | null>(null);
   const [customModelStatus, setCustomModelStatus] = useState<CustomModelStatus | null>(null);
   const [connections, setConnections] = useState<ConnectionView[]>([]);
@@ -68,7 +69,10 @@ export function useSidecarResources({ onError }: UseSidecarResourcesOptions) {
       getCustomModelStatus().catch(() => null),
     ]);
     // Unknown is safer than turning a transient failure into a send block.
-    if (codex) setCodexConnected(codex.connected);
+    if (codex) {
+      setCodexConnected(codex.connected);
+      setCodexAstraAvailable(codex.connected ? codex.astraAvailable ?? null : false);
+    }
     if (anthropic) setAnthropicConnected(anthropic.connected);
     if (custom) setCustomModelStatus(custom);
   }, []);
@@ -195,6 +199,15 @@ export function useSidecarResources({ onError }: UseSidecarResourcesOptions) {
     return () => window.clearInterval(timer);
   }, [connected, customConnectors, refreshConnections]);
 
+  // Discovery finishes after the quick auth status response. Poll until it
+  // settles, then refresh occasionally for rollout/account changes.
+  useEffect(() => {
+    if (!connected || codexConnected !== true) return;
+    const timer = window.setInterval(() => { void refreshModelStatus(); },
+      codexAstraAvailable === null ? 2_000 : 60_000);
+    return () => window.clearInterval(timer);
+  }, [connected, codexConnected, codexAstraAvailable, refreshModelStatus]);
+
   useEffect(() => {
     const onModelAuthChanged = () => { void refreshModelStatus(); };
     window.addEventListener('verso:model-auth-changed', onModelAuthChanged);
@@ -256,6 +269,7 @@ export function useSidecarResources({ onError }: UseSidecarResourcesOptions) {
   return {
     connected,
     codexConnected,
+    codexAstraAvailable,
     anthropicConnected,
     customModelStatus,
     connections,

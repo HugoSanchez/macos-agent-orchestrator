@@ -443,7 +443,7 @@ function resolveHermesRoot(home: string): string {
   return index >= 0 ? home.slice(0, index) : home;
 }
 
-function resolveHermesPython(templateHome: string): string | null {
+export function resolveHermesPython(templateHome: string): string | null {
   const bundledPython = getBundledPython();
   if (bundledPython && existsSync(bundledPython)) return bundledPython;
   const candidate = join(resolveHermesRoot(templateHome), 'hermes-agent', 'venv', 'bin', 'python');

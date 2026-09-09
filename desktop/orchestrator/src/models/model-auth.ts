@@ -2,6 +2,8 @@ import { spawn, execFile as execFileCb } from 'node:child_process';
 import { promisify } from 'node:util';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { resolveHermesPython } from '../hermes/hermes-managed-profile.ts';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { json, route, type Route } from '../http/router.ts';
 import { ANTHROPIC_CHAT_MODELS, CODEX_CHAT_MODELS } from './model-catalog.ts';
@@ -15,6 +17,7 @@ const VERIFICATION_URL_PATTERN = /https?:\/\/auth\.openai\.com\/codex\/device\S*
 const USER_CODE_PATTERN = /\b([A-Z0-9]{4,8}-[A-Z0-9]{4,8})\b/;
 
 interface CodexStatus {
+  astraAvailable: boolean | null;
   connected: boolean;
   count: number;
 }
@@ -31,6 +34,10 @@ export class CodexAuthService {
   // new chat's default-model lookup.
   private statusCache: { status: CodexStatus; at: number } | null = null;
   private statusInFlight: Promise<CodexStatus> | null = null;
+
+  private astraLookup: Promise<void> | null = null;
+  private astraAbort: AbortController | null = null;
+  private changingCredentials = false;
 
   constructor(private readonly hermes: HermesSupervisor) {}
 
@@ -95,11 +102,18 @@ export class CodexAuthService {
         const stripped = stdout.replace(ANSI_PATTERN, '');
         const match = stripped.match(/\((\d+)\s+credentials?\)/);
         const count = match ? parseInt(match[1], 10) : 0;
-        status = { connected: count > 0, count };
+        // Keep the last result while refreshing, just like auth status. Clearing
+        // it on every poll would briefly remove Astra and reset a new chat's model.
+        // Login and disconnect already invalidate this cache.
+        status = {
+          connected: count > 0, count,
+          astraAvailable: count > 0 ? this.statusCache?.status.astraAvailable ?? null : false,
+        };
       } catch {
-        status = { connected: false, count: 0 };
+        status = { connected: false, count: 0, astraAvailable: false };
       }
       this.statusCache = { status, at: Date.now() };
+      if (status.connected && !this.changingCredentials) this.refreshAstraAvailability(status);
       return status;
     })().finally(() => {
       this.statusInFlight = null;
@@ -107,28 +121,60 @@ export class CodexAuthService {
     return this.statusInFlight;
   }
 
+  private refreshAstraAvailability(status: CodexStatus): void {
+    if (this.astraLookup) return;
+    const abort = new AbortController();
+    this.astraAbort = abort;
+    this.astraLookup = (async () => {
+      try {
+        const python = resolveHermesPython(this.hermes.hermesHome);
+        if (!python) return;
+        const invocation = this.resolveInvocation([]);
+        const { stdout } = await execFile(python, [
+          fileURLToPath(new URL('./codex-models.py', import.meta.url)),
+        ], { env: invocation.env, cwd: invocation.cwd ?? undefined, timeout: 12_000, signal: abort.signal });
+        const result = JSON.parse(stdout) as { astraAvailable?: unknown };
+        // Ignore a lookup that completed after logout, login, or another refresh.
+        if (this.statusCache?.status === status && typeof result.astraAvailable === 'boolean') {
+          status.astraAvailable = result.astraAvailable;
+        }
+      } catch {
+        // A failed check leaves availability unknown; the next status refresh retries.
+      }
+    })().finally(() => { this.astraLookup = null; this.astraAbort = null; });
+  }
+
   // Repeatedly remove credential #1 until the pool is empty. Cheaper than
   // parsing every label/id, and matches the only mutation the UI offers
   // ("disconnect" = forget everything).
   async disconnect(): Promise<{ removed: number }> {
+    this.changingCredentials = true;
+    this.astraAbort?.abort();
+    await this.astraLookup;
+    this.statusCache = null;
     let removed = 0;
-    for (let i = 0; i < 20; i++) {
-      // Mutation loop needs live reads — bypass the status cache.
-      const status = await this.fetchStatus();
-      if (status.count === 0) break;
-      const invocation = this.resolveInvocation(['auth', 'remove', PROVIDER, '1']);
-      try {
-        await execFile(invocation.command, invocation.args, {
-          env: invocation.env,
-          cwd: invocation.cwd ?? undefined,
-          timeout: 10_000,
-        });
-        removed++;
-      } catch {
-        break;
+    try {
+      for (let i = 0; i < 20; i++) {
+        // Mutation loop needs live reads — bypass the status cache.
+        const status = await this.fetchStatus();
+        if (status.count === 0) break;
+        const invocation = this.resolveInvocation(['auth', 'remove', PROVIDER, '1']);
+        try {
+          await execFile(invocation.command, invocation.args, {
+            env: invocation.env,
+            cwd: invocation.cwd ?? undefined,
+            timeout: 10_000,
+          });
+          removed++;
+        } catch {
+          break;
+        }
       }
+      return { removed };
+    } finally {
+      this.statusCache = null;
+      this.changingCredentials = false;
     }
-    return { removed };
   }
 
   // Spawns `hermes auth add openai-codex --type oauth --no-browser` and
@@ -148,6 +194,9 @@ export class CodexAuthService {
       return;
     }
 
+    this.changingCredentials = true;
+    this.astraAbort?.abort();
+    this.statusCache = null;
     writeSseHeaders(res);
 
     const child = spawn(invocation.command, invocation.args, {
@@ -207,6 +256,8 @@ export class CodexAuthService {
     const closeOnce = (): void => {
       if (closed) return;
       closed = true;
+      this.changingCredentials = false;
+      this.statusCache = null;
       res.end();
     };
 

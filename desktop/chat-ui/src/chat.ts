@@ -539,6 +539,7 @@ export async function setAgentBrowserPrivateUrls(allow: boolean): Promise<{ allo
 }
 
 export interface CodexStatus {
+  astraAvailable: boolean | null;
   connected: boolean;
   count: number;
 }

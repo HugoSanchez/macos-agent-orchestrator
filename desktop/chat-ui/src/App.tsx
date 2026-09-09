@@ -149,6 +149,7 @@ export function App() {
   const {
     connected,
     codexConnected,
+    codexAstraAvailable,
     anthropicConnected,
     customModelStatus,
     connections,
@@ -169,10 +170,12 @@ export function App() {
   const availableModels = useMemo<readonly ChatModel[]>(() => {
     const models: ChatModel[] = [];
     if (customModelStatus?.connected && customModelStatus.model) models.push(customModelStatus.model);
-    if (codexConnected === true) models.push(...CODEX_CHAT_MODELS);
+    if (codexConnected === true) models.push(...CODEX_CHAT_MODELS.filter(
+      (candidate) => candidate !== 'gpt-6-astra' || codexAstraAvailable === true,
+    ));
     if (anthropicConnected === true) models.push(...ANTHROPIC_CHAT_MODELS);
     return models;
-  }, [anthropicConnected, codexConnected, customModelStatus]);
+  }, [anthropicConnected, codexAstraAvailable, codexConnected, customModelStatus]);
   const defaultModel = useMemo<ChatModel | null>(() => {
     if (customModelStatus?.connected && customModelStatus.model) return customModelStatus.model;
     if (codexConnected === true) return CODEX_CHAT_MODELS[0];

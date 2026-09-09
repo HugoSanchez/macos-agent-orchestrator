@@ -10,6 +10,7 @@ export const CODEX_CHAT_MODELS = [
   'gpt-5.6-sol',
   'gpt-5.6-terra',
   'gpt-5.6-luna',
+  'gpt-6-astra',
 ] as const;
 
 // First entry doubles as the model.default written on Anthropic connect.
