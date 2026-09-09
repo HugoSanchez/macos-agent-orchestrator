@@ -12,7 +12,7 @@ export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Develope
 
 xcodebuild \
     "$@" \
-    -project verso.xcodeproj \
+    -project desktop/verso.xcodeproj \
     -scheme verso \
     -configuration Release \
     -derivedDataPath "${VERSO_RELEASE_DERIVED_DATA}" \

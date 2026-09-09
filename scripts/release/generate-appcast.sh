@@ -24,7 +24,7 @@
 #   4. The script shreds /tmp/verso-edkey.txt when done
 #
 # Output:
-#   ./dist/appcast.xml   — drop into frontend/public/ and deploy
+#   ./dist/appcast.xml   — drop into server/frontend/public/ and deploy
 #
 # Optional env:
 #   VERSO_SPARKLE_KEY_FILE   default: /tmp/verso-edkey.txt
@@ -133,5 +133,5 @@ echo "[appcast] appcast written to ${APPCAST}"
 echo ""
 echo "Next steps:"
 echo "  1. Create a GitHub release: gh release create v<version> dist/verso-<version>.dmg"
-echo "  2. Copy appcast.xml into frontend/public/appcast.xml"
+echo "  2. Copy appcast.xml into server/frontend/public/appcast.xml"
 echo "  3. Deploy frontend so https://www.itsverso.xyz/appcast.xml updates"

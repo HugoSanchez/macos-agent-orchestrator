@@ -142,7 +142,7 @@ fi
 "${WORKSPACE_PATH}/scripts/conductor/setup.sh"
 
 xcodebuild \
-    -project "${WORKSPACE_PATH}/verso.xcodeproj" \
+    -project "${WORKSPACE_PATH}/desktop/verso.xcodeproj" \
     -scheme "verso" \
     -configuration "Debug" \
     -derivedDataPath "${WORKSPACE_PATH}/DerivedData" \
@@ -150,7 +150,7 @@ xcodebuild \
 
 app_path="$(
     xcodebuild \
-        -project "${WORKSPACE_PATH}/verso.xcodeproj" \
+        -project "${WORKSPACE_PATH}/desktop/verso.xcodeproj" \
         -scheme "verso" \
         -configuration "Debug" \
         -derivedDataPath "${WORKSPACE_PATH}/DerivedData" \

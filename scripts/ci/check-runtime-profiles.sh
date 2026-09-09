@@ -10,7 +10,7 @@ export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Develope
 
 read_mode() {
     xcodebuild \
-        -project verso.xcodeproj \
+        -project desktop/verso.xcodeproj \
         -scheme verso \
         -configuration "$1" \
         ${2:-} \

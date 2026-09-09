@@ -16,7 +16,7 @@
 #
 # Inputs (from Xcode):
 #   CONFIGURATION                 "Debug" or "Release"
-#   SRCROOT                       repo root (xcodeproj sits there)
+#   SRCROOT                       desktop directory (xcodeproj sits there)
 #   BUILT_PRODUCTS_DIR            wherever Xcode is writing the .app to
 #   CONTENTS_FOLDER_PATH          e.g. "verso.app/Contents"
 #
@@ -32,7 +32,7 @@ BUNDLE_SRC="${REPO_ROOT}/desktop/runtime-bundles"
 RESOURCES_DST="${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Resources"
 LEGAL_DST="${RESOURCES_DST}/Legal"
 
-for legal_path in LICENSE THIRD_PARTY_NOTICES.md LICENSES; do
+for legal_path in LICENSE legal/THIRD_PARTY_NOTICES.md legal/LICENSES; do
     if [ ! -e "${REPO_ROOT}/${legal_path}" ]; then
         echo "error: required legal notice is missing: ${REPO_ROOT}/${legal_path}" >&2
         exit 1
@@ -41,8 +41,8 @@ done
 
 mkdir -p "${LEGAL_DST}/ThirdParty"
 cp "${REPO_ROOT}/LICENSE" "${LEGAL_DST}/Verso-AGPL-3.0-only.txt"
-cp "${REPO_ROOT}/THIRD_PARTY_NOTICES.md" "${LEGAL_DST}/THIRD_PARTY_NOTICES.md"
-rsync -a --delete "${REPO_ROOT}/LICENSES/" "${LEGAL_DST}/ThirdParty/"
+cp "${REPO_ROOT}/legal/THIRD_PARTY_NOTICES.md" "${LEGAL_DST}/THIRD_PARTY_NOTICES.md"
+rsync -a --delete "${REPO_ROOT}/legal/LICENSES/" "${LEGAL_DST}/ThirdParty/"
 
 if [ "${CONFIGURATION:-}" != "Release" ]; then
     echo "[copy-bundles] copied legal notices; config=${CONFIGURATION:-unknown}, skipping runtime components"

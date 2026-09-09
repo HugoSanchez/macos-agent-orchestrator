@@ -73,15 +73,15 @@ jobs:
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: backend/package-lock.json
+          cache-dependency-path: server/backend/package-lock.json
       - name: Install dependencies
-        working-directory: backend
+        working-directory: server/backend
         run: npm ci
       - name: Run tests
-        working-directory: backend
+        working-directory: server/backend
         run: npm test
       - name: Typecheck
-        working-directory: backend
+        working-directory: server/backend
         run: npm run typecheck
 
   chat-ui-tests:
@@ -126,7 +126,7 @@ jobs:
       - name: Run native unit tests
         run: >-
           xcodebuild test
-          -project verso.xcodeproj
+          -project desktop/verso.xcodeproj
           -scheme verso
           -destination 'platform=macOS'
           -derivedDataPath "$RUNNER_TEMP/verso-derived-data"

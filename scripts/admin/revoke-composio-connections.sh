@@ -9,7 +9,7 @@
 # provider, then deletes the connected account record from Composio.
 #
 # Failure policy mirrors the production disconnect flow
-# (backend/src/composio/connections.ts): 400/409 means the provider cannot
+# (packages/composio/src/connections.ts): 400/409 means the provider cannot
 # revoke programmatically and deletion proceeds (manual provider cleanup may
 # be needed); 404 means already absent and deletion proceeds idempotently;
 # auth, rate-limit, and server failures stop for that account so the
