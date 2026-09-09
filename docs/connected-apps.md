@@ -82,11 +82,14 @@ The settings endpoints use the existing authenticated loopback router:
 OAuth callback routes.
 
 Both backend and orchestrator use a local npm dependency with `install-links=true`.
-Run `npm ci` in each consumer after editing `packages/composio`, since npm installs
+Run `npm ci` in `server/backend` and `desktop/orchestrator` after editing
+`packages/composio`, since npm installs
 a packed snapshot. Backend builds/deployments need the full repository layout,
 including `packages/composio`, available when installing dependencies. Desktop
 packaging stages that layout temporarily and ships a standalone dependency tree;
 the shared source does not need to exist outside the installed app.
+See [server deployment paths](../server/README.md#deployment) for the hosting
+working directories and commands.
 
 Automated tests exercise the shared broker, project isolation, key lifecycle,
 loopback authentication and connection/ingestion flow using fake

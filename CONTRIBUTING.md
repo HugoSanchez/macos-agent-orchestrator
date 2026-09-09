@@ -47,15 +47,15 @@ Run the checks for the components you changed, from the repository root:
 ```sh
 (cd desktop/orchestrator && npm test && npm run typecheck)
 (cd desktop/chat-ui && npm test && npm run typecheck)
-(cd backend && npm test && npm run typecheck)
-(cd frontend && npm run typecheck && npm run build)
+(cd server/backend && npm test && npm run typecheck)
+(cd server/frontend && npm run typecheck && npm run build)
 ```
 
 For embedded chat UI changes, run `./scripts/build/build-chat-ui.sh` and
 include the updated assets in `desktop/macos/chat-ui/`. Native test commands
 and runtime build instructions are in [Development](README.md#development).
 
-If you edit `packages/composio`, run `npm ci` in both `backend` and
+If you edit `packages/composio`, run `npm ci` in both `server/backend` and
 `desktop/orchestrator` before their checks: each installs a snapshot of that
 shared package. See [connected-app development notes](docs/connected-apps.md#implementation-and-development).
 

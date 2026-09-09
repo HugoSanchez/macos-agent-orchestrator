@@ -53,7 +53,7 @@ instead.
 ### 3. Build and run
 
 ```sh
-open verso.xcodeproj
+open desktop/verso.xcodeproj
 ```
 
 In Xcode, select the `verso` scheme and **My Mac**, then press **Cmd+R**.
@@ -134,7 +134,7 @@ Run the main checks before opening a pull request:
 
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
   xcodebuild test \
-    -project verso.xcodeproj \
+    -project desktop/verso.xcodeproj \
     -scheme verso \
     -destination 'platform=macOS' \
     -derivedDataPath DerivedData \
@@ -144,8 +144,8 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
 The hosted backend and website have separate checks:
 
 ```sh
-(cd backend && npm ci && npm test && npm run typecheck)
-(cd frontend && npm ci && npm run typecheck && npm run build)
+(cd server/backend && npm ci && npm test && npm run typecheck)
+(cd server/frontend && npm ci && npm run typecheck && npm run build)
 ```
 
 Official builds use a pinned, bundled Hermes runtime. Rebuild it only when you
@@ -160,13 +160,27 @@ Release and notarization instructions are in
 
 ## Repository layout
 
-- `desktop/macos/` — native SwiftUI app
-- `desktop/orchestrator/` — local Node sidecar and Hermes integration
-- `desktop/chat-ui/` — embedded React chat interface
-- `desktop/runtime-patches/` — patches for the bundled Hermes runtime
-- `backend/` — hosted API used by the managed product
-- `packages/composio/` — shared Composio integration used by desktop and backend
-- `frontend/` — hosted website
+```text
+desktop/                     Mac app and local runtime
+├── verso.xcodeproj/          Xcode project: open this to build the app
+├── macos/                   Native SwiftUI app
+├── macosTests/              Native unit tests
+├── chat-ui/                 Embedded React chat interface
+├── orchestrator/            Local Node sidecar, memory, and Hermes integration
+└── runtime-patches/         Patches for the bundled Hermes runtime
+server/                      Hosted services
+├── frontend/                Public website, privacy page, and update feed
+└── backend/                 Managed account and connected-app API
+packages/composio/           Composio integration shared by desktop and backend
+docs/                       Architecture and development notes
+scripts/                    Build, test, development, and release commands
+legal/                      Third-party notices and license texts
+```
+
+Start with `desktop/` for app changes or [server/README.md](server/README.md)
+for website and backend development and deployment paths. The root `LICENSE`
+applies to Verso's source; bundled third-party notices live under `legal/`.
+`.github/` and `.conductor/` stay at the root for their respective tools.
 
 ## License
 
@@ -175,4 +189,4 @@ Copyright (C) 2026 Hugo Sanchez.
 Verso is licensed under the
 [GNU Affero General Public License, version 3 only](LICENSE)
 (`AGPL-3.0-only`). Third-party components retain their own licenses; see
-[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+[THIRD_PARTY_NOTICES.md](legal/THIRD_PARTY_NOTICES.md).

@@ -64,7 +64,7 @@ from the removed Privy callback flow anywhere in the app bundle, preventing a
 stale pre-WorkOS app from being notarized or packaged.
 
 After appcast generation, create the matching GitHub release, upload the DMG,
-copy `dist/appcast.xml` to `frontend/public/appcast.xml`, and deploy the
+copy `dist/appcast.xml` to `server/frontend/public/appcast.xml`, and deploy the
 frontend.
 
 ## One-time release-machine setup

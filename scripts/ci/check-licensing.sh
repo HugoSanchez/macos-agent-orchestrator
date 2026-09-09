@@ -19,14 +19,14 @@ grep -q 'AGPL-3.0-only' README.md \
 
 package_files=(
     packages/composio/package.json
-    backend/package.json
-    frontend/package.json
+    server/backend/package.json
+    server/frontend/package.json
     desktop/orchestrator/package.json
     desktop/chat-ui/package.json
 )
 lock_files=(
-    backend/package-lock.json
-    frontend/package-lock.json
+    server/backend/package-lock.json
+    server/frontend/package-lock.json
     desktop/orchestrator/package-lock.json
     desktop/chat-ui/package-lock.json
 )
@@ -46,13 +46,13 @@ for lock_file in "${lock_files[@]}"; do
 done
 
 notice_files=(
-    THIRD_PARTY_NOTICES.md
-    LICENSES/Hermes-Agent-MIT.txt
-    LICENSES/IBM-Plex-OFL-1.1.txt
-    LICENSES/JetBrains-Mono-OFL-1.1.txt
-    LICENSES/Python-3.11.txt
-    LICENSES/Sentry-Cocoa-MIT.txt
-    LICENSES/Sparkle.txt
+    legal/THIRD_PARTY_NOTICES.md
+    legal/LICENSES/Hermes-Agent-MIT.txt
+    legal/LICENSES/IBM-Plex-OFL-1.1.txt
+    legal/LICENSES/JetBrains-Mono-OFL-1.1.txt
+    legal/LICENSES/Python-3.11.txt
+    legal/LICENSES/Sentry-Cocoa-MIT.txt
+    legal/LICENSES/Sparkle.txt
 )
 
 for notice_file in "${notice_files[@]}"; do
