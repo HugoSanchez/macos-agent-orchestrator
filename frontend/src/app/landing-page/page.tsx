@@ -206,9 +206,10 @@ export default function TriagePreviewPage() {
                   <p className={styles.eyebrow}>Local by default</p>
                   <h2>Integrated memory system. Stored on your Mac.</h2>
                   <p className={styles.prose}>
-                    Everything is stored on your mac locally; every conversation, every session, tool call or context you added. There is no Verso server, and no way for anyone &mdash; including the person who
-                    built it &mdash; to see your data. The code is public, so you don&rsquo;t have to
-                    take that on faith.
+                    Your conversations and indexed memory are stored on your Mac. Connected apps and
+                    model providers process the context needed to help you. Verso’s managed
+                    Composio project has a zero-data-retention agreement for connected-app
+                    content. <Link href="/privacy">Read how Verso handles your data.</Link>
                   </p>
                 </div>
 
@@ -270,6 +271,7 @@ export default function TriagePreviewPage() {
             <div className={styles.brand}>
               verso.
             </div>
+            <Link href="/privacy">Privacy &amp; data</Link>
             <span>{currentYear}</span>
           </div>
         </div>

@@ -126,6 +126,76 @@ describe('ComposioService tool execution', () => {
   });
 });
 
+describe('ComposioService diagnostic privacy', () => {
+  test('logs counts and status without argument contents, response contents, or upstream log IDs', async () => {
+    const log = vi.spyOn(console, 'info').mockImplementation(() => undefined);
+    const fixture = createFixture();
+    fixture.execute.mockResolvedValueOnce({
+      data: { ok: true, content: 'PRIVATE_RESPONSE_BODY' } as { ok: boolean },
+      error: null,
+      logId: 'PRIVATE_UPSTREAM_LOG_ID',
+    });
+
+    const result = await fixture.service.executeTool('user_1', 'SLACK_SEARCH_MESSAGES', {
+      query: 'PRIVATE_QUERY_VALUE', PRIVATE_ARGUMENT_NAME: 'PRIVATE_ARGUMENT_VALUE',
+    });
+
+    expect(result).toMatchObject({ data: { content: 'PRIVATE_RESPONSE_BODY' }, logId: 'PRIVATE_UPSTREAM_LOG_ID' });
+    expect(log).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(log.mock.calls[0][0])).toEqual({
+      event: 'composio.execute.completed', source: 'composio_service',
+      toolSlug: 'SLACK_SEARCH_MESSAGES', argCount: 2, hasError: false,
+    });
+    expect(JSON.stringify(log.mock.calls)).not.toContain('PRIVATE_');
+  });
+
+  test('does not log raw execution errors, while preserving the error returned to the caller', async () => {
+    const log = vi.fn();
+    const fixture = createFixture({ log });
+    const failure = new Error('PRIVATE_REQUEST_BODY PRIVATE_AUTH_HEADER');
+    fixture.execute.mockRejectedValueOnce(failure);
+
+    await expect(fixture.service.executeTool('user_1', 'SLACK_SEARCH_MESSAGES', { query: 'PRIVATE_QUERY' }))
+      .rejects.toBe(failure);
+    expect(log).toHaveBeenCalledWith('composio.execute.failed', {
+      toolSlug: 'SLACK_SEARCH_MESSAGES', argCount: 1, reason: 'upstream_execution_failed',
+    });
+    expect(JSON.stringify(log.mock.calls)).not.toContain('PRIVATE_');
+  });
+
+  test('keeps schema fallback diagnostics free of upstream errors and malformed tool-name content', async () => {
+    const log = vi.fn();
+    const fixture = createFixture({ log });
+    vi.mocked(fixture.client.tools.getRawComposioToolBySlug)
+      .mockRejectedValue(new Error('invalid_type at outputParameters: PRIVATE_SCHEMA_CONTENT'));
+
+    await fixture.service.getToolSchemas('user_1', ['PRIVATE_TOOL_NAME person@example.test']);
+    await fixture.service.executeTool('user_1', 'PRIVATE_TOOL_NAME person@example.test', { value: 'PRIVATE_VALUE' });
+    expect(log).toHaveBeenCalledWith('composio.getSchemas.schemaUnavailable', {
+      toolSlug: 'invalid_tool_slug', reason: 'upstream_schema_invalid',
+    });
+    expect(log).toHaveBeenCalledWith('composio.execute.schemaUnavailable', {
+      toolSlug: 'invalid_tool_slug', reason: 'upstream_schema_invalid',
+    });
+    expect(JSON.stringify(log.mock.calls)).not.toContain('PRIVATE_');
+  });
+
+  test('does not log field names from malformed upstream schemas', async () => {
+    const log = vi.fn();
+    const fixture = createFixture({ log });
+    vi.mocked(fixture.client.tools.getRawComposioToolBySlug).mockResolvedValue({
+      ...slackSearchTool,
+      inputParameters: { type: 'object', required: ['PRIVATE_FIELD_NAME'] },
+    });
+
+    await expect(fixture.service.executeTool('user_1', 'SLACK_SEARCH_MESSAGES', {})).rejects.toMatchObject({ status: 400 });
+    expect(log).toHaveBeenCalledWith('composio.execute.rejected', {
+      toolSlug: 'SLACK_SEARCH_MESSAGES', reason: 'missing_required_arguments', missingFieldCount: 1, argCount: 0,
+    });
+    expect(JSON.stringify(log.mock.calls)).not.toContain('PRIVATE_');
+  });
+});
+
 describe('ComposioService caching and invalidation', () => {
   test('coalesces concurrent session creation and caches normalized schemas', async () => {
     const fixture = createFixture({ log: vi.fn() });

@@ -12,6 +12,7 @@
 }
 
 .chat-header-band-top {
+  position: relative;
   height: 44px;
   background: var(--header-band-top-bg);
   border-bottom: 1px solid var(--header-band-border);
@@ -77,6 +78,12 @@
   margin-top: 4px;
   font-size: 12px;
   color: var(--ink-dim);
+}
+
+.chat-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .tool-step {

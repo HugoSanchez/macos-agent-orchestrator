@@ -373,6 +373,7 @@ describe('HermesSupervisor: managed config override', () => {
     expect(parsed.tools?.tool_search?.enabled).toBe('on');
     const pinned = parsed.tools?.tool_search?.pinned ?? [];
     expect(pinned).toContain('mcp_verso_search_memory');
+    expect(pinned).toContain('mcp_verso_search_workspaces');
     expect(pinned).toContain('mcp_verso_request_connection');
     expect(pinned).toContain('mcp_verso_slack_search_messages');
     expect(pinned).not.toContain('mcp_verso_slack_kick_user');

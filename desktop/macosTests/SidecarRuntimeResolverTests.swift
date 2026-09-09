@@ -39,6 +39,34 @@ final class SidecarRuntimeResolverTests: XCTestCase {
         XCTAssertEqual(resolved, orchestrator.path)
     }
 
+    func testDevelopmentNodePrecedesSystemFallback() throws {
+        let desktop = temporaryDirectory
+            .appendingPathComponent("repo/desktop", isDirectory: true)
+        let node = desktop
+            .appendingPathComponent("runtime-bundles/node/bin/node")
+        try FileManager.default.createDirectory(
+            at: node.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try Data("#!/bin/sh\n".utf8).write(to: node)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o755],
+            ofItemAtPath: node.path
+        )
+
+        let resolved = SidecarRuntimeResolver.nodePath(
+            bundleResourcePath: temporaryDirectory
+                .appendingPathComponent("app-resources")
+                .path,
+            sourceFilePath: desktop
+                .appendingPathComponent("macos/SidecarManager.swift")
+                .path,
+            allowDevelopmentFallback: true
+        )
+
+        XCTAssertEqual(resolved, node.path)
+    }
+
     func testRuntimeBundleRequiresAllArtifacts() throws {
         for component in ["python", "site-packages"] {
             try FileManager.default.createDirectory(

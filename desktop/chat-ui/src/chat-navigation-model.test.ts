@@ -87,6 +87,7 @@ describe('chat navigation model', () => {
 
   it('restores the persisted model even when the selected session is already hydrated', () => {
     const selection = resolveShellSessionSelection({
+      accountId: null,
       sessions: [session('claude-chat', 'claude-opus-4-8')],
       selectedSessionId: 'claude-chat',
     }, 'claude-chat');
@@ -100,6 +101,7 @@ describe('chat navigation model', () => {
 
   it('hydrates and restores the model when switching sessions', () => {
     const selection = resolveShellSessionSelection({
+      accountId: null,
       sessions: [session('gpt-chat', 'gpt-5.5'), session('claude-chat', 'claude-opus-4-8')],
       selectedSessionId: 'claude-chat',
     }, 'gpt-chat');

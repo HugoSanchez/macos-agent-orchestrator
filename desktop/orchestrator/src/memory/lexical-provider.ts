@@ -7,6 +7,7 @@ import type { IngestionDocument } from './ingestion/ingestion-source.ts';
 import type {
   MemoryDiagnostics,
   MemoryPage,
+  MemorySearchScope,
   MemoryRuntimeState,
   MemorySearchResult,
   MemoryWriteProvider,
@@ -165,6 +166,16 @@ interface RankedHit {
   snippet: string;
   relevance: number;
   recency: string;
+  metadata?: Record<string, unknown>;
+}
+
+interface DocumentHitRow {
+  id: number;
+  title: string | null;
+  source: string;
+  stream: string | null;
+  source_ref: string;
+  recency: string;
 }
 
 export class LexicalMemoryProvider implements MemoryWriteProvider {
@@ -261,9 +272,9 @@ export class LexicalMemoryProvider implements MemoryWriteProvider {
     };
   }
 
-  async search(query: string, limit: number): Promise<MemorySearchResult[]> {
-    const bm25List = this.bm25Search(query, limit);
-    const vectorList = await this.vectorSearch(query, limit);
+  async search(query: string, limit: number, scope?: MemorySearchScope): Promise<MemorySearchResult[]> {
+    const bm25List = this.bm25Search(query, limit, scope);
+    const vectorList = await this.vectorSearch(query, limit, scope);
     if (vectorList.length === 0) {
       return bm25List.slice(0, limit).map(toSearchResult);
     }
@@ -292,12 +303,12 @@ export class LexicalMemoryProvider implements MemoryWriteProvider {
       .map((hit) => toSearchResult({ ...hit, relevance: hit.rrf }));
   }
 
-  private bm25Search(query: string, limit: number): RankedHit[] {
+  private bm25Search(query: string, limit: number, scope?: MemorySearchScope): RankedHit[] {
     const match = buildFtsMatchExpression(query);
     if (!match) return [];
     const db = this.requireDb();
 
-    const pageHits = db.prepare(`
+    const pageHits = scope?.source || scope?.stream ? [] : db.prepare(`
       SELECT p.slug AS slug, p.title AS title, p.updated_at AS recency,
              -bm25(pages_fts) AS relevance,
              snippet(pages_fts, 1, '', '', '…', ${SNIPPET_TOKENS}) AS snip
@@ -306,15 +317,27 @@ export class LexicalMemoryProvider implements MemoryWriteProvider {
       ORDER BY bm25(pages_fts) LIMIT ?
     `).all(match, limit) as unknown as Array<{ slug: string; title: string | null; recency: string; relevance: number; snip: string }>;
 
+    const filters = ['documents_fts MATCH ?'];
+    const args: Array<string | number> = [match];
+    if (scope?.source) {
+      filters.push('d.source = ?');
+      args.push(scope.source);
+    }
+    if (scope?.stream) {
+      filters.push('d.stream = ?');
+      args.push(scope.stream);
+    }
+    args.push(limit);
     const docHits = db.prepare(`
-      SELECT d.id AS id, d.title AS title, d.source AS source,
+      SELECT d.id AS id, d.title AS title, d.source AS source, d.stream AS stream,
+             d.source_ref AS source_ref,
              COALESCE(d.occurred_at, d.created_at) AS recency,
              -bm25(documents_fts) AS relevance,
              snippet(documents_fts, 1, '', '', '…', ${SNIPPET_TOKENS}) AS snip
       FROM documents_fts JOIN documents d ON d.id = documents_fts.rowid
-      WHERE documents_fts MATCH ?
+      WHERE ${filters.join(' AND ')}
       ORDER BY bm25(documents_fts) LIMIT ?
-    `).all(match, limit) as unknown as Array<{ id: number; title: string | null; source: string; recency: string; relevance: number; snip: string }>;
+    `).all(...args) as unknown as Array<DocumentHitRow & { relevance: number; snip: string }>;
 
     const merged: RankedHit[] = [
       ...pageHits.map((row) => ({
@@ -324,13 +347,7 @@ export class LexicalMemoryProvider implements MemoryWriteProvider {
         relevance: row.relevance * PAGE_RANK_BOOST,
         recency: row.recency ?? '',
       })),
-      ...docHits.map((row) => ({
-        slug: `doc:${row.id}`,
-        title: row.title ?? `${row.source} ${(row.recency ?? '').slice(0, 10)}`.trim(),
-        snippet: row.snip,
-        relevance: row.relevance,
-        recency: row.recency ?? '',
-      })),
+      ...docHits.map((row) => rankedDocumentHit(row, row.snip, row.relevance)),
     ];
 
     return merged.sort((a, b) => (b.relevance - a.relevance) || b.recency.localeCompare(a.recency));
@@ -343,12 +360,22 @@ export class LexicalMemoryProvider implements MemoryWriteProvider {
    * [] — degrading search to BM25-only — whenever the embedder is missing,
    * still loading, or fails.
    */
-  private async vectorSearch(query: string, limit: number): Promise<RankedHit[]> {
+  private async vectorSearch(query: string, limit: number, scope?: MemorySearchScope): Promise<RankedHit[]> {
     if (!this.embedder?.isReady()) return [];
     const db = this.requireDb();
     try {
-      const rows = db.prepare('SELECT kind, ref, vector FROM embeddings WHERE model = ?')
-        .all(this.embedder.modelId) as unknown as Array<{ kind: string; ref: string; vector: Uint8Array }>;
+      const rows = db.prepare(`
+        SELECT e.kind, e.ref, e.vector
+        FROM embeddings e
+        LEFT JOIN documents d ON e.kind = 'doc' AND d.id = CAST(e.ref AS INTEGER)
+        WHERE e.model = ?
+          ${scope?.source ? "AND e.kind = 'doc' AND d.source = ?" : ''}
+          ${scope?.stream ? 'AND d.stream = ?' : ''}
+      `).all(
+        this.embedder.modelId,
+        ...(scope?.source ? [scope.source] : []),
+        ...(scope?.stream ? [scope.stream] : []),
+      ) as unknown as Array<{ kind: string; ref: string; vector: Uint8Array }>;
       if (rows.length === 0) return [];
 
       const queryVector = await this.embedder.embedQuery(query);
@@ -388,17 +415,11 @@ export class LexicalMemoryProvider implements MemoryWriteProvider {
       };
     }
     const row = db.prepare(`
-      SELECT id, title, source, content, COALESCE(occurred_at, created_at) AS recency
+      SELECT id, title, source, stream, source_ref, content, COALESCE(occurred_at, created_at) AS recency
       FROM documents WHERE id = ?
-    `).get(Number(ref)) as { id: number; title: string | null; source: string; content: string; recency: string } | undefined;
+    `).get(Number(ref)) as (DocumentHitRow & { content: string }) | undefined;
     if (!row) return null;
-    return {
-      slug: `doc:${row.id}`,
-      title: row.title ?? `${row.source} ${(row.recency ?? '').slice(0, 10)}`.trim(),
-      snippet: row.content.slice(0, 240),
-      relevance: score,
-      recency: row.recency ?? '',
-    };
+    return rankedDocumentHit(row, row.content.slice(0, 240), score);
   }
 
   async getPage(slug: string): Promise<MemoryPage | null> {
@@ -501,6 +522,15 @@ export class LexicalMemoryProvider implements MemoryWriteProvider {
     for (const row of rows) deleteEmbedding.run(String(row.id));
     const result = db.prepare('DELETE FROM documents WHERE source = ?').run(cleanSource);
     return { source: cleanSource, documentsDeleted: Number(result.changes) };
+  }
+
+  async deleteDocument(source: string, sourceRef: string): Promise<boolean> {
+    const db = this.requireDb();
+    const row = db.prepare('SELECT id FROM documents WHERE source = ? AND source_ref = ?')
+      .get(source, sourceRef) as { id: number } | undefined;
+    if (!row) return false;
+    db.prepare("DELETE FROM embeddings WHERE kind = 'doc' AND ref = ?").run(String(row.id));
+    return Number(db.prepare('DELETE FROM documents WHERE id = ?').run(row.id).changes) > 0;
   }
 
   private upsertDocument(doc: {
@@ -687,6 +717,18 @@ function toSearchResult(hit: RankedHit): MemorySearchResult {
     title: hit.title,
     score: Math.round(hit.relevance * 10_000) / 10_000,
     snippet: truncate(hit.snippet, MAX_SNIPPET_CHARS),
+    ...(hit.metadata ? { metadata: hit.metadata } : {}),
+  };
+}
+
+function rankedDocumentHit(row: DocumentHitRow, snippet: string, relevance: number): RankedHit {
+  return {
+    slug: `doc:${row.id}`,
+    title: row.title ?? `${row.source} ${row.recency.slice(0, 10)}`.trim(),
+    snippet,
+    relevance,
+    recency: row.recency,
+    metadata: { source: row.source, stream: row.stream, sourceRef: row.source_ref },
   };
 }
 

@@ -1,3 +1,4 @@
+import { buildComposioProjectRoutes, type ComposioProject } from '../connections/composio-project.ts';
 import { buildManagedAccountRoutes } from '../account/managed-account.ts';
 import type { BrowserHost } from '../browser/browser-host.ts';
 import type { BrowserSettingsStore } from '../browser/browser-settings-store.ts';
@@ -34,6 +35,9 @@ import type { PinnedSkillsStore } from '../skills/pinned-skills-store.ts';
 import type { HermesSkillsConfig } from '../skills/skills-store.ts';
 import { buildSkillsRoutes } from '../skills/skills.ts';
 import { readComposioManifestSummary } from '../connections/composio-manifest.ts';
+import { buildWorkspaceRoutes } from '../workspaces/workspace-routes.ts';
+import type { WorkspaceIndexer } from '../workspaces/workspace-indexer.ts';
+import type { WorkspaceStore } from '../workspaces/workspace-store.ts';
 import type { LocalStateSnapshot } from './local-state.ts';
 
 export interface RouteDependencies {
@@ -45,6 +49,7 @@ export interface RouteDependencies {
   memoryExtraction: MemoryExtractionScheduler;
   managedBackend: ManagedBackendClient;
   composioBridge: ComposioBridgeService;
+  composioProject: ComposioProject;
   memoryProvider: MemoryProvider;
   activeToolkitSlugs: () => string[];
   connections: ConnectionsService;
@@ -60,6 +65,8 @@ export interface RouteDependencies {
   codexAuth: CodexAuthService;
   anthropicAuth: AnthropicAuthService;
   customModelProvider: CustomModelProviderService;
+  workspaceStore: WorkspaceStore;
+  workspaceIndexer: WorkspaceIndexer;
 }
 
 /** Assemble the sidecar's HTTP surface from already-created feature services. */
@@ -96,6 +103,7 @@ export function registerRoutes(deps: RouteDependencies): Route[] {
   return [
     ...coreRoutes,
     ...buildMemoryRoutes(deps.memoryProvider),
+    ...buildWorkspaceRoutes(deps.workspaceStore, deps.workspaceIndexer),
     ...buildComposioBridgeRoutes(deps.composioBridge),
     ...buildDraftsRoutes(deps.composioBridge, deps.store),
     ...buildManagedAccountRoutes(deps.managedBackend, {
@@ -108,6 +116,9 @@ export function registerRoutes(deps: RouteDependencies): Route[] {
           void deps.refreshComposioToolsManifest();
         });
       },
+    }),
+    ...buildComposioProjectRoutes(deps.composioProject, () => {
+      void deps.refreshComposioToolsManifest().catch(() => undefined);
     }),
     ...buildConnectionsRoutes(deps.connections),
     ...buildCustomConnectorRoutes(

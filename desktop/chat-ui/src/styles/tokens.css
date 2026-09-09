@@ -20,6 +20,7 @@
   --link: #6ea8e8;
 
   /* ---- Component tokens (kept from before) ---- */
+  --workspace-dialog-backdrop: rgba(0, 0, 0, 0.28);
   --user-bubble: var(--paper-2);
   --user-bubble-text: var(--ink);
   --assistant-bg: transparent;

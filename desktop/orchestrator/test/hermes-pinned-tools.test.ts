@@ -15,6 +15,11 @@ const STATIC_PINNED = bothForms([
   'list_connections',
   'get_connection_status',
   'propose_message_draft',
+  'list_workspaces',
+  'search_workspaces',
+  'list_workspace_files',
+  'read_workspace_file',
+  'write_workspace_file',
 ]);
 
 const MEMORY_PINNED = bothForms([
@@ -163,6 +168,8 @@ describe('computePinnedToolNames', () => {
     const CORE_BASE = [
       'request_connection', 'search_toolkits', 'list_connections',
       'get_connection_status', 'propose_message_draft',
+      'list_workspaces', 'search_workspaces', 'list_workspace_files',
+      'read_workspace_file', 'write_workspace_file',
     ];
     const MEMORY_BASE = ['search_memory', 'get_memory_page', 'write_memory_page'];
 

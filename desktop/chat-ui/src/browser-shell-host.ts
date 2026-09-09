@@ -34,6 +34,7 @@ export function useBrowserShellHost(opts: UseBrowserShellHostOptions): void {
 
   const dispatchShellState = () => {
     const detail: ShellState = {
+      accountId: null,
       sessions: sessionsRef.current,
       selectedSessionId: selectedRef.current,
     };

@@ -5,6 +5,8 @@ describe('Hermes managed process environment', () => {
   it('does not inherit orchestrator-only Verso credentials', () => {
     const source: NodeJS.ProcessEnv = {
       PATH: '/usr/bin:/bin',
+      COMPOSIO_API_KEY: 'ambient-project-key',
+      VERSO_COMPOSIO_API_KEY: 'ambient-verso-key',
       VERSO_RUNTIME_MODE: 'managed',
       VERSO_MANAGED_SESSION_TOKEN: 'managed-session-secret',
       VERSO_MANAGED_SESSION_EXPIRES_AT: '2099-01-01T00:00:00Z',
@@ -20,6 +22,8 @@ describe('Hermes managed process environment', () => {
 
     const inherited = buildHermesInheritedEnvironment(source);
 
+    expect(inherited).not.toHaveProperty('COMPOSIO_API_KEY');
+    expect(inherited).not.toHaveProperty('VERSO_COMPOSIO_API_KEY');
     expect(inherited).not.toHaveProperty('VERSO_MANAGED_SESSION_TOKEN');
     expect(inherited).not.toHaveProperty('VERSO_MANAGED_SESSION_EXPIRES_AT');
     expect(inherited).not.toHaveProperty('VERSO_MANAGED_USER_ID');

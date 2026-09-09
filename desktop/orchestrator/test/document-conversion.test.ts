@@ -3,6 +3,7 @@ import {
   MAX_DOCUMENT_MARKDOWN_CHARS,
   applyDocumentMarkdownCap,
   buildDocumentContextBlock,
+  convertDocumentBytesToMarkdown,
   convertDocumentToMarkdown,
   describeConversionError,
 } from '../src/chat/document-conversion.ts';
@@ -14,6 +15,11 @@ describe('document conversion', () => {
     const pdf = makeMinimalPdf('Quarterly Verso Report');
     const markdown = await convertDocumentToMarkdown(pdf.toString('base64'));
     expect(markdown).toContain('Quarterly Verso Report');
+  });
+
+  it('converts local document bytes without a base64 round trip', async () => {
+    const markdown = await convertDocumentBytesToMarkdown(makeMinimalPdf('Workspace research source'));
+    expect(markdown).toContain('Workspace research source');
   });
 
   it('rejects a scanned / image-only PDF with a friendly message', async () => {

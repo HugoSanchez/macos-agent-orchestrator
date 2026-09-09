@@ -16,6 +16,8 @@ private final class FocusableWKWebView: WKWebView {
     // from web content (e.g. the chat header) needs this explicit handoff.
     var windowDragRects: [CGRect] = []
     var windowNoDragRects: [CGRect] = []
+    var workspaceDropRect: CGRect?
+    private var isWorkspaceDropActive = false
 
     override var acceptsFirstResponder: Bool {
         true
@@ -23,6 +25,75 @@ private final class FocusableWKWebView: WKWebView {
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
         true
+    }
+
+    // WKWebView exposes dropped `File` objects to JavaScript, but never their
+    // filesystem locations. Workspace imports copy files server-side, so pass
+    // Finder URLs over the narrow native bridge instead.
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        guard !droppedFileURLs(from: sender).isEmpty, isInWorkspaceDropRegion(sender) else {
+            return super.draggingEntered(sender)
+        }
+        dispatchNativeFileDragState(active: true)
+        return .copy
+    }
+
+    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+        let acceptsWorkspaceImport = isInWorkspaceDropRegion(sender) && !droppedFileURLs(from: sender).isEmpty
+        dispatchNativeFileDragState(active: acceptsWorkspaceImport)
+        return acceptsWorkspaceImport ? .copy : super.draggingUpdated(sender)
+    }
+
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        let urls = droppedFileURLs(from: sender)
+        guard isInWorkspaceDropRegion(sender), !urls.isEmpty else {
+            return super.performDragOperation(sender)
+        }
+        dispatchNativeFileDragState(active: false)
+
+        let point = normalizedPoint(sender.draggingLocation)
+        let payload: [String: Any] = [
+            "paths": urls.map(\.path),
+            "x": point.x,
+            "y": point.y,
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: payload),
+              let json = String(data: data, encoding: .utf8) else { return false }
+        evaluateJavaScript(
+            "window.dispatchEvent(new CustomEvent('verso:native-files-dropped', { detail: \(json) }));",
+            completionHandler: nil
+        )
+        return true
+    }
+
+    override func draggingExited(_ sender: NSDraggingInfo?) {
+        dispatchNativeFileDragState(active: false)
+        super.draggingExited(sender)
+    }
+
+    private func droppedFileURLs(from sender: NSDraggingInfo) -> [URL] {
+        let options: [NSPasteboard.ReadingOptionKey: Any] = [.urlReadingFileURLsOnly: true]
+        return (sender.draggingPasteboard.readObjects(forClasses: [NSURL.self], options: options) ?? [])
+            .compactMap { $0 as? URL }
+            .filter(\.isFileURL)
+    }
+
+    private func isInWorkspaceDropRegion(_ sender: NSDraggingInfo) -> Bool {
+        workspaceDropRect?.contains(normalizedPoint(sender.draggingLocation)) ?? false
+    }
+
+    private func dispatchNativeFileDragState(active: Bool) {
+        guard active != isWorkspaceDropActive else { return }
+        isWorkspaceDropActive = active
+        evaluateJavaScript(
+            "window.dispatchEvent(new CustomEvent('verso:native-file-drag-state', { detail: { active: \(active ? "true" : "false") } }));",
+            completionHandler: nil
+        )
+    }
+
+    private func normalizedPoint(_ windowPoint: NSPoint) -> CGPoint {
+        let local = convert(windowPoint, from: nil)
+        return isFlipped ? local : CGPoint(x: local.x, y: bounds.height - local.y)
     }
 
     private func isInWindowDragRegion(_ event: NSEvent) -> Bool {
@@ -64,7 +135,7 @@ private final class FocusableWKWebView: WKWebView {
 // product-level IPC is consolidated into three channels:
 //
 //   • Swift → JS: `verso:shell-state` carrying a full `ShellState` snapshot
-//     of everything the chat-ui needs to render (sessions list, selection).
+//     of everything the chat-ui needs to render (account, sessions, selection).
 //   • Swift → JS: `verso:shell-command` for transient commands (open
 //     overlays, navigate to a cron, etc.).
 //   • JS → Swift: `chatBridge.postMessage({type: "action", action})` with a
@@ -76,6 +147,7 @@ private final class FocusableWKWebView: WKWebView {
 /// pushed from Swift after every mutation that affects what the chat-ui
 /// should render.
 struct ShellState: Codable, Equatable {
+    let accountId: String?
     let sessions: [SidebarChatSession]
     let selectedSessionId: String?
 }
@@ -627,9 +699,27 @@ struct ChatWebView: NSViewRepresentable {
                 return
             }
 
+            if type == "workspaceDropRegion" {
+                guard let webView = webView as? FocusableWKWebView else { return }
+                webView.workspaceDropRect = Coordinator.parseRect(body["region"])
+                return
+            }
+
             if type == "notifyResponseReady" {
                 DispatchQueue.main.async {
                     AppDelegate.shared?.notifyResponseReady()
+                }
+                return
+            }
+
+            // Platform capability, not a product action: the chat-ui's
+            // workspace import needs real filesystem paths, which only the
+            // host's open panel can provide (`native-file-picker.ts`).
+            if type == "chooseFiles", let requestId = body["requestId"] as? String {
+                let prompt = body["prompt"] as? String
+                let message = body["message"] as? String
+                DispatchQueue.main.async { [weak self] in
+                    self?.presentFileChooser(requestId: requestId, prompt: prompt, message: message)
                 }
                 return
             }
@@ -645,6 +735,27 @@ struct ChatWebView: NSViewRepresentable {
             }
         }
 
+        private func presentFileChooser(requestId: String, prompt: String?, message: String?) {
+            let panel = NSOpenPanel()
+            panel.allowsMultipleSelection = true
+            panel.canChooseDirectories = false
+            panel.canChooseFiles = true
+            if let prompt { panel.prompt = prompt }
+            if let message { panel.message = message }
+            let paths = panel.runModal() == .OK ? panel.urls.map(\.path) : []
+
+            guard let webView,
+                  let data = try? JSONSerialization.data(withJSONObject: [
+                      "requestId": requestId,
+                      "paths": paths,
+                  ]),
+                  let json = String(data: data, encoding: .utf8) else { return }
+            webView.evaluateJavaScript(
+                "window.dispatchEvent(new CustomEvent('verso:native-files-chosen', { detail: \(json) }));",
+                completionHandler: nil
+            )
+        }
+
         /// Decodes an array of `{x, y, width, height}` objects (JS numbers
         /// arrive as `NSNumber`) into `CGRect`s. Malformed entries are skipped.
         static func parseRects(_ raw: Any?) -> [CGRect] {
@@ -658,6 +769,18 @@ struct ChatWebView: NSViewRepresentable {
                 }
                 return CGRect(x: x, y: y, width: width, height: height)
             }
+        }
+
+        static func parseRect(_ raw: Any?) -> CGRect? {
+            guard let dict = raw as? [String: Any],
+                  let x = (dict["x"] as? NSNumber)?.doubleValue,
+                  let y = (dict["y"] as? NSNumber)?.doubleValue,
+                  let width = (dict["width"] as? NSNumber)?.doubleValue,
+                  let height = (dict["height"] as? NSNumber)?.doubleValue,
+                  width >= 0, height >= 0 else {
+                return nil
+            }
+            return CGRect(x: x, y: y, width: width, height: height)
         }
 
     }

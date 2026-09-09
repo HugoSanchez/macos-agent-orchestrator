@@ -15,6 +15,7 @@ import type { ChatSessionSummary } from './types';
 /// after every mutation that affects what the chat-ui should render.
 /// Last write wins.
 export interface ShellState {
+  accountId: string | null;
   sessions: ChatSessionSummary[];
   selectedSessionId: string | null;
 }

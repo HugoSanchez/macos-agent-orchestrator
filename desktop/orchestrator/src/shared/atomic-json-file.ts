@@ -33,6 +33,10 @@ export function readJsonFileOr<T>(
  * flushed before publication, and removed if any step fails.
  */
 export function writeJsonFileAtomic(filePath: string, value: unknown): void {
+  writeTextFileAtomic(filePath, `${JSON.stringify(value, null, 2)}\n`);
+}
+
+export function writeTextFileAtomic(filePath: string, content: string): void {
   const directory = path.dirname(filePath);
   mkdirSync(directory, { recursive: true });
 
@@ -44,7 +48,7 @@ export function writeJsonFileAtomic(filePath: string, value: unknown): void {
 
   try {
     descriptor = openSync(tempPath, 'wx');
-    writeFileSync(descriptor, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
+    writeFileSync(descriptor, content, 'utf8');
     fsyncSync(descriptor);
     closeSync(descriptor);
     descriptor = null;

@@ -31,6 +31,7 @@ export interface LocalStateSnapshot {
     ingestionStore: string | null;
     browserSettings: string | null;
     browserDataRoot: string | null;
+    workspacesRoot: string | null;
     legacyOwnerMarker: string;
   };
 }
@@ -92,6 +93,9 @@ export function applyLocalStateIsolation(
   if (resolved.paths.memoryDatabase) {
     mkdirSync(path.dirname(resolved.paths.memoryDatabase), { recursive: true });
   }
+  if (resolved.paths.workspacesRoot) {
+    mkdirSync(resolved.paths.workspacesRoot, { recursive: true });
+  }
 
   return stripInternal(resolved);
 }
@@ -127,6 +131,7 @@ export function resolveLocalState(
       ingestionStore: null,
       browserSettings: null,
       browserDataRoot: null,
+      workspacesRoot: null,
       legacyOwnerMarker: roots.ownerMarkerPath,
     },
   };
@@ -167,6 +172,8 @@ export function resolveLocalState(
         || path.join(runtimeRoot, 'browser-settings.json'),
       browserDataRoot: env.VERSO_BROWSER_DATA_ROOT?.trim()
         || path.join(runtimeRoot, 'browser'),
+      workspacesRoot: env.VERSO_WORKSPACES_ROOT?.trim()
+        || path.join(runtimeRoot, 'workspaces'),
       legacyOwnerMarker: roots.ownerMarkerPath,
     };
     return {
@@ -210,6 +217,8 @@ export function resolveLocalState(
       ingestionStore: null,
       browserSettings: null,
       browserDataRoot: null,
+      workspacesRoot: env.VERSO_WORKSPACES_ROOT?.trim()
+        || path.join(path.dirname(roots.legacyChatStorePath), 'workspaces'),
       legacyOwnerMarker: roots.ownerMarkerPath,
     };
     return {
@@ -239,6 +248,8 @@ export function resolveLocalState(
     ingestionStore: null,
     browserSettings: null,
     browserDataRoot: null,
+    workspacesRoot: env.VERSO_WORKSPACES_ROOT?.trim()
+      || path.join(accountRoot, 'workspaces'),
     legacyOwnerMarker: roots.ownerMarkerPath,
   };
 
@@ -311,6 +322,7 @@ function envUpdatesFor(paths: {
   ingestionStore: string | null;
   browserSettings: string | null;
   browserDataRoot: string | null;
+  workspacesRoot: string | null;
 }): Record<string, string> {
   const updates: Record<string, string> = {};
   if (paths.chatStore) updates.VERSO_CHAT_STORE_PATH = paths.chatStore;
@@ -328,6 +340,7 @@ function envUpdatesFor(paths: {
   if (paths.ingestionStore) updates.VERSO_INGESTION_STORE_PATH = paths.ingestionStore;
   if (paths.browserSettings) updates.VERSO_BROWSER_SETTINGS_PATH = paths.browserSettings;
   if (paths.browserDataRoot) updates.VERSO_BROWSER_DATA_ROOT = paths.browserDataRoot;
+  if (paths.workspacesRoot) updates.VERSO_WORKSPACES_ROOT = paths.workspacesRoot;
   return updates;
 }
 

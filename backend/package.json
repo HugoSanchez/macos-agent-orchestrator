@@ -19,14 +19,14 @@
     "db:smoke": "tsx scripts/smoke-db.ts"
   },
   "dependencies": {
-    "@composio/core": "^0.9.1",
     "@neondatabase/serverless": "^1.0.1",
     "@workos-inc/node": "^10.12.0",
     "dotenv": "^16.6.1",
     "drizzle-orm": "^0.44.2",
     "fastify": "^5.6.1",
     "jose": "^6.2.10",
-    "zod": "^4.1.12"
+    "zod": "^4.1.12",
+    "@verso/composio": "file:../packages/composio"
   },
   "devDependencies": {
     "@types/node": "^25.6.0",

@@ -27,6 +27,11 @@ export interface MemorySearchResult {
   metadata?: Record<string, unknown>;
 }
 
+export interface MemorySearchScope {
+  source?: string;
+  stream?: string;
+}
+
 export interface MemoryPage {
   slug: string | null;
   title?: string | null;
@@ -51,7 +56,7 @@ export interface MemoryProvider {
    */
   instanceToken?(): string | null;
 
-  search(query: string, limit: number): Promise<MemorySearchResult[]>;
+  search(query: string, limit: number, scope?: MemorySearchScope): Promise<MemorySearchResult[]>;
   getPage?(slug: string): Promise<MemoryPage | null>;
 
   ingestChatSegment(segment: {
@@ -70,6 +75,8 @@ export interface MemoryProvider {
 
   /** Delete passive documents for one connected source. Curated pages are never affected. */
   deleteSourceDocuments?(source: string): Promise<{ source: string; documentsDeleted: number }>;
+  /** Delete one passive document by its stable source identity. */
+  deleteDocument?(source: string, sourceRef: string): Promise<boolean>;
 }
 
 export interface MemoryWriteProvider extends MemoryProvider {

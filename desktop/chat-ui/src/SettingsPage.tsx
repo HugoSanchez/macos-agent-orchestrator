@@ -1,3 +1,4 @@
+import { ComposioSettings } from './ComposioSettings';
 import { useEffect, useState, type ReactElement } from 'react';
 import {
   connectAnthropic,
@@ -66,12 +67,13 @@ interface Props {
   initialPanel?: SettingsPanelId;
 }
 
-export type SettingsPanelId = 'account' | 'models' | 'memory' | 'browser';
+export type SettingsPanelId = 'account' | 'models' | 'connections' | 'memory' | 'browser';
 type PanelId = SettingsPanelId;
 
 const PANELS: Array<{ id: PanelId; label: string; icon: () => ReactElement }> = [
   { id: 'account', label: 'Account', icon: AccountIcon },
   { id: 'models', label: 'Model providers', icon: ModelsIcon },
+  { id: 'connections', label: 'Connected apps', icon: AccountIcon },
   { id: 'memory', label: 'App memory', icon: MemoryIcon },
   { id: 'browser', label: 'Agent browser', icon: BrowserIcon },
 ];
@@ -81,6 +83,8 @@ export function SettingsPage({ onBack, initialPanel }: Props) {
   const [account, setAccount] = useState<ManagedAccountView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const canConfigureConnections = account?.runtimeMode === 'local' || account?.runtimeMode === 'byo';
+  const activePanel = panel === 'connections' && !canConfigureConnections ? 'account' : panel;
 
   useEffect(() => {
     let cancelled = false;
@@ -125,11 +129,11 @@ export function SettingsPage({ onBack, initialPanel }: Props) {
           ← Back
         </button>
         <h1 className="settings-rail-title">Settings</h1>
-        {PANELS.map(({ id, label, icon: Icon }) => (
+        {PANELS.filter(({ id }) => id !== 'connections' || canConfigureConnections).map(({ id, label, icon: Icon }) => (
           <button
             key={id}
             type="button"
-            className={`settings-rail-item${panel === id ? ' is-active' : ''}`}
+            className={`settings-rail-item${activePanel === id ? ' is-active' : ''}`}
             onClick={() => setPanel(id)}
           >
             <Icon />
@@ -141,7 +145,7 @@ export function SettingsPage({ onBack, initialPanel }: Props) {
 
       <main className="settings-pane">
         <div className="settings-pane-inner">
-          {panel === 'account' ? (
+          {activePanel === 'account' ? (
             isLoading ? (
               <div className="settings-loading">Loading…</div>
             ) : error ? (
@@ -154,9 +158,11 @@ export function SettingsPage({ onBack, initialPanel }: Props) {
             ) : account ? (
               <AccountPanel account={account} />
             ) : null
-          ) : panel === 'models' ? (
+          ) : activePanel === 'models' ? (
             <ModelsPanel />
-          ) : panel === 'memory' ? (
+          ) : activePanel === 'connections' ? (
+            <ComposioSettings />
+          ) : activePanel === 'memory' ? (
             <MemoryPanel />
           ) : (
             <BrowserPanel />

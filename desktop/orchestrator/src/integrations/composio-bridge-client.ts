@@ -1,86 +1,38 @@
+import { ConnectedAppsError as RemoteBridgeHttpError, type ConnectedAppsProvider } from './connected-apps-provider.ts';
 import { ManagedBackendClient } from './managed-backend-client.ts';
 
-export interface RemoteBridgeConnectionRequestView {
-  id: string;
-  toolkitSlug: string;
-  toolkitName: string;
-  logoUrl: string | null;
-  status: 'pending' | 'connected' | 'failed' | 'expired';
-  redirectUrl: string | null;
-  connectedAccountId: string | null;
-  errorMessage: string | null;
-}
+import type {
+  BridgeConnectionRequestView as RemoteBridgeConnectionRequestView,
+  BridgeConnectionView as RemoteBridgeConnectionView,
+  ProviderRevocationStatus as RemoteProviderRevocation,
+  DisconnectConnectionResult as RemoteDisconnectConnectionResult,
+  BridgeToolkitView as RemoteBridgeToolkitView,
+  BridgeSearchToolResult as RemoteBridgeSearchToolResult,
+  BridgeToolSchemaView as RemoteBridgeToolSchemaView,
+  BridgeToolExecutionView as RemoteBridgeToolExecutionView,
+} from '@verso/composio';
 
-export interface RemoteBridgeConnectionView {
-  connectedAccountId: string;
-  toolkitSlug: string;
-  toolkitName: string;
-  logoUrl: string | null;
-  status: 'active' | 'inactive';
-}
+export type {
+  RemoteBridgeConnectionRequestView,
+  RemoteBridgeConnectionView,
+  RemoteProviderRevocation,
+  RemoteDisconnectConnectionResult,
+  RemoteBridgeToolkitView,
+  RemoteBridgeSearchToolResult,
+  RemoteBridgeToolSchemaView,
+  RemoteBridgeToolExecutionView,
+};
 
-export type RemoteProviderRevocation = 'revoked' | 'already_absent' | 'manual_action_required';
-
-export interface RemoteDisconnectConnectionResult {
-  connectedAccountId: string;
-  composioAccountDeleted: true;
-  providerRevocation: RemoteProviderRevocation;
-}
-
-export interface RemoteBridgeToolkitView {
-  slug: string;
-  name: string;
-  description: string | null;
-  logoUrl: string | null;
-  categories: string[];
-  authSchemes: string[];
-  composioManagedAuthSchemes: string[];
-  connected: boolean;
-  connectedAccountId: string | null;
-  noAuth: boolean;
-}
-
-export interface RemoteBridgeSearchToolResult {
-  slug: string;
-  name: string;
-  description: string | null;
-  toolkitSlug: string | null;
-  toolkitName: string | null;
-}
-
-export interface RemoteBridgeToolSchemaView {
-  slug: string;
-  name: string;
-  description: string | null;
-  toolkitSlug: string | null;
-  toolkitName: string | null;
-  inputParameters: Record<string, unknown> | null;
-}
-
-export interface RemoteBridgeToolExecutionView {
-  data: unknown;
-  error: string | null;
-  logId: string | null;
-}
-
-export class RemoteBridgeHttpError extends Error {
-  readonly status: number;
-
-  constructor(status: number, message: string) {
-    super(message);
-    this.name = 'RemoteBridgeHttpError';
-    this.status = status;
-  }
-}
+export { ConnectedAppsError as RemoteBridgeHttpError } from './connected-apps-provider.ts';
 
 /**
  * Composio proxy client that talks to the managed backend's /v1/composio/*
  * surface. Auth uses the user's in-memory managed session token.
  *
  * Tool discovery, schema lookup, and execution are proxied through the managed
- * backend so the Composio project API key never lives in the desktop app.
+ * backend so Verso’s managed project API key stays on its server.
  */
-export class RemoteComposioBridgeClient {
+export class RemoteComposioBridgeClient implements ConnectedAppsProvider {
   private readonly managedBackend: ManagedBackendClient;
   private readonly baseUrl: string;
 
