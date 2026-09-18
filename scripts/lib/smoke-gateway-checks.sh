@@ -44,7 +44,7 @@ smoke_wait_for_gateway() {  # $1: timeout seconds (default 90)
 # credentials); a mis-anchored patch answers a raw 500 before the stream.
 smoke_assert_streaming_responses() {  # $1: conversation id
     local body response_file status terminal
-    body='{"input":"smoke test","conversation":"'"$1"'","truncation":"auto","stream":true,"store":true,"model":"gpt-5.5","reasoning":{"effort":"low"}}'
+    body='{"input":"smoke test","conversation":"'"$1"'","truncation":"auto","stream":true,"store":true,"verso_progress_updates":true,"model":"gpt-5.5","reasoning":{"effort":"low"}}'
     response_file="${SMOKE_TMP}/smoke-response.txt"
     status="$(curl -s -N --max-time 60 -o "${response_file}" -w "%{http_code}" \
         -X POST "http://127.0.0.1:${SMOKE_PORT}/v1/responses" \

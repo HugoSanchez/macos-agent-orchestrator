@@ -1,0 +1,128 @@
+--- a/gateway/platforms/api_server.py
++++ b/gateway/platforms/api_server.py
+@@ -1763,6 +1763,7 @@
+         tool_start_callback=None,
+         tool_complete_callback=None,
+         reasoning_callback=None,
++        interim_assistant_callback=None,
+         reasoning_effort_override: Optional[str] = None,
+         model_override: Optional[str] = None,
+         gateway_session_key: Optional[str] = None,
+@@ -1881,6 +1882,27 @@
+         # same fallback behaviour as Telegram/Discord/Slack (fixes #4954).
+         fallback_model = GatewayRunner._load_fallback_model()
+ 
++        # Only interactive Verso requests opt in. Keep this request-local so
++        # rollback does not rewrite SOUL.md, history, or persistent settings.
++        if interim_assistant_callback is not None:
++            progress_guidance = (
++                "# User-facing progress updates\n"
++                "Before substantial tool-based work, briefly tell the user what "
++                "you are doing. During longer tasks, share concise updates when "
++                "you have meaningful findings, encounter a blocker, or change "
++                "approach. Aim to update at natural pauses about every 30-60 "
++                "seconds when possible; do not narrate every tool call or invent "
++                "progress while a tool is still running. For quick answers, skip "
++                "unnecessary preambles. These are ordinary assistant messages "
++                "for the user, separate from internal reasoning: describe actions, "
++                "observed results, and next steps, never private deliberation. "
++                "After an update, continue with the appropriate tools in the same "
++                "turn until the task is complete or user input is required."
++            )
++            ephemeral_system_prompt = "\n\n".join(
++                part for part in (ephemeral_system_prompt, progress_guidance) if part
++            )
++
+         agent = AIAgent(
+             model=model,
+             **runtime_kwargs,
+@@ -1896,6 +1918,7 @@
+             tool_start_callback=tool_start_callback,
+             tool_complete_callback=tool_complete_callback,
+             reasoning_callback=reasoning_callback,
++            interim_assistant_callback=interim_assistant_callback,
+             session_db=self._ensure_session_db(),
+             fallback_model=fallback_model,
+             reasoning_config=reasoning_config,
+@@ -3244,6 +3267,8 @@
+           ``{call_id, output, status}``
+         - ``hermes.reasoning.delta`` — streamed model reasoning text when the
+           active provider exposes reasoning deltas
++        - ``hermes.commentary`` — complete user-facing interim message for
++          opted-in Verso requests, with ``text`` and ``already_streamed``
+         - ``response.completed`` — terminal event carrying the full
+           response object with all output items + usage (same payload
+           shape as the non-streaming path for parity)
+@@ -3427,6 +3452,18 @@
+                     "type": "hermes.reasoning.delta",
+                     "delta": delta_text,
+                     "item_id": message_item_id,
++                })
++
++            async def _emit_commentary(payload: Dict[str, Any]) -> None:
++                # The dispatcher flushes preceding deltas first. They belong to
++                # this interim message, not to the eventual final answer. Keep
++                # commentary off final_text_parts so a non-streamed final answer
++                # still gets the normal fallback delta below.
++                final_text_parts.clear()
++                await _write_event("hermes.commentary", {
++                    "type": "hermes.commentary",
++                    "text": payload["text"],
++                    "already_streamed": payload["already_streamed"],
+                 })
+ 
+             async def _emit_tool_started(payload: Dict[str, Any]) -> str:
+@@ -3557,6 +3594,8 @@
+                         await _emit_tool_completed(payload)
+                     elif tag == "__reasoning_delta__":
+                         await _emit_reasoning_delta(str(payload or ""))
++                    elif tag == "__commentary__":
++                        await _emit_commentary(payload)
+                 elif isinstance(it, str):
+                     # Batch text deltas — append to buffer, flush on timer
+                     _batch_buf.append(it)
+@@ -3976,6 +4015,16 @@
+                 """
+                 return
+ 
++            def _on_interim(text, *, already_streamed=False):
++                # AIAgent supplies visible prose, already stripped of reasoning.
++                # Preserve boundaries even when its prefix already streamed;
++                # clients use this flag to promote it without duplicating it.
++                if isinstance(text, str) and text.strip():
++                    _stream_q.put(("__commentary__", {
++                        "text": text,
++                        "already_streamed": bool(already_streamed),
++                    }))
++
+             def _on_reasoning(delta):
+                 """Queue streamed reasoning for clients that can display it."""
+                 if delta:
+@@ -4009,6 +4058,11 @@
+                 tool_start_callback=_on_tool_start,
+                 tool_complete_callback=_on_tool_complete,
+                 reasoning_callback=_on_reasoning,
++                interim_assistant_callback=(
++                    _on_interim if _coerce_request_bool(
++                        body.get("verso_progress_updates"), default=False
++                    ) else None
++                ),
+                 reasoning_effort_override=reasoning_effort_override,
+                 model_override=model_override,
+                 agent_ref=agent_ref,
+@@ -4711,6 +4765,7 @@
+         tool_start_callback=None,
+         tool_complete_callback=None,
+         reasoning_callback=None,
++        interim_assistant_callback=None,
+         reasoning_effort_override: Optional[str] = None,
+         model_override: Optional[str] = None,
+         agent_ref: Optional[list] = None,
+@@ -4756,6 +4811,7 @@
+                         tool_start_callback=tool_start_callback,
+                         tool_complete_callback=tool_complete_callback,
+                         reasoning_callback=reasoning_callback,
++                        interim_assistant_callback=interim_assistant_callback,
+                         reasoning_effort_override=reasoning_effort_override,
+                         model_override=model_override,
+                         gateway_session_key=gateway_session_key,

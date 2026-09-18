@@ -31,11 +31,13 @@ HERMES_PATCHES=(
     "verso-request-overrides.patch"
     "verso-tool-search-pinned.patch"
     "verso-credential-env-filter.patch"
+    "verso-progress-updates.patch"
 )
 
 HERMES_SOURCE_TEST_PATCHES=(
     "verso-web-routing-tests.patch"
     "verso-credential-env-filter-tests.patch"
+    "verso-progress-updates-tests.patch"
 )
 
 hermes_runtime_patch_stamp() {

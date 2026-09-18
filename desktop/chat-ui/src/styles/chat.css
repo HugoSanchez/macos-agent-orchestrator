@@ -641,6 +641,14 @@
   padding-left: 18px;
 }
 
+.assistant-interim-message {
+  padding-block: 12px;
+}
+
+.assistant-interim-message:first-child {
+  padding-top: 0;
+}
+
 .assistant-response-time {
   display: inline-flex;
   align-items: center;
