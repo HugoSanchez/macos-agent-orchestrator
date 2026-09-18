@@ -40,6 +40,10 @@ import { useChatResponseStream } from './use-chat-response-stream';
 import { useSidecarResources } from './use-sidecar-resources';
 import { useChatInputDrafts } from './use-chat-input-drafts';
 import { useWorkspacePanel } from './use-workspace-panel';
+import { useWorkspaceDocuments } from './use-workspace-documents';
+import { isDocumentTabEntry } from './workspace-documents-model';
+import { WorkspaceDocumentTabs } from './WorkspaceDocumentTabs';
+import { WorkspaceDocumentView } from './WorkspaceDocumentView';
 import { WorkspacePanel, WorkspacePanelToggle } from './WorkspacePanel';
 import { BrowserSidebar } from './BrowserSidebar';
 import { formatSessionSummary } from './session-format';
@@ -230,11 +234,27 @@ export function App() {
   // Workspaces are panel state only; the selected workspace never feeds the
   // active conversation or its prompt context. The hook lives here (not in
   // the panel) so drafts and selection survive closing the panel.
+  // Experimental document tabs: markdown files clicked in the panel open in
+  // the chat column instead of the panel preview. See
+  // workspace-documents-model.ts for the kill switch.
+  const workspaceDocuments = useWorkspaceDocuments({
+    accountId: shellState?.accountId ?? null,
+    connected,
+  });
   const workspacePanel = useWorkspacePanel({
     open: isWorkspacePanelOpen,
     connected,
     accountId: shellState?.accountId ?? null,
+    documentTabs: {
+      claims: isDocumentTabEntry,
+      open: workspaceDocuments.open,
+      onEntryMoved: workspaceDocuments.entryMoved,
+      onEntryDeleted: workspaceDocuments.entryDeleted,
+    },
   });
+  // Picking a conversation brings it to the front; open tabs stay available.
+  const showChatTab = workspaceDocuments.showChat;
+  useEffect(() => { showChatTab(); }, [selectedSessionId, showChatTab]);
 
   const handleCloseCatalog = useCallback(() => {
     dispatchNavigation({ type: 'close-connections-catalog' });
@@ -634,10 +654,14 @@ export function App() {
             ? 'Create a new chat in the sidebar or start typing.'
             : 'Start a new chat or resume an existing session';
 
+  const isChatView = !isSettingsOpen && !selectedCronId && !selectedSkillSlug && !selectedHubSkillIdentifier;
+  const documentTabs = isChatView ? <WorkspaceDocumentTabs documents={workspaceDocuments} /> : null;
+  const activeDocument = isChatView ? workspaceDocuments.activeDocument : null;
+
   const mainPanel = (
     <main className="chat-panel">
       {isNativeShell && (
-        <ChatHeaderScaffold title={headerTitle}>
+        <ChatHeaderScaffold title={headerTitle} tabs={documentTabs}>
           <WorkspacePanelToggle open={isWorkspacePanelOpen} onToggle={handleToggleWorkspacePanel} />
         </ChatHeaderScaffold>
       )}
@@ -662,6 +686,7 @@ export function App() {
           </div>
         </div>
       )}
+      {!isNativeShell && documentTabs}
 
       {isSettingsOpen ? (
         <SettingsPage onBack={handleCloseSettings} initialPanel={settingsInitialPanel} />
@@ -681,6 +706,12 @@ export function App() {
         <HubSkillDetailPage
           identifier={selectedHubSkillIdentifier}
           onTitleResolved={handleSkillTitleResolved}
+        />
+      ) : activeDocument ? (
+        <WorkspaceDocumentView
+          key={activeDocument.key}
+          document={activeDocument}
+          documents={workspaceDocuments}
         />
       ) : (
         <>
@@ -799,18 +830,23 @@ export function App() {
   );
 }
 
-function ChatHeaderScaffold({ title, children }: { title?: string; children?: React.ReactNode }) {
+function ChatHeaderScaffold({
+  title,
+  tabs,
+  children,
+}: {
+  title?: string;
+  /** Second band; only rendered while it has content (document tabs). */
+  tabs?: React.ReactNode;
+  children?: React.ReactNode;
+}) {
   return (
     <div className="chat-header-scaffold">
       <div className="chat-header-band-top" data-window-drag>
         {title && <span className="chat-header-title">{title}</span>}
         {children}
       </div>
-      {/* Second band (tabs) is hidden for launch — bring back when tabs ship.
-      <div className="chat-header-band-tabs">
-        <div className="chat-header-active-line" />
-      </div>
-      */}
+      {tabs}
     </div>
   );
 }

@@ -1,0 +1,147 @@
+--- /dev/null
++++ b/tests/gateway/test_verso_progress_updates.py
+@@ -0,0 +1,144 @@
++"""Exercise Verso commentary through the real HTTP handler and agent runner."""
++import inspect
++import json
++import threading
++
++import pytest
++from aiohttp import web
++from aiohttp.test_utils import TestClient, TestServer
++
++from gateway.config import PlatformConfig
++from gateway.platforms.api_server import APIServerAdapter
++from run_agent import AIAgent
++
++
++@pytest.fixture
++def gateway(monkeypatch):
++    state = {"mode": "plain", "stream_final": True, "agents": [], "gate": None}
++    signature = inspect.signature(AIAgent)
++
++    class ScriptedAgent(AIAgent):
++        def __init__(self, **kwargs):
++            # Keep the real constructor contract while replacing model/network IO.
++            signature.bind(**kwargs)
++            self.kwargs = kwargs
++            self.session_id = kwargs["session_id"]
++            self.interim_assistant_callback = kwargs.get("interim_assistant_callback")
++            self._current_streamed_assistant_text = ""
++            self.show_commentary = True
++            state["agents"].append(self)
++
++        def run_conversation(self, **kwargs):
++            delta = self.kwargs["stream_delta_callback"]
++            text = "I will check your calendar."
++            if state["mode"] in ("streamed", "prefix"):
++                prefix = text if state["mode"] == "streamed" else "I will check"
++                delta(prefix)
++                self._current_streamed_assistant_text = prefix
++            interim = {"role": "assistant", "content": "<think>private deliberation</think>" + text}
++            if state["mode"] == "codex":
++                interim = {"role": "assistant", "content": "", "codex_message_items": [
++                    {"type": "message", "phase": "analysis", "content": [{"type": "output_text", "text": "private deliberation"}]},
++                    {"type": "message", "phase": "commentary", "content": [{"type": "output_text", "text": text}]},
++                ]}
++            self._emit_interim_assistant_message(interim)
++            # The core deduplicates callbacks independently of provider deltas.
++            self._emit_interim_assistant_message(interim)
++            if state["gate"] is not None:
++                assert state["gate"].wait(10), "client did not receive commentary before completion"
++            self.kwargs["tool_start_callback"]("call_calendar", "calendar", {})
++            self.kwargs["tool_complete_callback"]("call_calendar", "calendar", {}, {"free": "Tuesday"})
++            self._current_streamed_assistant_text = ""
++            self._emit_interim_assistant_message({"content": "I found an opening."})
++            if state["stream_final"]:
++                delta("Tuesday is available.")
++            return {"final_response": "Tuesday is available.", "messages": []}
++
++        def interrupt(self, *args, **kwargs):
++            if state["gate"] is not None:
++                state["gate"].set()
++
++    monkeypatch.setattr("run_agent.AIAgent", ScriptedAgent)
++    monkeypatch.setattr("gateway.run._resolve_runtime_agent_kwargs", lambda: {})
++    monkeypatch.setattr("gateway.run._resolve_gateway_model", lambda: "test-model")
++    monkeypatch.setattr("gateway.run._load_gateway_config", lambda: {})
++    monkeypatch.setattr("gateway.run._current_max_iterations", lambda: 10)
++    monkeypatch.setattr("gateway.run.GatewayRunner._load_reasoning_config", staticmethod(lambda: {}))
++    monkeypatch.setattr("gateway.run.GatewayRunner._load_fallback_model", staticmethod(lambda: None))
++    monkeypatch.setattr("hermes_cli.tools_config._get_platform_tools", lambda *_: set())
++    adapter = APIServerAdapter(PlatformConfig(enabled=True))
++    monkeypatch.setattr(adapter, "_ensure_session_db", lambda: None)
++    app = web.Application()
++    app.router.add_post("/v1/responses", adapter._handle_responses)
++    return app, state
++
++
++def events(raw):
++    return [json.loads(line[6:]) for line in raw.splitlines() if line.startswith("data: ")]
++
++
++@pytest.mark.asyncio
++@pytest.mark.parametrize("mode", ["plain", "streamed", "prefix", "codex"])
++@pytest.mark.parametrize("stream_final", [True, False])
++async def test_commentary_is_ordered_separate_and_deduplicated(gateway, mode, stream_final):
++    app, state = gateway
++    state.update(mode=mode, stream_final=stream_final)
++    async with TestClient(TestServer(app)) as client:
++        response = await client.post("/v1/responses", json={
++            "input": "Check my calendar", "stream": True,
++            "instructions": "Keep dates in local time.", "verso_progress_updates": True,
++        })
++        assert response.status == 200
++        raw = await response.text()
++    items = events(raw)
++    commentary = [item for item in items if item["type"] == "hermes.commentary"]
++    assert [item["text"] for item in commentary] == ["I will check your calendar.", "I found an opening."]
++    assert commentary[0]["already_streamed"] is (mode in ("streamed", "prefix"))
++    assert "private deliberation" not in raw
++    tool_start = next(item for item in items if item.get("item", {}).get("type") == "function_call")
++    assert items.index(commentary[0]) < items.index(tool_start) < items.index(commentary[1])
++    final_delta = next(item for item in items if item.get("delta") == "Tuesday is available.")
++    assert items.index(commentary[1]) < items.index(final_delta)
++    assert items[-1]["type"] == "response.completed"
++    final = items[-1]["response"]["output"][-1]["content"][0]["text"]
++    assert final == "Tuesday is available."
++    prompt = state["agents"][0].kwargs["ephemeral_system_prompt"]
++    assert prompt.startswith("Keep dates in local time.")
++    assert "# User-facing progress updates" in prompt
++
++
++@pytest.mark.asyncio
++@pytest.mark.parametrize("setting", [None, False, "false"])
++async def test_opt_out_restores_original_prompt_and_delivery(gateway, setting):
++    app, state = gateway
++    payload = {"input": "Hello", "stream": True, "instructions": "Original instructions."}
++    if setting is not None:
++        payload["verso_progress_updates"] = setting
++    async with TestClient(TestServer(app)) as client:
++        response = await client.post("/v1/responses", json=payload)
++        raw = await response.text()
++    agent = state["agents"][0]
++    assert agent.interim_assistant_callback is None
++    assert agent.kwargs["ephemeral_system_prompt"] == "Original instructions."
++    assert "hermes.commentary" not in raw
++    assert events(raw)[-1]["type"] == "response.completed"
++
++
++@pytest.mark.asyncio
++async def test_commentary_arrives_while_agent_is_still_working(gateway):
++    app, state = gateway
++    gate = state["gate"] = threading.Event()
++    async with TestClient(TestServer(app)) as client:
++        response = await client.post("/v1/responses", json={
++            "input": "Check my calendar", "stream": True, "verso_progress_updates": True,
++        })
++        try:
++            while True:
++                line = await response.content.readline()
++                assert line, "stream ended before commentary"
++                if line.startswith(b"event: hermes.commentary"):
++                    assert not gate.is_set()
++                    break
++        finally:
++            gate.set()
++        assert "response.completed" in await response.text()

@@ -283,6 +283,8 @@ export type ActivityStep =
 
 export interface ChatSSEEvent {
   type: string;
+  text?: string;
+  already_streamed?: boolean;
   message?: string | {
     role?: string;
     content?: Array<{ type: string; text?: string; name?: string; input?: unknown }>;

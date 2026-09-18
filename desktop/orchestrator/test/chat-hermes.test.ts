@@ -12,6 +12,7 @@ describe('Hermes Chat Streaming', () => {
   let breakConversationChain = false;
   let holdResponseStream = false;
   let holdTitleResponse = false;
+  let emitCommentary = false;
   let releaseTitleResponse: (() => void) | null = null;
   let responseCounter = 0;
   let sessionCounter = 0;
@@ -32,6 +33,7 @@ describe('Hermes Chat Streaming', () => {
     breakConversationChain = false;
     holdResponseStream = false;
     holdTitleResponse = false;
+    emitCommentary = false;
     releaseTitleResponse = null;
     responseCounter = 0;
     sessionCounter = 0;
@@ -144,7 +146,7 @@ describe('Hermes Chat Streaming', () => {
               Connection: 'keep-alive',
               'X-Hermes-Session-Id': sessionId,
             });
-            writeResponseStream(res, responseId, outputText, 'Thinking through inflation drivers.');
+            writeResponseStream(res, responseId, outputText, 'Thinking through inflation drivers.', emitCommentary);
           };
           if (holdTitleResponse && input.startsWith('Generate a concise title')) {
             releaseTitleResponse = writeStream;
@@ -565,6 +567,36 @@ describe('Hermes Chat Streaming', () => {
     expect(messages.body.messages[3].content).toBe('Recovered: Second turn');
   });
 
+  it('forwards commentary separately and stores only the final answer', async () => {
+    emitCommentary = true;
+    const created = await fetchJson('/chat/sessions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: 'Progress', model: 'gpt-5.6-sol' }),
+    });
+    const sessionId = created.body.session.id as string;
+    const response = await fetch(url(`/chat/sessions/${sessionId}/messages`), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: 'Check my calendar' }),
+    });
+    const raw = await response.text();
+    const events = raw.split('\n').filter((line) => line.startsWith('data: '))
+      .map((line) => JSON.parse(line.slice(6)));
+    const progress = events.filter((event) => event.type === 'commentary');
+    expect(progress).toEqual([
+      { type: 'commentary', session_id: sessionId, text: 'I will check your calendar.', already_streamed: true },
+      { type: 'commentary', session_id: sessionId, text: 'I found an opening.', already_streamed: false },
+    ]);
+    const tool = events.find((event) => event.type === 'assistant');
+    expect(events.indexOf(progress[0])).toBeLessThan(events.indexOf(tool));
+    expect(events.indexOf(tool)).toBeLessThan(events.indexOf(progress[1]));
+    expect(events.find((event) => event.type === 'reasoning_delta').delta.text)
+      .toBe('Thinking through inflation drivers.');
+    const messages = await fetchJson(`/chat/sessions/${sessionId}/messages`);
+    expect(messages.body.messages.at(-1).content).toBe('Hermes Result: Check my calendar');
+  });
+
   it('marks a memory extraction job pending after a chat turn', async () => {
     const created = await fetchJson('/chat/sessions', {
       method: 'POST',
@@ -601,6 +633,7 @@ function writeResponseStream(
   responseId: string,
   outputText: string,
   reasoningText?: string,
+  commentary = false,
 ): void {
   const messageId = `msg-${responseId}`;
   writeEvent(res, 'response.created', {
@@ -634,6 +667,17 @@ function writeResponseStream(
       delta: reasoningText,
       sequence_number: 2,
     });
+  }
+  if (commentary) {
+    writeEvent(res, 'response.output_text.delta', { delta: 'I will check' });
+    writeEvent(res, 'hermes.commentary', { text: 'I will check your calendar.', already_streamed: true });
+    writeEvent(res, 'response.output_item.added', {
+      item: { type: 'function_call', call_id: 'calendar-1', name: 'calendar', arguments: '{}' },
+    });
+    writeEvent(res, 'response.output_item.added', {
+      item: { type: 'function_call_output', call_id: 'calendar-1', output: 'Tuesday' },
+    });
+    writeEvent(res, 'hermes.commentary', { text: 'I found an opening.', already_streamed: false });
   }
   writeEvent(res, 'response.output_text.delta', {
     type: 'response.output_text.delta',

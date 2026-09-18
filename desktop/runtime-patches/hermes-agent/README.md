@@ -40,11 +40,50 @@ gateway and exercises streaming plus the MCP OAuth routes.
 10. `verso-credential-env-filter.patch` — extends Hermes' existing subprocess
     credential scrubber to cover Verso-managed tokens, secrets, and keys while
     preserving explicitly configured MCP-server environments.
+11. `verso-progress-updates.patch` — connects Hermes' interim assistant callback
+    for interactive requests that opt in with `verso_progress_updates: true`.
+    Adds brief progress guidance to that request's prompt and emits
+    `hermes.commentary` events separately from reasoning and the final answer.
+    Streamed prefixes are promoted to complete commentary without duplication;
+    a final answer returned without deltas still receives its fallback delta.
+    Depends on patches 1 and 8.
 
-`verso-web-routing-tests.patch` and `verso-credential-env-filter-tests.patch`
+`verso-web-routing-tests.patch`, `verso-credential-env-filter-tests.patch`, and
+`verso-progress-updates-tests.patch`
 are source-only companions containing upstream regression tests. The patch
 helper applies them to Hermes source checkouts, but skips them for release
 `site-packages` trees because wheels do not ship `tests/`.
+
+## Progress updates: rollout and rollback
+
+The orchestrator opts interactive chats in by default. Older gateways ignore
+the extra request field, so an older runtime continues to work with the updated
+orchestrator. Other API clients and background requests keep their existing
+behavior unless they explicitly opt in. No database migration or edits to user
+SOUL.md/config files are involved. Existing reasoning presentation is unchanged.
+
+To disable both the new prompt guidance and the interim callback, set
+`VERSO_HERMES_PROGRESS_UPDATES=0` in the **Verso/orchestrator launch environment**
+and restart Verso. `false` and `no` also disable it. For an app launched from
+Finder, quit Verso, run `launchctl setenv VERSO_HERMES_PROGRESS_UPDATES 0`, then
+reopen it. To restore the default, run
+`launchctl unsetenv VERSO_HERMES_PROGRESS_UPDATES` and restart Verso. Setting this
+only in Hermes' `.env` is insufficient: the orchestrator owns the request flag.
+The switch prevents future opt-ins; it does not remove past conversation text.
+
+For a release rollback, ship the previous app bundle; chat storage remains
+compatible. For a source rollback, revert the focused progress-update changes
+(including both patch inventory entries) and rebuild the runtime. Do not remove
+patches from an already-built Python installation: runtime bundles are rebuilt
+from the pinned source and their patch-content stamp.
+
+The source companion tests exercise the real HTTP handler, agent construction,
+thread runner, and SSE writer with scripted model output. They cover updates
+arriving before completion, plain and structured commentary, streamed prefixes,
+tool ordering, reasoning exclusion, final-answer fallback, and opt-out behavior.
+CI runs these tests and the bundle smoke request opts into the same path. Before
+release, also try a multi-tool task with each supported provider: actual update
+frequency depends on the model and tools, and no timer interrupts a running tool.
 
 ## Updating Hermes
 

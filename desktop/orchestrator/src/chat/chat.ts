@@ -603,6 +603,21 @@ async function runHermesMessage(
       return;
     }
 
+    if (eventName === 'hermes.commentary') {
+      const text = typeof data?.text === 'string' ? data.text : '';
+      if (!text.trim()) return;
+      // Commentary ends the current intermediate text segment. It must not
+      // become the saved final answer when the gateway finishes the turn.
+      streamedText = '';
+      sendSSE(opts.res, {
+        type: 'commentary',
+        session_id: opts.session.id,
+        text,
+        already_streamed: data?.already_streamed === true,
+      });
+      return;
+    }
+
     if (isReasoningDeltaEvent(eventName)) {
       const delta = extractReasoningDelta(data);
       if (!delta) return;

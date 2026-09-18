@@ -52,6 +52,23 @@ export function applyChatSSEEvent(msg: ChatMessage, event: ChatSSEEvent): ChatMe
     return { ...msg, content: msg.content + delta };
   }
 
+  if (event.type === 'commentary') {
+    const text = typeof event.text === 'string' ? event.text.trim() : '';
+    if (!text) return msg;
+    // Hermes supplies the complete visible message, which can be longer than
+    // the prefix already streamed. Promote it once before the next tool or
+    // final answer, using the same text steps as ordinary tool-call prose.
+    const pending = msg.content.trim();
+    const preceding = pending && !event.already_streamed && pending !== text
+      ? [...steps, { type: 'text' as const, text: pending }]
+      : steps;
+    const last = preceding[preceding.length - 1];
+    const nextSteps = last?.type === 'text' && last.text === text
+      ? preceding
+      : [...preceding, { type: 'text' as const, text }];
+    return { ...msg, content: '', steps: nextSteps };
+  }
+
   if (event.type === 'reasoning_delta') {
     const delta = typeof ev.delta === 'string' ? ev.delta : ev.delta?.text ?? ev.text ?? '';
     if (!delta) return msg;

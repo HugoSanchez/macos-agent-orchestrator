@@ -18,10 +18,22 @@ const config: HermesGatewayConfig = {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
 });
 
 describe('Hermes response stream', () => {
+  it.each(['0', 'false', ' NO '])('disables progress delivery and guidance with %s', (setting) => {
+    vi.stubEnv('VERSO_HERMES_PROGRESS_UPDATES', setting);
+    const body = buildHermesRequestBody({
+      conversation: 'session-1', userPrompt: 'Hello', conversationHistory: null,
+    });
+    expect(body).not.toHaveProperty('verso_progress_updates');
+    expect(body).not.toHaveProperty('instructions');
+    expect(body.stream).toBe(true);
+  });
+
   it('builds one request body for text, image, model, reasoning, and recovery history', () => {
+    vi.stubEnv('VERSO_HERMES_PROGRESS_UPDATES', undefined);
     const attachments: ChatAttachment[] = [
       { name: 'photo.png', mimeType: 'image/png', dataBase64: 'aW1hZ2U=', kind: 'image' },
       { name: 'notes.pdf', mimeType: 'application/pdf', dataBase64: 'ZG9jdW1lbnQ=', kind: 'document' },
@@ -54,6 +66,7 @@ describe('Hermes response stream', () => {
       truncation: 'auto',
       stream: true,
       store: true,
+      verso_progress_updates: true,
       reasoning: { effort: 'high' },
       model: 'gpt-5.2',
       conversation_history: [{ role: 'user', content: 'Earlier question' }],
