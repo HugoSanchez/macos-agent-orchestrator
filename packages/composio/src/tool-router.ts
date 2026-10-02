@@ -125,6 +125,7 @@ export class ComposioToolRouter {
     userId: string,
     toolSlug: string,
     arguments_: Record<string, unknown> | undefined,
+    connectedAccountId?: string,
   ): Promise<BridgeToolExecutionView> {
     const normalizedUserId = normalizeUserId(userId);
     const slug = toolSlug.trim();
@@ -148,6 +149,22 @@ export class ComposioToolRouter {
 
     const executionSlug = tool?.slug ?? slug;
     this.assertToolkitAllowed(tool?.toolkit?.slug ?? null);
+    if (connectedAccountId) {
+      // IDs are supplied by callers. Verify user ownership and toolkit before
+      // passing one to the project-scoped SDK execution endpoint.
+      let cursor: string | undefined;
+      const visited = new Set<string>();
+      let owned = false;
+      do {
+        const page = await this.options.client.connectedAccounts.list({ userIds: [normalizedUserId], statuses: ['ACTIVE'], limit: 100, ...(cursor ? { cursor } : {}) });
+        owned = page.items.some((account) => account.id === connectedAccountId && !account.isDisabled
+          && account.toolkit.slug === tool?.toolkit?.slug);
+        cursor = page.nextCursor || undefined;
+        if (owned || !cursor || visited.has(cursor)) break;
+        visited.add(cursor);
+      } while (cursor);
+      if (!owned) throw new ComposioServiceError(404, 'Connected account not found for this tool.');
+    }
     if (tool) {
       const missing = getMissingRequiredToolArguments(tool.inputParameters, argumentRecord);
       if (missing.length > 0) {
@@ -167,7 +184,10 @@ export class ComposioToolRouter {
     }
 
     try {
-      const result = await (await this.getSession(normalizedUserId)).execute(executionSlug, argumentRecord);
+      const session = await this.getSession(normalizedUserId);
+      const result = connectedAccountId
+        ? await session.execute(executionSlug, argumentRecord, { account: connectedAccountId })
+        : await session.execute(executionSlug, argumentRecord);
       const record = asRecord(result);
       const error = record ? asString(record.error) : null;
       const logId = record ? asString(record.logId ?? record.log_id) : null;
@@ -201,6 +221,7 @@ export class ComposioToolRouter {
     const session = this.options.client.create(userId, {
       ...(this.options.toolkitScope ? { toolkits: this.options.toolkitScope } : {}),
       manageConnections: false,
+      multiAccount: { enable: true, requireExplicitSelection: true },
     });
     // Treat an in-flight creation as live so concurrent calls share it. Start
     // the TTL only after creation succeeds, rather than consuming it during a

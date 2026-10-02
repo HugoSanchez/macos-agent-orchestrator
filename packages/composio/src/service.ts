@@ -146,9 +146,10 @@ export class ComposioService {
     userId: string,
     toolkitSlug: string,
     callbackUrl: string,
+    addAccount = false,
   ): Promise<BridgeConnectionRequestView> {
     this.assertConfigured();
-    return this.connections!.request(userId, toolkitSlug, callbackUrl);
+    return this.connections!.request(userId, toolkitSlug, callbackUrl, addAccount);
   }
 
   async getRequest(userId: string, requestId: string): Promise<BridgeConnectionRequestView> {
@@ -176,10 +177,10 @@ export class ComposioService {
     userId: string,
     toolSlug: string,
     arguments_: Record<string, unknown> | undefined,
-    _connectedAccountId?: string,
+    connectedAccountId?: string,
   ): Promise<BridgeToolExecutionView> {
     this.assertConfigured();
-    return this.toolRouter!.execute(userId, toolSlug, arguments_);
+    return this.toolRouter!.execute(userId, toolSlug, arguments_, connectedAccountId);
   }
 
   private assertConfigured(): void {

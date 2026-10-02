@@ -68,6 +68,40 @@ afterEach(() => {
 });
 
 describe('ComposioService tool execution', () => {
+  test('routes a selected owned account and rejects foreign or wrong-app IDs', async () => {
+    const fixture = createFixture({ log: vi.fn() });
+    vi.mocked(fixture.client.connectedAccounts.list).mockResolvedValue({ items: [
+      { id: 'work', status: 'ACTIVE', toolkit: { slug: 'slack' } },
+      { id: 'personal', status: 'ACTIVE', toolkit: { slug: 'slack' } },
+      { id: 'gmail', status: 'ACTIVE', toolkit: { slug: 'gmail' } },
+    ] });
+    await fixture.service.executeTool('user_1', 'SLACK_SEARCH_MESSAGES', { query: 'hello' }, 'personal');
+    expect(fixture.execute).toHaveBeenCalledWith('SLACK_SEARCH_MESSAGES', { query: 'hello' }, { account: 'personal' });
+    for (const id of ['foreign', 'gmail']) {
+      await expect(fixture.service.executeTool('user_1', 'SLACK_SEARCH_MESSAGES', { query: 'hello' }, id))
+        .rejects.toMatchObject({ status: 404 });
+    }
+    expect(fixture.execute).toHaveBeenCalledTimes(1);
+  });
+
+  test('adding another account authorizes again while ordinary connect reuses the active account', async () => {
+    const fixture = createFixture({ log: vi.fn() });
+    vi.mocked(fixture.client.connectedAccounts.list).mockResolvedValue({ items: [
+      { id: 'work', status: 'ACTIVE', toolkit: { slug: 'slack' }, state: { val: { displayName: 'work@example.com' } } },
+      { id: 'personal', status: 'ACTIVE', toolkit: { slug: 'slack' }, alias: 'Personal' },
+    ] });
+    const existing = await fixture.service.requestConnection('user_1', 'slack', 'http://127.0.0.1:4242/connections/callback');
+    expect(existing.connectedAccountId).toBe('work');
+    expect(fixture.authorize).not.toHaveBeenCalled();
+    const added = await fixture.service.requestConnection('user_1', 'slack', 'http://127.0.0.1:4242/connections/callback', true);
+    expect(added.redirectUrl).toBe('https://connect.example.test');
+    expect(fixture.authorize).toHaveBeenCalledOnce();
+    expect(await fixture.service.listConnections('user_1')).toEqual([
+      expect.objectContaining({ connectedAccountId: 'work', accountLabel: 'work@example.com' }),
+      expect.objectContaining({ connectedAccountId: 'personal', accountLabel: 'Personal' }),
+    ]);
+  });
+
   test('uses injected SDK schema lookup and Tool Router execution without raw REST', async () => {
     const log = vi.fn();
     const fixture = createFixture({ log });
@@ -76,7 +110,7 @@ describe('ComposioService tool execution', () => {
       .resolves.toEqual({ data: { ok: true }, error: null, logId: 'log_1' });
 
     expect(fixture.client.tools.getRawComposioToolBySlug).toHaveBeenCalledWith('SLACK_SEARCH_MESSAGES');
-    expect(fixture.client.create).toHaveBeenCalledWith('user_1', { manageConnections: false });
+    expect(fixture.client.create).toHaveBeenCalledWith('user_1', { manageConnections: false, multiAccount: { enable: true, requireExplicitSelection: true } });
     expect(fixture.execute).toHaveBeenCalledWith('SLACK_SEARCH_MESSAGES', { query: 'katana' });
     expect(fixture.fetch).not.toHaveBeenCalled();
   });
@@ -234,7 +268,7 @@ describe('ComposioService caching and invalidation', () => {
     await fixture.service.executeTool('user_1', 'SLACK_SEARCH_MESSAGES', { query: 'three' });
     await fixture.service.executeTool('user_2', 'SLACK_SEARCH_MESSAGES', { query: 'four' });
     expect(fixture.client.create).toHaveBeenCalledTimes(3);
-    expect(fixture.client.create).toHaveBeenNthCalledWith(3, 'user_1', { manageConnections: false });
+    expect(fixture.client.create).toHaveBeenNthCalledWith(3, 'user_1', { manageConnections: false, multiAccount: { enable: true, requireExplicitSelection: true } });
   });
 });
 
@@ -286,6 +320,7 @@ describe('ComposioService search fallback and policy', () => {
     expect(fixture.client.create).toHaveBeenCalledWith('user_1', {
       toolkits: ['slack'],
       manageConnections: false,
+      multiAccount: { enable: true, requireExplicitSelection: true },
     });
   });
 
