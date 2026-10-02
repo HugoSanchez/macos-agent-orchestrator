@@ -35,6 +35,7 @@ export class ComposioConnections {
         const metadata = await this.options.catalog.getMetadata(item.toolkit.slug);
         return {
           connectedAccountId: item.id,
+          accountLabel: accountLabel(item),
           toolkitSlug: item.toolkit.slug,
           toolkitName: metadata.toolkitName,
           logoUrl: metadata.logoUrl,
@@ -105,13 +106,13 @@ export class ComposioConnections {
     };
   }
 
-  async request(userId: string, toolkitInput: string, callbackUrl: string): Promise<BridgeConnectionRequestView> {
+  async request(userId: string, toolkitInput: string, callbackUrl: string, addAccount = false): Promise<BridgeConnectionRequestView> {
     const normalizedUserId = normalizeUserId(userId);
     const toolkit = await this.options.catalog.resolve(toolkitInput);
     const activeConnections = await this.list(normalizedUserId);
     const existing = activeConnections.find((connection) =>
       connection.toolkitSlug === toolkit.slug && connection.status === 'active');
-    if (existing) {
+    if (existing && !addAccount) {
       return {
         id: existing.connectedAccountId,
         toolkitSlug: existing.toolkitSlug,
@@ -127,6 +128,7 @@ export class ComposioConnections {
     const session = await this.options.client.create(normalizedUserId, {
       toolkits: [toolkit.slug],
       manageConnections: false,
+      multiAccount: { enable: true, requireExplicitSelection: true },
     });
     if (!session.authorize) throw new ComposioServiceError(502, 'Composio returned an invalid connection session.');
     const request = await session.authorize(toolkit.slug, { callbackUrl });
@@ -156,6 +158,7 @@ export class ComposioConnections {
     }
 
     const connectedAccount = await this.options.client.connectedAccounts.get(id);
+    if (connectedAccount.status === 'ACTIVE') this.options.onConnectionsChanged?.(normalizedUserId);
     const metadata = await this.options.catalog.getMetadata(connectedAccount.toolkit.slug);
     return {
       id: connectedAccount.id,
@@ -219,6 +222,12 @@ export class ComposioConnections {
       cursor = nextCursor;
     }
   }
+}
+
+// Only expose provider identity, never the credential-bearing state object.
+function accountLabel(item: ConnectedAccountItem): string | null {
+  const displayName = item.state?.val?.displayName;
+  return (typeof displayName === 'string' ? displayName.trim() : '') || item.alias?.trim() || null;
 }
 
 // The SDK does not expose a stable error type; recognize a missing-record

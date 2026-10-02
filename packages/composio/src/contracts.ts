@@ -14,6 +14,7 @@ export interface BridgeConnectionRequestView {
 
 export interface BridgeConnectionView {
   connectedAccountId: string;
+  accountLabel?: string | null;
   toolkitSlug: string;
   toolkitName: string;
   logoUrl: string | null;
@@ -108,6 +109,8 @@ export interface ComposioToolView extends ToolkitToolItem {
 
 export interface ConnectedAccountItem {
   id: string;
+  alias?: string | null;
+  state?: { val?: { displayName?: unknown } };
   status?: string;
   statusReason?: string | null;
   isDisabled?: boolean;
@@ -117,7 +120,7 @@ export interface ConnectedAccountItem {
 export interface ToolRouterSessionLike {
   sessionId?: string;
   search: (params: { query: string; toolkits?: string[] }) => Promise<unknown>;
-  execute: (toolSlug: string, arguments_: Record<string, unknown>) => Promise<unknown>;
+  execute: (toolSlug: string, arguments_: Record<string, unknown>, options?: { account: string }) => Promise<unknown>;
   authorize?: (toolkitSlug: string, options: { callbackUrl: string }) => Promise<{
     id: string;
     status?: string;
@@ -147,6 +150,7 @@ export interface ComposioClient {
   create: (userId: string, options: {
     toolkits?: string[];
     manageConnections: false;
+    multiAccount?: { enable: true; requireExplicitSelection: true };
   }) => Promise<ToolRouterSessionLike>;
 }
 
