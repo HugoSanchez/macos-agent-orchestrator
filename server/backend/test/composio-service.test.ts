@@ -51,6 +51,7 @@ function createFixture(dependencies: Omit<ComposioServiceDependencies, 'client'>
       })),
     },
     tools: {
+      proxyExecute: vi.fn(async () => ({ status: 200, data: { emailAddress: 'work@example.com' } })),
       execute: directExecute,
       getRawComposioToolBySlug: vi.fn(async () => slackSearchTool),
     },
@@ -109,6 +110,54 @@ describe('ComposioService tool execution', () => {
     await expect(fixture.service.executeTool('user_1', 'SLACK_SEARCH_MESSAGES', { query: 'hello' }, 'work'))
       .rejects.toThrow('Account unavailable');
     expect(fixture.execute).not.toHaveBeenCalled();
+  });
+
+  test('resolves missing Gmail labels through each owned account and caches separately', async () => {
+    const fixture = createFixture({ log: vi.fn() });
+    vi.mocked(fixture.client.connectedAccounts.list).mockResolvedValue({ items: [
+      { id: 'work', status: 'ACTIVE', toolkit: { slug: 'gmail' } },
+      { id: 'personal', status: 'ACTIVE', toolkit: { slug: 'gmail' } },
+      { id: 'disabled', status: 'ACTIVE', isDisabled: true, toolkit: { slug: 'gmail' } },
+    ] });
+    vi.mocked(fixture.client.tools.proxyExecute).mockImplementation(async ({ connectedAccountId }) => ({
+      status: 200, data: { emailAddress: `${connectedAccountId}@example.com`, ignored: 'private provider data' },
+    }));
+    const connections = await fixture.service.listConnections('user_1');
+    expect(connections.map(({ accountLabel }) => accountLabel)).toEqual(['work@example.com', 'personal@example.com']);
+    expect(JSON.stringify(connections)).not.toContain('private provider data');
+    expect(fixture.client.tools.proxyExecute).toHaveBeenNthCalledWith(1, {
+      connectedAccountId: 'work', endpoint: 'https://gmail.googleapis.com/gmail/v1/users/me/profile', method: 'GET',
+    });
+    expect(fixture.client.tools.proxyExecute).toHaveBeenNthCalledWith(2, {
+      connectedAccountId: 'personal', endpoint: 'https://gmail.googleapis.com/gmail/v1/users/me/profile', method: 'GET',
+    });
+    await fixture.service.listConnections('user_1');
+    expect(fixture.client.tools.proxyExecute).toHaveBeenCalledTimes(2);
+  });
+
+  test('an unavailable Gmail profile leaves connections usable and retries after a short cache', async () => {
+    let now = 0;
+    const fixture = createFixture({ log: vi.fn(), now: () => now });
+    vi.mocked(fixture.client.connectedAccounts.list).mockResolvedValue({ items: [
+      { id: 'work', status: 'ACTIVE', toolkit: { slug: 'gmail' } },
+    ] });
+    vi.mocked(fixture.client.tools.proxyExecute).mockRejectedValueOnce(new Error('Provider unavailable'));
+    expect((await fixture.service.listConnections('user_1'))[0].accountLabel).toBeNull();
+    await fixture.service.listConnections('user_1');
+    expect(fixture.client.tools.proxyExecute).toHaveBeenCalledTimes(1);
+    now = 30_001;
+    expect((await fixture.service.listConnections('user_1'))[0].accountLabel).toBe('work@example.com');
+  });
+
+  test('does not request Gmail profiles for inactive or already labeled accounts', async () => {
+    const fixture = createFixture({ log: vi.fn() });
+    vi.mocked(fixture.client.connectedAccounts.list).mockResolvedValue({ items: [
+      { id: 'inactive', status: 'INACTIVE', toolkit: { slug: 'gmail' } },
+      { id: 'labeled', status: 'ACTIVE', toolkit: { slug: 'gmail' }, state: { val: { displayName: 'known@example.com' } } },
+    ] });
+    expect((await fixture.service.listConnections('user_1')).map(({ accountLabel }) => accountLabel))
+      .toEqual([null, 'known@example.com']);
+    expect(fixture.client.tools.proxyExecute).not.toHaveBeenCalled();
   });
 
   test('adding another account authorizes again while ordinary connect reuses the active account', async () => {

@@ -146,6 +146,7 @@ export interface ComposioClient {
     get: (slug: string) => Promise<ToolkitSdkItem>;
   };
   tools: {
+    proxyExecute: (options: { connectedAccountId: string; endpoint: string; method: 'GET' }) => Promise<{ status: number; data?: unknown }>;
     getRawComposioToolBySlug: (slug: string) => Promise<unknown>;
     execute: (slug: string, options: {
       userId: string;
