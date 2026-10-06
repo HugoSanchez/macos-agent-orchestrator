@@ -9,22 +9,29 @@ import type {
 } from './contracts.ts';
 import type { ConnectedAccountRevoker } from './account-revoker.ts';
 import type { ComposioToolkitCatalog } from './toolkit-catalog.ts';
-import { mapConnectedAccountStatus, normalizeUserId } from './shared.ts';
+import { asRecord, asString, mapConnectedAccountStatus, normalizeUserId } from './shared.ts';
 
 export interface ComposioConnectionsOptions {
   client: ComposioClient;
   catalog: ComposioToolkitCatalog;
   accountRevoker: ConnectedAccountRevoker;
   log?: ComposioLog;
+  now?: () => number;
   onConnectionsChanged?: (userId: string) => void;
 }
 
 /** Owns connected-account lifecycle and the user-ownership security boundary. */
 export class ComposioConnections {
+  private readonly identities = new Map<string, { expiresAt: number; value: Promise<string | null> }>();
+
   constructor(private readonly options: ComposioConnectionsOptions) {}
 
   async list(userId: string): Promise<BridgeConnectionView[]> {
     const normalizedUserId = normalizeUserId(userId);
+    const now = (this.options.now ?? Date.now)();
+    for (const [key, cached] of this.identities) {
+      if (cached.expiresAt <= now) this.identities.delete(key);
+    }
     const accounts: ConnectedAccountItem[] = [];
     for await (const page of this.accountPages(normalizedUserId, ['ACTIVE', 'INACTIVE'])) {
       accounts.push(...page);
@@ -35,7 +42,7 @@ export class ComposioConnections {
         const metadata = await this.options.catalog.getMetadata(item.toolkit.slug);
         return {
           connectedAccountId: item.id,
-          accountLabel: accountLabel(item),
+          accountLabel: await this.resolveAccountLabel(normalizedUserId, item),
           toolkitSlug: item.toolkit.slug,
           toolkitName: metadata.toolkitName,
           logoUrl: metadata.logoUrl,
@@ -43,6 +50,30 @@ export class ComposioConnections {
         } satisfies BridgeConnectionView;
       }));
     return items.sort((left, right) => left.toolkitName.localeCompare(right.toolkitName));
+  }
+
+  private async resolveAccountLabel(userId: string, item: ConnectedAccountItem): Promise<string | null> {
+    const label = accountLabel(item);
+    if (label || item.toolkit.slug !== 'gmail' || item.status !== 'ACTIVE') return label;
+    // Only called for accounts from the authenticated user's owned-account list.
+    // Use a fixed Google endpoint and expose only its email, never credentials.
+    const key = JSON.stringify([userId, item.id]);
+    const cached = this.identities.get(key);
+    if (cached) return cached.value;
+    const entry = {
+      expiresAt: Number.POSITIVE_INFINITY,
+      value: Promise.resolve().then(() => this.options.client.tools.proxyExecute({
+        connectedAccountId: item.id,
+        endpoint: 'https://gmail.googleapis.com/gmail/v1/users/me/profile',
+        method: 'GET',
+      })).then((response) => response.status === 200
+        ? asString(asRecord(response.data)?.emailAddress)?.trim() || null : null)
+        .catch(() => null),
+    };
+    this.identities.set(key, entry);
+    const identity = await entry.value;
+    entry.expiresAt = (this.options.now ?? Date.now)() + (identity ? 10 * 60_000 : 30_000);
+    return identity;
   }
 
   async delete(userId: string, connectedAccountId: string): Promise<DisconnectConnectionResult> {
@@ -147,6 +178,7 @@ export class ComposioConnections {
   async getRequest(userId: string, requestId: string): Promise<BridgeConnectionRequestView> {
     const normalizedUserId = normalizeUserId(userId);
     const id = requestId.trim();
+    this.identities.delete(JSON.stringify([normalizedUserId, id]));
     if (!id) throw new ComposioServiceError(400, 'Missing "requestId"');
 
     // `connectedAccounts.get(id)` is project-scoped and does not enforce the

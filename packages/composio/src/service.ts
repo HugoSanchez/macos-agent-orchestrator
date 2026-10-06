@@ -107,6 +107,7 @@ export class ComposioService {
     const lifecycleLog: ComposioLog = dependencies.log
       ?? ((event, details) => console.warn(`[composio] ${event}`, details));
     this.connections = new ComposioConnections({
+      now: dependencies.now,
       client: this.client,
       catalog: this.catalog,
       accountRevoker: dependencies.accountRevoker ?? new ComposioAccountRevoker({
