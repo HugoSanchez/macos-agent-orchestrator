@@ -6,6 +6,7 @@ import type {
   ComposioLog,
   ConnectedAccountItem,
   DisconnectConnectionResult,
+  ProviderRevocationStatus,
 } from './contracts.ts';
 import type { ConnectedAccountRevoker } from './account-revoker.ts';
 import type { ComposioToolkitCatalog } from './toolkit-catalog.ts';
@@ -23,6 +24,8 @@ export interface ComposioConnectionsOptions {
 /** Owns connected-account lifecycle and the user-ownership security boundary. */
 export class ComposioConnections {
   private readonly identities = new Map<string, { expiresAt: number; value: Promise<string | null> }>();
+
+  private readonly deletions = new Map<string, Promise<void>>();
 
   constructor(private readonly options: ComposioConnectionsOptions) {}
 
@@ -62,13 +65,7 @@ export class ComposioConnections {
     if (cached) return cached.value;
     const entry = {
       expiresAt: Number.POSITIVE_INFINITY,
-      value: Promise.resolve().then(() => this.options.client.tools.proxyExecute({
-        connectedAccountId: item.id,
-        endpoint: 'https://gmail.googleapis.com/gmail/v1/users/me/profile',
-        method: 'GET',
-      })).then((response) => response.status === 200
-        ? asString(asRecord(response.data)?.emailAddress)?.trim() || null : null)
-        .catch(() => null),
+      value: this.readGmailIdentity(item.id).catch(() => null),
     };
     this.identities.set(key, entry);
     const identity = await entry.value;
@@ -76,8 +73,52 @@ export class ComposioConnections {
     return identity;
   }
 
+  private async readGmailIdentity(id: string): Promise<string | null> {
+    const response = await this.options.client.tools.proxyExecute({
+      connectedAccountId: id,
+      endpoint: 'https://gmail.googleapis.com/gmail/v1/users/me/profile',
+      method: 'GET',
+    });
+    return response.status === 200 ? asString(asRecord(response.data)?.emailAddress)?.trim() || null : null;
+  }
+
+  private async hasActiveGmailDuplicate(userId: string, owned: ConnectedAccountItem): Promise<boolean> {
+    if (owned.toolkit.slug !== 'gmail' || owned.status === 'REVOKED') return false;
+    const candidates: ConnectedAccountItem[] = [];
+    for await (const page of this.accountPages(userId, ['ACTIVE'])) {
+      candidates.push(...page.filter((item) => item.id !== owned.id && item.toolkit.slug === 'gmail'
+        && item.status === 'ACTIVE' && !item.isDisabled));
+    }
+    if (!candidates.length) return false;
+    // Labels can be aliases or stale. Verify both Google identities afresh before
+    // retaining authorization for a second connection owned by this same user.
+    const identity = async (id: string) => {
+      const email = await this.readGmailIdentity(id).catch(() => null);
+      if (!email) throw new ComposioServiceError(502, 'Could not verify Gmail identities before removal. Try again.');
+      return email.toLowerCase();
+    };
+    const email = await identity(owned.id);
+    for (const candidate of candidates) {
+      if (await identity(candidate.id) === email) return true;
+    }
+    return false;
+  }
+
   async delete(userId: string, connectedAccountId: string): Promise<DisconnectConnectionResult> {
     const normalizedUserId = normalizeUserId(userId);
+    // Serialize removals so two simultaneous requests cannot both treat the
+    // other connection as retained and skip revoking the final authorization.
+    const previous = this.deletions.get(normalizedUserId) ?? Promise.resolve();
+    const result = previous.then(() => this.deleteOwnedConnection(normalizedUserId, connectedAccountId));
+    const settled = result.then(() => undefined, () => undefined);
+    this.deletions.set(normalizedUserId, settled);
+    try { return await result; }
+    finally {
+      if (this.deletions.get(normalizedUserId) === settled) this.deletions.delete(normalizedUserId);
+    }
+  }
+
+  private async deleteOwnedConnection(normalizedUserId: string, connectedAccountId: string): Promise<DisconnectConnectionResult> {
     const id = connectedAccountId.trim();
     if (!id) throw new ComposioServiceError(400, 'Missing "connectedAccountId"');
 
@@ -96,8 +137,10 @@ export class ComposioConnections {
     // would hide the row from the filtered connection list and strand a live
     // credential if the revoke needed a retry. A retryable revoke failure
     // throws here and leaves the account untouched.
-    const revocation = await this.options.accountRevoker.revoke(id);
-    if (revocation.status === 'manual_action_required') {
+    const retained = await this.hasActiveGmailDuplicate(normalizedUserId, owned);
+    const revocation = retained ? null : await this.options.accountRevoker.revoke(id);
+    const providerRevocation: ProviderRevocationStatus = revocation?.status ?? 'retained_for_duplicate';
+    if (revocation?.status === 'manual_action_required') {
       this.emitLifecycleEvent('composio.disconnect.manualActionRequired', {
         connectedAccountId: id,
         toolkitSlug: owned.toolkit.slug,
@@ -107,11 +150,16 @@ export class ComposioConnections {
 
     // Disable makes the UI update immediately while Composio's soft delete
     // converges. Deletion remains the security-critical operation.
-    try {
-      await this.options.client.connectedAccounts.disable(id);
-    } catch {
-      // Best effort only; deletion below still removes the credential record.
+    if (!retained) {
+      try {
+        await this.options.client.connectedAccounts.disable(id);
+      } catch {
+        // Best effort only; deletion below still removes the credential record.
+      }
     }
+    // For duplicate cleanup, leave the connection usable if deletion fails.
+    // Deleting its Composio record removes it without revoking Google's shared
+    // grant, which the retained connection still needs.
 
     try {
       await this.options.client.connectedAccounts.delete(id);
@@ -120,7 +168,7 @@ export class ComposioConnections {
         // Logged distinctly for monitoring: the provider grant is revoked but
         // Composio's credential record still exists. A retry is safe — revoke
         // then returns 409 and proceeds as manual_action_required.
-        this.emitLifecycleEvent('composio.disconnect.deleteFailedAfterRevoke', {
+        this.emitLifecycleEvent(retained ? 'composio.disconnect.duplicateDeleteFailed' : 'composio.disconnect.deleteFailedAfterRevoke', {
           connectedAccountId: id,
           toolkitSlug: owned.toolkit.slug,
         });
@@ -133,7 +181,7 @@ export class ComposioConnections {
     return {
       connectedAccountId: id,
       composioAccountDeleted: true,
-      providerRevocation: revocation.status,
+      providerRevocation,
     };
   }
 

@@ -73,7 +73,7 @@ describe('ConnectionsService', () => {
     expect(store.listConnections()).toEqual([]);
   });
 
-  it.each(['revoked', 'already_absent', 'manual_action_required'] as const)(
+  it.each(['revoked', 'already_absent', 'manual_action_required', 'retained_for_duplicate'] as const)(
     'propagates the backend disconnect result "%s" and removes the local row',
     async (providerRevocation) => {
       const { service, store } = setupService();
