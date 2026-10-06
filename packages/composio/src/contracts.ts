@@ -102,6 +102,7 @@ export interface ToolkitToolItem {
 }
 
 export interface ComposioToolView extends ToolkitToolItem {
+  version?: string | null;
   description: string | null;
   toolkit: { slug?: string | null; name?: string | null } | null;
   inputParameters: Record<string, unknown> | null;
@@ -146,6 +147,13 @@ export interface ComposioClient {
   };
   tools: {
     getRawComposioToolBySlug: (slug: string) => Promise<unknown>;
+    execute: (slug: string, options: {
+      userId: string;
+      connectedAccountId: string;
+      arguments: Record<string, unknown>;
+      version?: string;
+      dangerouslySkipVersionCheck?: boolean;
+    }) => Promise<unknown>;
   };
   create: (userId: string, options: {
     toolkits?: string[];
