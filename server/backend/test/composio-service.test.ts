@@ -9,6 +9,7 @@ import {
 } from '../src/composio/service.ts';
 
 const slackSearchTool = {
+  version: '20261001_00',
   slug: 'SLACK_SEARCH_MESSAGES',
   name: 'Search messages',
   description: null,
@@ -22,6 +23,7 @@ const slackSearchTool = {
 
 function createFixture(dependencies: Omit<ComposioServiceDependencies, 'client'> = {}) {
   const execute = vi.fn(async () => ({ data: { ok: true }, error: null, logId: 'log_1' }));
+  const directExecute = vi.fn(async (_slug: string, options: { connectedAccountId: string }) => ({ data: { account: options.connectedAccountId }, error: null, logId: 'log_direct' }));
   const search = vi.fn(async () => ({ results: [] }));
   const authorize = vi.fn(async () => ({
     id: 'request_1',
@@ -49,6 +51,7 @@ function createFixture(dependencies: Omit<ComposioServiceDependencies, 'client'>
       })),
     },
     tools: {
+      execute: directExecute,
       getRawComposioToolBySlug: vi.fn(async () => slackSearchTool),
     },
     create: vi.fn(async () => ({ sessionId: 'session_1', search, execute, authorize })),
@@ -60,7 +63,7 @@ function createFixture(dependencies: Omit<ComposioServiceDependencies, 'client'>
     revoke: vi.fn(async (_id: string): Promise<ProviderRevocationResult> => ({ status: 'revoked' })),
   };
   const service = new ComposioService('test-key', { client, fetch, accountRevoker, ...dependencies });
-  return { service, client, fetch, execute, search, authorize, accountRevoker };
+  return { service, client, fetch, execute, directExecute, search, authorize, accountRevoker };
 }
 
 afterEach(() => {
@@ -76,12 +79,36 @@ describe('ComposioService tool execution', () => {
       { id: 'gmail', status: 'ACTIVE', toolkit: { slug: 'gmail' } },
     ] });
     await fixture.service.executeTool('user_1', 'SLACK_SEARCH_MESSAGES', { query: 'hello' }, 'personal');
-    expect(fixture.execute).toHaveBeenCalledWith('SLACK_SEARCH_MESSAGES', { query: 'hello' }, { account: 'personal' });
+    expect(fixture.directExecute).toHaveBeenCalledWith('SLACK_SEARCH_MESSAGES', {
+      userId: 'user_1', connectedAccountId: 'personal', arguments: { query: 'hello' }, version: '20261001_00',
+    });
+    const work = await fixture.service.executeTool('user_1', 'SLACK_SEARCH_MESSAGES', { query: 'hello' }, 'work');
+    expect(work.data).toEqual({ account: 'work' });
+    expect(fixture.execute).not.toHaveBeenCalled();
+    expect(fixture.client.create).not.toHaveBeenCalled();
     for (const id of ['foreign', 'gmail']) {
       await expect(fixture.service.executeTool('user_1', 'SLACK_SEARCH_MESSAGES', { query: 'hello' }, id))
         .rejects.toMatchObject({ status: 404 });
     }
-    expect(fixture.execute).toHaveBeenCalledTimes(1);
+    expect(fixture.directExecute).toHaveBeenCalledTimes(2);
+  });
+
+  test('explicit accounts cannot bypass the configured toolkit scope', async () => {
+    const fixture = createFixture({ toolRouterToolkits: 'gmail', log: vi.fn() });
+    await expect(fixture.service.executeTool('user_1', 'SLACK_SEARCH_MESSAGES', { query: 'hello' }, 'work'))
+      .rejects.toMatchObject({ status: 403 });
+    expect(fixture.directExecute).not.toHaveBeenCalled();
+  });
+
+  test('does not fall back to a session if account-bound execution fails', async () => {
+    const fixture = createFixture({ log: vi.fn() });
+    vi.mocked(fixture.client.connectedAccounts.list).mockResolvedValue({ items: [
+      { id: 'work', status: 'ACTIVE', toolkit: { slug: 'slack' } },
+    ] });
+    fixture.directExecute.mockRejectedValue(new Error('Account unavailable'));
+    await expect(fixture.service.executeTool('user_1', 'SLACK_SEARCH_MESSAGES', { query: 'hello' }, 'work'))
+      .rejects.toThrow('Account unavailable');
+    expect(fixture.execute).not.toHaveBeenCalled();
   });
 
   test('adding another account authorizes again while ordinary connect reuses the active account', async () => {

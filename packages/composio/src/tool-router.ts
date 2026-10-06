@@ -150,6 +150,9 @@ export class ComposioToolRouter {
     const executionSlug = tool?.slug ?? slug;
     this.assertToolkitAllowed(tool?.toolkit?.slug ?? null);
     if (connectedAccountId) {
+      if (this.options.toolkitScope && !this.options.toolkitScope.includes(tool?.toolkit?.slug ?? '')) {
+        throw new ComposioServiceError(403, 'Toolkit is outside the configured execution scope.');
+      }
       // IDs are supplied by callers. Verify user ownership and toolkit before
       // passing one to the project-scoped SDK execution endpoint.
       let cursor: string | undefined;
@@ -184,10 +187,20 @@ export class ComposioToolRouter {
     }
 
     try {
-      const session = await this.getSession(normalizedUserId);
+      // Bind explicit selections at the credential endpoint instead of relying
+      // on a shared session to resolve the selected account.
       const result = connectedAccountId
-        ? await session.execute(executionSlug, argumentRecord, { account: connectedAccountId })
-        : await session.execute(executionSlug, argumentRecord);
+        ? await this.options.client.tools.execute(executionSlug, {
+          userId: normalizedUserId,
+          connectedAccountId,
+          arguments: argumentRecord,
+          ...(tool?.version && tool.version !== 'latest'
+            ? { version: tool.version }
+            // Dynamic discovery already uses the current schema. Older tool
+            // metadata can omit its version, as with session execution.
+            : { dangerouslySkipVersionCheck: true }),
+        })
+        : await (await this.getSession(normalizedUserId)).execute(executionSlug, argumentRecord);
       const record = asRecord(result);
       const error = record ? asString(record.error) : null;
       const logId = record ? asString(record.logId ?? record.log_id) : null;
@@ -263,6 +276,7 @@ export class ComposioToolRouter {
     const toolkit = asRecord(record.toolkit);
     return {
       slug: asString(record.slug) ?? slug,
+      version: asString(record.version),
       name: asString(record.name) ?? slug,
       description: asString(record.description),
       toolkit: toolkit ? { slug: asString(toolkit.slug), name: asString(toolkit.name) } : null,
