@@ -485,6 +485,60 @@ describe('ComposioService connection ownership', () => {
     expect(fixture.client.connectedAccounts.get).not.toHaveBeenCalled();
   });
 
+  test('removes a verified duplicate without revoking the retained Google authorization', async () => {
+    const fixture = createFixture({ log: vi.fn() });
+    vi.mocked(fixture.client.connectedAccounts.list).mockResolvedValue({ items: [
+      { id: 'duplicate', status: 'ACTIVE', toolkit: { slug: 'gmail' } },
+      { id: 'keep', status: 'ACTIVE', toolkit: { slug: 'gmail' } },
+    ] });
+    await expect(fixture.service.deleteConnection('user_1', 'duplicate')).resolves.toMatchObject({
+      composioAccountDeleted: true, providerRevocation: 'retained_for_duplicate',
+    });
+    expect(fixture.accountRevoker.revoke).not.toHaveBeenCalled();
+    expect(fixture.client.connectedAccounts.disable).not.toHaveBeenCalled();
+    expect(fixture.client.connectedAccounts.delete).toHaveBeenCalledExactlyOnceWith('duplicate');
+    expect(fixture.client.tools.proxyExecute).toHaveBeenCalledTimes(2);
+  });
+
+  test('matching aliases do not suppress revocation for different Google identities', async () => {
+    const fixture = createFixture({ log: vi.fn() });
+    vi.mocked(fixture.client.connectedAccounts.list).mockResolvedValue({ items: [
+      { id: 'work', alias: 'Gmail', status: 'ACTIVE', toolkit: { slug: 'gmail' } },
+      { id: 'personal', alias: 'Gmail', status: 'ACTIVE', toolkit: { slug: 'gmail' } },
+    ] });
+    vi.mocked(fixture.client.tools.proxyExecute).mockImplementation(async ({ connectedAccountId }) => ({
+      status: 200, data: { emailAddress: `${connectedAccountId}@example.com` },
+    }));
+    await expect(fixture.service.deleteConnection('user_1', 'work')).resolves.toMatchObject({ providerRevocation: 'revoked' });
+    expect(fixture.accountRevoker.revoke).toHaveBeenCalledExactlyOnceWith('work');
+  });
+
+  test.each(['ACTIVE', 'INACTIVE'])('does not remove a %s account if duplicate identity verification fails', async (status) => {
+    const fixture = createFixture({ log: vi.fn() });
+    vi.mocked(fixture.client.connectedAccounts.list).mockResolvedValue({ items: [
+      { id: 'work', status, toolkit: { slug: 'gmail' } },
+      { id: 'personal', status: 'ACTIVE', toolkit: { slug: 'gmail' } },
+    ] });
+    vi.mocked(fixture.client.tools.proxyExecute).mockRejectedValue(new Error('Provider unavailable'));
+    await expect(fixture.service.deleteConnection('user_1', 'work')).rejects.toMatchObject({ status: 502 });
+    expect(fixture.accountRevoker.revoke).not.toHaveBeenCalled();
+    expect(fixture.client.connectedAccounts.delete).not.toHaveBeenCalled();
+    expect(fixture.client.connectedAccounts.disable).not.toHaveBeenCalled();
+  });
+
+  test('serializes duplicate removals and revokes the final remaining authorization', async () => {
+    const fixture = createFixture({ log: vi.fn() });
+    let items = ['first', 'last'].map((id) => ({ id, status: 'ACTIVE', toolkit: { slug: 'gmail' } }));
+    vi.mocked(fixture.client.connectedAccounts.list).mockImplementation(async () => ({ items }));
+    vi.mocked(fixture.client.connectedAccounts.delete).mockImplementation(async (id) => {
+      items = items.filter((item) => item.id !== id);
+      return {};
+    });
+    const results = await Promise.all(['first', 'last'].map((id) => fixture.service.deleteConnection('user_1', id)));
+    expect(results.map((result) => result.providerRevocation)).toEqual(['retained_for_duplicate', 'revoked']);
+    expect(fixture.accountRevoker.revoke).toHaveBeenCalledExactlyOnceWith('last');
+  });
+
   test('verifies ownership with trimmed ids, then revokes, disables, and deletes in order', async () => {
     const fixture = createFixture({ log: vi.fn() });
     vi.mocked(fixture.client.connectedAccounts.list).mockResolvedValue({

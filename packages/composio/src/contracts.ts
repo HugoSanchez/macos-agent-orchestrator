@@ -21,7 +21,7 @@ export interface BridgeConnectionView {
   status: ConnectionStatus;
 }
 
-export type ProviderRevocationStatus = 'revoked' | 'already_absent' | 'manual_action_required';
+export type ProviderRevocationStatus = 'revoked' | 'already_absent' | 'manual_action_required' | 'retained_for_duplicate';
 
 /**
  * Result of a disconnect after the provider-revocation attempt. Contains no

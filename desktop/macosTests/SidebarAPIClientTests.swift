@@ -117,6 +117,7 @@ final class SidebarAPIClientTests: XCTestCase {
             ("revoked", .revoked),
             ("already_absent", .alreadyAbsent),
             ("manual_action_required", .manualActionRequired),
+            ("retained_for_duplicate", .retainedForDuplicate),
         ]
         for (raw, expected) in cases {
             let transport = SidebarStubTransport { request in

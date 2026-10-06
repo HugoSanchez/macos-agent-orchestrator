@@ -174,7 +174,7 @@ export class RemoteComposioBridgeClient implements ConnectedAppsProvider {
 }
 
 const REMOTE_PROVIDER_REVOCATIONS: readonly RemoteProviderRevocation[] =
-  ['revoked', 'already_absent', 'manual_action_required'];
+  ['revoked', 'already_absent', 'manual_action_required', 'retained_for_duplicate'];
 
 // A 200 body must positively confirm the deletion of the account we asked
 // about before the caller may drop the local row. Missing fields, a false

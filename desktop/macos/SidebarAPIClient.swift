@@ -86,6 +86,7 @@ struct SidebarCustomConnectorStatus: Decodable, Equatable {
 enum SidebarProviderRevocation: String, Decodable, Equatable {
     case revoked
     case alreadyAbsent = "already_absent"
+    case retainedForDuplicate = "retained_for_duplicate"
     case manualActionRequired = "manual_action_required"
 
     init(from decoder: Decoder) throws {
