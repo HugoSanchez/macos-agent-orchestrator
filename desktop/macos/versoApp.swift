@@ -240,6 +240,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .store(in: &cancellables)
 
         if runtimeConfiguration.requiresManagedSession {
+            NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didWakeNotification)
+                .merge(with: NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification))
+                .receive(on: RunLoop.main)
+                .sink { [weak self] _ in
+                    Task { @MainActor [weak self] in
+                        await self?.managedSessionStore.refreshAfterWake()
+                    }
+                }
+                .store(in: &cancellables)
+
             managedSessionStore.$currentSession
                 .removeDuplicates()
                 .sink { [weak self] session in

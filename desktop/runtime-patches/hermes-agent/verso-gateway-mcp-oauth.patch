@@ -19,7 +19,7 @@
      # ------------------------------------------------------------------
 --- a/gateway/platforms/verso_mcp_oauth.py	1970-01-01 01:00:00
 +++ b/gateway/platforms/verso_mcp_oauth.py	2026-08-17 11:25:21
-@@ -0,0 +1,428 @@
+@@ -0,0 +1,432 @@
 +"""Verso runtime patch: MCP OAuth flow endpoints on the gateway API server.
 +
 +Mirrors the dashboard-mediated MCP OAuth flow from ``hermes_cli/web_server.py``
@@ -167,18 +167,16 @@
 +                        flow.server_name,
 +                        hermes_home=flow.hermes_home,
 +                    )
-+                    # Floor BOTH timeouts above the SDK's 300s browser-callback
-+                    # window. connect_timeout caps the connect attempt; the
-+                    # entry's request `timeout` (the managed config writes 120)
-+                    # otherwise aborts the whole OAuth handshake at 2 minutes -
-+                    # less than a human needs to sign in - leaving the flow
-+                    # dead ("OAuth flow expired") by the time the provider
-+                    # redirects back.
++                    # Both the outer probe and the transport's initialize()
++                    # deadline must outlast browser sign-in. Passing only the
++                    # probe keyword leaves cfg's 30s deadline in _run_http,
++                    # which retries and replaces state while the browser is open.
++                    cfg["connect_timeout"] = max(float(cfg.get("connect_timeout", 0) or 0), 330)
 +                    cfg["timeout"] = max(float(cfg.get("timeout", 0) or 0), 330)
 +                    tools = _probe_single_server(
 +                        flow.server_name,
 +                        cfg,
-+                        connect_timeout=max(float(cfg.get("connect_timeout", 0) or 0), 330),
++                        connect_timeout=cfg["connect_timeout"],
 +                    )
 +                    if not _oauth_tokens_present(flow.server_name):
 +                        raise RuntimeError(
@@ -392,6 +390,12 @@
 +    out = {}
 +    for name, task in dict(servers).items():
 +        try:
++            # Registered names can linger during reconnect backoff. Report
++            # only a live session, never credentials or stale tool schemas.
++            worker = getattr(task, "_task", None)
++            if getattr(task, "session", None) is None or (worker is not None and worker.done()):
++                out[str(name)] = []
++                continue
 +            out[str(name)] = [str(t) for t in (getattr(task, "_registered_tool_names", None) or [])]
 +        except Exception:
 +            out[str(name)] = []

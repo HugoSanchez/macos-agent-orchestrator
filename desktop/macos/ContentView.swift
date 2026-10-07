@@ -140,8 +140,12 @@ struct ContentView: View {
                         onDeleteCron: { cronId in
                             Task { await sidebarStore.deleteCron(id: cronId) }
                         },
-                        onDisconnectConnection: { connectedAccountId in
-                            Task { await sidebarStore.disconnectConnection(id: connectedAccountId) }
+                        connectingApps: sidebarStore.connectingApps,
+                        connectionError: sidebarStore.connectionError,
+                        onAddConnection: { toolkit in
+                            Task {
+                                await sidebarStore.addConnection(toolkit: toolkit) { NSWorkspace.shared.open($0) }
+                            }
                         },
                         onRetryCustomConnector: { connectorId in
                             Task {
@@ -251,19 +255,17 @@ struct ContentView: View {
             )
             await sidebarStore.loadInitialData()
         }
-        // Browser OAuth and Hermes tool registration complete outside the
-        // native event bridge. Poll only while a connector is genuinely
-        // waiting for auth or showing its instant cached connected state;
-        // live registry status ends the loop.
-        .task(id: sidebarStore.needsCustomConnectorRefresh) {
-            guard sidebarStore.needsCustomConnectorRefresh else { return }
+        // Live MCP sessions can disappear after sleep or network loss. Keep
+        // checking after sign-in so saved credentials cannot mask a disconnect.
+        .task(id: sidebarStore.customConnectors.isEmpty) {
+            guard !sidebarStore.customConnectors.isEmpty else { return }
             while !Task.isCancelled {
                 do {
-                    try await Task.sleep(nanoseconds: 2_000_000_000)
+                    try await Task.sleep(nanoseconds: sidebarStore.needsCustomConnectorRefresh ? 2_000_000_000 : 15_000_000_000)
                 } catch {
                     return
                 }
-                await sidebarStore.refreshConnections()
+                await sidebarStore.refreshCustomConnectors()
             }
         }
         // Hermes runs scheduled routines outside the chat WebView, so there

@@ -40,11 +40,25 @@ gateway and exercises streaming plus the MCP OAuth routes.
 10. `verso-credential-env-filter.patch` — extends Hermes' existing subprocess
     credential scrubber to cover Verso-managed tokens, secrets, and keys while
     preserving explicitly configured MCP-server environments.
+11. `verso-mcp-oauth-recovery.patch` — keeps OAuth requests serialized with a
+    semaphore that can be released by the task closing the HTTP auth generator,
+    and explicitly closes the nested SDK generator on cancellation or failure.
+    Prevents an interrupted connection from leaving its cached OAuth provider
+    permanently blocked ([MCP SDK #3382](https://github.com/modelcontextprotocol/python-sdk/issues/3382)).
 
-`verso-web-routing-tests.patch` and `verso-credential-env-filter-tests.patch`
+`verso-gateway-mcp-oauth-tests.patch`, `verso-web-routing-tests.patch`, and `verso-credential-env-filter-tests.patch`
 are source-only companions containing upstream regression tests. The patch
 helper applies them to Hermes source checkouts, but skips them for release
 `site-packages` trees because wheels do not ship `tests/`.
+
+The MCP OAuth regression exercises Hermes' actual HTTP initialization deadline
+with a delayed browser callback. Both the probe deadline and the connection
+configuration must allow the browser sign-in window; otherwise an inner retry
+replaces the OAuth state while the user is still approving access.
+It also checks reuse of the same OAuth provider after network errors and
+cross-task teardown, serialization of concurrent requests, cancellation of a
+waiting request, and exclusion of disconnected sessions from live tool status.
+
 
 ## Updating Hermes
 

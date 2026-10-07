@@ -175,7 +175,13 @@ jobs:
       - name: Install patched Hermes
         run: |
           pip install -q "./hermes-src[${{ steps.pin.outputs.extras }}]" ${{ steps.pin.outputs.pins }}
+          pip install -q pytest pytest-asyncio pytest-timeout
           hermes --version || true
+
+      - name: Check OAuth sign-in through the patched gateway
+        run: |
+          HERMES_PYTHON="$(command -v python)" hermes-src/scripts/run_tests.sh \
+            tests/gateway/test_verso_mcp_oauth.py
 
       - name: Boot gateway and run the shared smoke assertions
         run: |

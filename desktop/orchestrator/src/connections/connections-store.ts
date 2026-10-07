@@ -22,6 +22,7 @@ export interface ConnectionRequestRecord {
 
 export interface ConnectionRecord {
   connectedAccountId: string;
+  accountLabel?: string | null;
   toolkitSlug: string;
   toolkitName: string;
   logoUrl: string | null;
@@ -279,6 +280,7 @@ function connectionPersistenceSignature(records: ConnectionRecord[]): string {
       record.toolkitSlug,
       record.toolkitName,
       record.logoUrl ?? '',
+      record.accountLabel ?? '',
       record.status,
       record.createdAt,
       record.updatedAt,

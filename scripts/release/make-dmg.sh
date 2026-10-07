@@ -152,8 +152,8 @@ IDENTITY="${VERSO_CODESIGN_IDENTITY:-Developer ID Application: Hugo Sanchez (2T2
 
 if [ "${VERSO_NOTARIZE_DMG:-1}" = "1" ]; then
     PROFILE="${VERSO_NOTARY_PROFILE:-Verso}"
-    if ! xcrun notarytool history --keychain-profile "${PROFILE}" --output-format json >/dev/null 2>&1; then
-        echo "error: notarytool profile '${PROFILE}' not found in keychain" >&2
+    if ! xcrun notarytool history --keychain-profile "${PROFILE}" --output-format json >/dev/null; then
+        echo "error: Apple notarization preflight failed for profile '${PROFILE}'; see the error above." >&2
         echo "       run the one-time setup from scripts/release/notarize-app.sh" >&2
         exit 1
     fi

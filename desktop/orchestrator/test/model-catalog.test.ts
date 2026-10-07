@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CODEX_CHAT_MODELS, isAllowedChatModel } from '../src/models/model-catalog.ts';
+import { ANTHROPIC_CHAT_MODELS, CODEX_CHAT_MODELS, isAllowedChatModel } from '../src/models/model-catalog.ts';
 
 describe('Codex model catalog', () => {
   it('offers GPT-6 Astra alongside the GPT-5.6 family and GPT-5.5', () => {
@@ -15,5 +15,12 @@ describe('Codex model catalog', () => {
   it('rejects retired Codex models', () => {
     expect(isAllowedChatModel('gpt-5.4')).toBe(false);
     expect(isAllowedChatModel('gpt-5.4-mini')).toBe(false);
+  });
+});
+
+describe('Anthropic model catalog', () => {
+  it('accepts Opus 5.5 without changing existing users’ default', () => {
+    expect(isAllowedChatModel('claude-opus-5-5')).toBe(true);
+    expect(ANTHROPIC_CHAT_MODELS[0]).toBe('claude-opus-4-8');
   });
 });

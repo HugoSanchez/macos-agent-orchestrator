@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { ConnectedAccounts } from './ConnectedAccounts';
 import { jsonInit, requestJson } from './chat';
 
 interface ProjectStatus {
@@ -41,7 +42,8 @@ export function ComposioSettings() {
   return (
     <section>
       <h2 className="settings-panel-title">Connected apps</h2>
-      <p className="settings-panel-sub">Choose how Verso connects to your apps.</p>
+      <p className="settings-panel-sub">Manage the accounts connected to your apps.</p>
+      <ConnectedAccounts />
       {error ? <p className="settings-footnote codex-error" role="alert">{error}</p> : null}
       {!status && !error ? <p className="settings-loading">Loading…</p> : null}
       {status?.provider === 'managed' ? (

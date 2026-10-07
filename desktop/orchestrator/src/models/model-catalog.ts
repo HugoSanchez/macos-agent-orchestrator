@@ -16,7 +16,7 @@ export const CODEX_CHAT_MODELS = [
 ] as const;
 
 // First entry doubles as the model.default written on Anthropic connect.
-export const ANTHROPIC_CHAT_MODELS = ['claude-opus-4-8', 'claude-fable-5', 'claude-sonnet-5', 'claude-haiku-4-5'] as const;
+export const ANTHROPIC_CHAT_MODELS = ['claude-opus-4-8', 'claude-opus-5-5', 'claude-fable-5', 'claude-sonnet-5', 'claude-haiku-4-5'] as const;
 
 export const VALID_CHAT_MODELS = [...CODEX_CHAT_MODELS, ...ANTHROPIC_CHAT_MODELS] as const;
 

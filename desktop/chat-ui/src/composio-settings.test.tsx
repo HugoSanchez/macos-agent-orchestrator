@@ -7,6 +7,7 @@ import { ComposioSettings } from './ComposioSettings';
 const { requestJson } = vi.hoisted(() => ({ requestJson: vi.fn() }));
 vi.mock('./chat', async (importOriginal) => ({
   ...await importOriginal<typeof import('./chat')>(), requestJson,
+  getConnections: vi.fn(async () => ({ available: true, configured: true, connections: [] })),
 }));
 
 let root: Root;

@@ -624,6 +624,11 @@ export class HermesSupervisor {
     const pythonEnv = bundled ? bundledPythonEnv(bundled) : {};
     const customConnectorEnv: Record<string, string> = {};
     for (const connector of this.customConnectorsStore.list()) {
+      if (connector.auth === 'oauth' && connector.oauth?.hasClientSecret) {
+        const secret = await this.customConnectorKeychain.getSecret(connector.id);
+        if (!secret) throw new Error(`Could not read OAuth client secret for ${connector.name} from Keychain.`);
+        customConnectorEnv[`VERSO_CC_${connector.id}_CLIENT_SECRET`] = secret;
+      }
       if (connector.auth !== 'bearer') continue;
       const token = await this.customConnectorKeychain.getSecret(connector.id);
       if (token) customConnectorEnv[`VERSO_CC_${connector.id}_TOKEN`] = token;

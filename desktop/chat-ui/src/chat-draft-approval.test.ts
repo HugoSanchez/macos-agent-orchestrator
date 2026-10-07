@@ -25,9 +25,11 @@ describe('native draft approval capability', () => {
       channel: 'gmail',
       to: 'recipient@example.com',
       body: 'Reviewed body',
+      connectedAccountId: 'personal',
     });
     await sidecarFetch('http://127.0.0.1:1234/health');
 
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body)).connectedAccountId).toBe('personal');
     const sendHeaders = new Headers(fetchMock.mock.calls[0][1]?.headers);
     expect(sendHeaders.get('X-Verso-Sidecar-Token')).toBe('sidecar-token');
     expect(sendHeaders.get('X-Verso-Draft-Approval-Token')).toBe('native-approval-token');

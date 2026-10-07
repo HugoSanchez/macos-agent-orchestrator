@@ -97,7 +97,10 @@ struct AppStartupPolicy {
     ) -> AppStartupDestination {
         guard configuration.requiresManagedSession else { return .content }
         if isRestoringManagedSession { return .restoringManagedSession }
-        if let managedSession, !managedSession.isExpired { return .content }
+        // Keep the local account open while an expired access token is renewed.
+        // Backend requests still enforce token validity. Only session rejection
+        // or explicit sign-out should return the user to the sign-in screen.
+        if managedSession != nil { return .content }
         return .managedSignIn
     }
 

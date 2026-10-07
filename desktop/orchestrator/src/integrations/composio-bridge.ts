@@ -193,7 +193,20 @@ export class ComposioBridgeService {
     try {
       const schemas = await this.bridgeClient.getToolSchemas(wanted);
       schemas.forEach((tool) => this.rememberToolMetadata(tool));
-      return schemas;
+      return schemas.map((tool) => ({
+        ...tool,
+        inputParameters: {
+          ...tool.inputParameters,
+          type: 'object',
+          properties: {
+            ...asRecord(tool.inputParameters?.properties),
+            connected_account_id: {
+              type: 'string',
+              description: 'Account ID from list_connections. Required when this app has multiple accounts. Match the user’s intended account using accountLabel; ask if ambiguous.',
+            },
+          },
+        },
+      }));
     } catch (error) {
       throw mapRemoteBridgeError(error);
     }
@@ -291,7 +304,9 @@ export class ComposioBridgeService {
     const target = cleanString(argumentRecord.channel);
     if (!target || !isSlackSelfAlias(target)) return { arguments: argumentRecord };
 
-    const auth = await this.executeRemoteTool('SLACK_TEST_AUTH', {}, { recordUsage: false });
+    const account = typeof argumentRecord.connected_account_id === 'string'
+      ? { connected_account_id: argumentRecord.connected_account_id } : {};
+    const auth = await this.executeRemoteTool('SLACK_TEST_AUTH', account, { recordUsage: false });
     if (auth.error) return { error: auth };
     const userId = slackAuthenticatedUserId(auth.data);
     if (!userId) {
@@ -303,7 +318,7 @@ export class ComposioBridgeService {
 
     const dm = await this.executeRemoteTool(
       'SLACK_OPEN_DM',
-      { users: userId, return_im: true },
+      { users: userId, return_im: true, ...account },
       { recordUsage: false },
     );
     if (dm.error) return { error: dm };
@@ -330,7 +345,13 @@ export class ComposioBridgeService {
   ): Promise<ComposioBridgeToolExecutionView> {
     this.assertConfigured();
     try {
-      const result = await this.bridgeClient.executeTool(slug, argumentRecord);
+      const { connected_account_id: accountId, ...providerArguments } = argumentRecord;
+      if (accountId !== undefined && (typeof accountId !== 'string' || !accountId.trim())) {
+        throw new ComposioBridgeHttpError(400, 'Invalid connected_account_id. Use an account ID from list_connections.');
+      }
+      const result = typeof accountId === 'string'
+        ? await this.bridgeClient.executeTool(slug, providerArguments, accountId.trim())
+        : await this.bridgeClient.executeTool(slug, providerArguments);
       if (!result.error && opts.recordUsage !== false) {
         // Background ingestion fetches pass recordUsage:false so read/list
         // tools are not surfaced/ranked in the visible agent's tool manifest.

@@ -106,9 +106,9 @@ fi
 
 # Confirm we have a notarytool profile to use. `notarytool history` is cheap
 # and exits non-zero if the profile name is unknown.
-if ! xcrun notarytool history --keychain-profile "${PROFILE}" --output-format json >/dev/null 2>&1; then
-    echo "error: notarytool profile '${PROFILE}' not found in keychain" >&2
-    echo "       run the one-time setup from the script header" >&2
+if ! xcrun notarytool history --keychain-profile "${PROFILE}" --output-format json >/dev/null; then
+    echo "error: Apple notarization preflight failed for profile '${PROFILE}'; see the error above." >&2
+    echo "       Check Apple Developer agreements, credentials, and service availability before retrying." >&2
     exit 1
 fi
 

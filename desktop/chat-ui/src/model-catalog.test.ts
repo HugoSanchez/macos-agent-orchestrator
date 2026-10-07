@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CHAT_MODEL_LABELS, CODEX_CHAT_MODELS } from './types';
+import { ANTHROPIC_CHAT_MODELS, CHAT_MODEL_LABELS, CODEX_CHAT_MODELS } from './types';
 
 describe('Codex model picker catalog', () => {
   it('shows GPT-6 Astra alongside the GPT-5.6 family and GPT-5.5 with product labels', () => {
@@ -17,5 +17,13 @@ describe('Codex model picker catalog', () => {
       'GPT-5.6 Luna',
       'GPT-6 Astra',
     ]);
+  });
+});
+
+describe('Anthropic model picker', () => {
+  it('offers Opus 5.5 while preserving the existing default', () => {
+    expect(ANTHROPIC_CHAT_MODELS).toContain('claude-opus-5-5');
+    expect(CHAT_MODEL_LABELS['claude-opus-5-5']).toBe('Claude Opus 5.5');
+    expect(ANTHROPIC_CHAT_MODELS[0]).toBe('claude-opus-4-8');
   });
 });
