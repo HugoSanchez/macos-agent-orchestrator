@@ -15,6 +15,8 @@ React chat interface.
 - Custom MCP connectors
 - Connected apps through Verso’s managed service or your own Composio project
 
+See [custom MCP setup](docs/custom-mcp.md) for OAuth credentials and HubSpot.
+
 ## Run from source
 
 Source builds use local mode. They do not require a Verso account or connect to

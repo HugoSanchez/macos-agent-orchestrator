@@ -12,6 +12,7 @@ import {
 } from '../integrations/reviewed-message-policy.ts';
 
 interface DraftPayload {
+  connectedAccountId: string;
   channel: string;
   targetKind: string;
   teamId: string;
@@ -142,6 +143,7 @@ export function buildDraftsRoutes(
       activeSends.add(sendKey);
       try {
         const arguments_ = dispatch.buildArgs(payload);
+        if (payload.connectedAccountId) arguments_.connected_account_id = payload.connectedAccountId;
         const toolSlug = reviewedMessageToolSlug(payload.channel, arguments_);
         if (!toolSlug) {
           throw new ComposioBridgeHttpError(400, 'The reviewed message target is not supported.');
@@ -241,6 +243,7 @@ function parseDraftPayload(body: unknown): DraftPayload {
     subject: stringField(record.subject),
     body: body_,
     threadId: stringField(record.threadId),
+    connectedAccountId: stringField(record.connectedAccountId),
     sessionId: stringField(record.sessionId),
     draftId: stringField(record.draftId),
   };

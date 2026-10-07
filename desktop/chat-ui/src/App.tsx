@@ -780,6 +780,9 @@ export function App() {
         activeSessions={activeSessions}
         archivedSessions={archivedSessions}
         connected={connected}
+        connections={connections}
+        connectingApps={connectingToolkitSlugs}
+        onAddAccount={(slug) => handleConnectToolkit({ slug }, true)}
         customConnectors={customConnectors}
         isHydratingSession={isHydratingSession}
         isLoadingSessions={isLoadingSessions}

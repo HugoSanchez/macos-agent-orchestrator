@@ -83,8 +83,7 @@ export function SettingsPage({ onBack, initialPanel }: Props) {
   const [account, setAccount] = useState<ManagedAccountView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const canConfigureConnections = account?.runtimeMode === 'local' || account?.runtimeMode === 'byo';
-  const activePanel = panel === 'connections' && !canConfigureConnections ? 'account' : panel;
+  const activePanel = panel;
 
   useEffect(() => {
     let cancelled = false;
@@ -129,7 +128,7 @@ export function SettingsPage({ onBack, initialPanel }: Props) {
           ← Back
         </button>
         <h1 className="settings-rail-title">Settings</h1>
-        {PANELS.filter(({ id }) => id !== 'connections' || canConfigureConnections).map(({ id, label, icon: Icon }) => (
+        {PANELS.map(({ id, label, icon: Icon }) => (
           <button
             key={id}
             type="button"

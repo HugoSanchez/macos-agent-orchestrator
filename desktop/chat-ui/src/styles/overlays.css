@@ -171,6 +171,9 @@
 .catalog-custom {
   border-top: 1px solid var(--line);
   padding: 12px 16px 16px;
+  max-height: 75%;
+  overflow-y: auto;
+  flex-shrink: 0;
 }
 
 .catalog-custom-trigger {
@@ -190,6 +193,29 @@
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+
+.catalog-custom-oauth {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.catalog-custom-oauth p {
+  margin: 0 0 4px;
+  color: var(--ink-2);
+}
+
+.catalog-custom-redirect {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.catalog-custom-redirect input {
+  min-width: 0;
+  flex: 1;
 }
 
 .catalog-row {

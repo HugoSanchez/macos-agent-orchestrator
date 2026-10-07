@@ -246,7 +246,14 @@ export async function getCustomConnectors(): Promise<CustomConnectorView[]> {
   return Array.isArray(body.connectors) ? body.connectors : [];
 }
 
-export async function addCustomConnector(input: { name: string; url: string; token?: string }): Promise<CustomConnectorView> {
+export async function getCustomConnectorOAuthSettings(): Promise<{ redirectUri: string }> {
+  return requestJson('/connectors/custom/oauth-settings', 'Failed to load OAuth settings');
+}
+
+export async function addCustomConnector(input: {
+  name: string; url: string; token?: string;
+  oauth?: { clientId: string; clientSecret?: string };
+}): Promise<CustomConnectorView> {
   const body = await requestJson<{ connector: CustomConnectorView }>(
     '/connectors/custom',
     'Failed to add custom connector',
@@ -484,11 +491,11 @@ export async function getConnectionRequest(requestId: string): Promise<Connectio
   return body.request;
 }
 
-export async function createConnectionRequest(toolkit: string): Promise<ConnectionRequestView> {
+export async function createConnectionRequest(toolkit: string, addAccount = false): Promise<ConnectionRequestView> {
   const body = await requestJson<{ request: ConnectionRequestView }>(
     '/connections/request',
     'Failed to create connection request',
-    jsonInit('POST', { toolkit }),
+    jsonInit('POST', { toolkit, ...(addAccount ? { addAccount: true } : {}) }),
   );
   return body.request;
 }
@@ -607,6 +614,7 @@ export async function disconnectCustomModel(): Promise<void> {
 }
 
 export interface DraftSendInput {
+  connectedAccountId?: string;
   channel: string;
   targetKind?: string;
   teamId?: string;

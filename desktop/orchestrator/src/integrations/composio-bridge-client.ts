@@ -81,11 +81,12 @@ export class RemoteComposioBridgeClient implements ConnectedAppsProvider {
   async requestConnection(
     toolkit: string,
     callbackUrl: string,
+    addAccount = false,
   ): Promise<RemoteBridgeConnectionRequestView> {
     const body = await this.request<{ request: RemoteBridgeConnectionRequestView }>(
       'POST',
       '/v1/composio/connections/request',
-      { toolkit, callbackUrl },
+      { toolkit, callbackUrl, ...(addAccount ? { addAccount: true } : {}) },
     );
     return body.request;
   }
@@ -121,6 +122,7 @@ export class RemoteComposioBridgeClient implements ConnectedAppsProvider {
   async executeTool(
     toolSlug: string,
     arguments_: Record<string, unknown>,
+    connectedAccountId?: string,
   ): Promise<RemoteBridgeToolExecutionView> {
     const body = await this.request<{ result: RemoteBridgeToolExecutionView }>(
       'POST',
@@ -128,6 +130,7 @@ export class RemoteComposioBridgeClient implements ConnectedAppsProvider {
       {
         toolSlug,
         arguments: arguments_,
+        ...(connectedAccountId ? { connectedAccountId } : {}),
       },
     );
     return body.result;

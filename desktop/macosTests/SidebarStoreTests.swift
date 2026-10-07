@@ -3,6 +3,52 @@ import XCTest
 
 @MainActor
 final class SidebarStoreTests: XCTestCase {
+    func testAddAccountOpensAuthorizationAndRefreshesAfterCompletion() async {
+        let client = StubSidebarAPIClient()
+        client.addConnectionResult = SidebarConnectionRequest(id: "personal", status: "pending", redirectUrl: "https://connect.example.com/authorize", errorMessage: nil)
+        client.connections = [connection(id: "gmail")]
+        let store = SidebarStore()
+        store.activate(client: client, accountId: "user-1")
+        var openedURL: URL?
+
+        await store.addConnection(toolkit: "gmail") { url in
+            XCTAssertTrue(store.connectingApps.contains("gmail"))
+            openedURL = url
+            return true
+        }
+
+        XCTAssertEqual(client.addedToolkit, "gmail")
+        XCTAssertEqual(openedURL?.absoluteString, "https://connect.example.com/authorize")
+        XCTAssertEqual(store.connections.count, 1)
+        XCTAssertTrue(store.connectingApps.isEmpty)
+        XCTAssertNil(store.connectionError)
+    }
+
+    func testAddAccountReportsAnOldBackendReturningTheExistingAccount() async {
+        let client = StubSidebarAPIClient()
+        client.connections = [connection(id: "gmail")]
+        client.addConnectionResult = SidebarConnectionRequest(id: "gmail", status: "connected", redirectUrl: nil, errorMessage: nil)
+        let store = SidebarStore()
+        store.activate(client: client, accountId: "user-1")
+        await store.refreshConnections()
+
+        await store.addConnection(toolkit: "gmail") { _ in XCTFail("No authorization URL was returned"); return true }
+
+        XCTAssertTrue(store.connectionError?.contains("existing account") == true)
+        XCTAssertTrue(store.connectingApps.isEmpty)
+        XCTAssertEqual(store.connections.count, 1)
+    }
+
+    func testAddAccountReportsBrowserLaunchFailureAndAllowsRetry() async {
+        let client = StubSidebarAPIClient()
+        client.addConnectionResult = SidebarConnectionRequest(id: "personal", status: "pending", redirectUrl: "https://connect.example.com/authorize", errorMessage: nil)
+        let store = SidebarStore()
+        store.activate(client: client, accountId: "user-1")
+        await store.addConnection(toolkit: "gmail") { _ in false }
+        XCTAssertTrue(store.connectionError?.contains("browser") == true)
+        XCTAssertTrue(store.connectingApps.isEmpty)
+    }
+
     func testInitialLoadPopulatesIndependentSectionsAndStableSessionOrder() async {
         let client = StubSidebarAPIClient()
         client.sessions = [
@@ -49,6 +95,23 @@ final class SidebarStoreTests: XCTestCase {
         await oldRefresh.value
 
         XCTAssertEqual(store.sessions.map(\.id), ["new-account"])
+    }
+
+    func testCustomConnectorRefreshReplacesConnectedStatusAfterSessionDrops() async {
+        let client = StubSidebarAPIClient()
+        client.customConnectors = [connector(id: "hubspot", state: "connected")]
+        let store = SidebarStore()
+        store.activate(client: client, accountId: "user-1")
+        await store.refreshCustomConnectors()
+        XCTAssertEqual(store.customConnectors.first?.status.state, "connected")
+        XCTAssertFalse(store.needsCustomConnectorRefresh)
+        client.customConnectors = [connector(id: "hubspot", state: "connecting")]
+        await store.refreshCustomConnectors()
+        XCTAssertTrue(store.needsCustomConnectorRefresh)
+        XCTAssertEqual(store.customConnectors.first?.statusText, "Connecting…")
+        client.customConnectors = [connector(id: "hubspot", state: "failed")]
+        await store.refreshCustomConnectors()
+        XCTAssertEqual(store.customConnectors.first?.status.state, "failed")
     }
 
     func testOlderRefreshCannotOverwriteNewerRefreshInSameAccount() async {
@@ -265,6 +328,8 @@ private actor SidebarTestGate {
 }
 
 private final class StubSidebarAPIClient: SidebarAPIClientProtocol {
+    var addConnectionResult = SidebarConnectionRequest(id: "new-account", status: "connected", redirectUrl: nil, errorMessage: nil)
+    var addedToolkit: String?
     var sessions: [SidebarChatSession] = []
     var connections: [SidebarConnection] = []
     var customConnectors: [SidebarCustomConnector] = []
@@ -280,6 +345,13 @@ private final class StubSidebarAPIClient: SidebarAPIClientProtocol {
     }
 
     func fetchConnections() async throws -> [SidebarConnection] { connections }
+    func addConnection(toolkit: String) async throws -> SidebarConnectionRequest {
+        addedToolkit = toolkit
+        return addConnectionResult
+    }
+    func fetchConnectionRequest(id: String) async throws -> SidebarConnectionRequest {
+        SidebarConnectionRequest(id: id, status: "connected", redirectUrl: nil, errorMessage: nil)
+    }
     func fetchCustomConnectors() async throws -> [SidebarCustomConnector] { customConnectors }
     func fetchSkills() async throws -> [SidebarSkill] { skills }
     func fetchCrons() async throws -> [SidebarCron] { crons }

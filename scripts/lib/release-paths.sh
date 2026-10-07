@@ -2,6 +2,9 @@
 # Shared locations for every release step. Override these variables when a
 # release must be built or packaged somewhere else.
 
+# Apple release tools are supplied by Xcode, not Command Line Tools.
+export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
+
 _VERSO_RELEASE_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 : "${VERSO_RELEASE_ROOT:=$(cd "${_VERSO_RELEASE_LIB_DIR}/../.." && pwd)}"
 : "${VERSO_RELEASE_DERIVED_DATA:=${VERSO_RELEASE_ROOT}/DerivedData-release}"

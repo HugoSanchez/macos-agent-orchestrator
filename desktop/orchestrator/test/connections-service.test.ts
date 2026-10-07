@@ -45,6 +45,34 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 describe('ConnectionsService', () => {
+  it('rejects a stale backend that silently returns an existing account for addAccount', async () => {
+    const { service, store } = setupService();
+    store.upsertConnection(fixtureConnection());
+    const fetch = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({ request: {
+      id: 'ca_123', connectedAccountId: 'ca_123', toolkitSlug: 'slack', toolkitName: 'Slack',
+      logoUrl: null, status: 'connected', redirectUrl: null, errorMessage: null,
+    } }));
+
+    await expect(service.requestConnection('slack', 'http://127.0.0.1:4242', true))
+      .rejects.toMatchObject({ status: 503, message: expect.stringContaining('existing account') });
+    expect(JSON.parse(fetch.mock.calls[0][1]?.body as string).addAccount).toBe(true);
+    expect(store.listConnections()).toHaveLength(1);
+    expect(store.listRequests()).toHaveLength(0);
+  });
+
+  it('returns a fresh authorization link for addAccount and persists it for opening', async () => {
+    const { service, store } = setupService();
+    store.upsertConnection(fixtureConnection());
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({ request: {
+      id: 'ca_new', connectedAccountId: null, toolkitSlug: 'slack', toolkitName: 'Slack',
+      logoUrl: null, status: 'pending', redirectUrl: 'https://connect.example.test/new', errorMessage: null,
+    } }));
+    await expect(service.requestConnection('slack', 'http://127.0.0.1:4242', true))
+      .resolves.toMatchObject({ status: 'pending', redirectUrl: 'https://connect.example.test/new' });
+    expect(service.getRequestRedirectUrl('ca_new')).toBe('https://connect.example.test/new');
+    expect(store.listConnections()).toHaveLength(1);
+  });
+
   afterEach(() => {
     vi.restoreAllMocks();
   });

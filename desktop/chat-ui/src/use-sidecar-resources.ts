@@ -61,6 +61,16 @@ export function useSidecarResources({ onError }: UseSidecarResourcesOptions) {
     }
   }, []);
 
+  useEffect(() => {
+    const handle = (event: Event) => {
+      if ((event as CustomEvent<{ kind: string }>).detail?.kind === 'connections-changed') {
+        void refreshConnections();
+      }
+    };
+    window.addEventListener('verso:shell-action', handle);
+    return () => window.removeEventListener('verso:shell-action', handle);
+  }, [refreshConnections]);
+
   const refreshModelStatus = useCallback(async () => {
     if (!getSidecarPort()) return;
     const [codex, anthropic, custom] = await Promise.all([
@@ -129,7 +139,7 @@ export function useSidecarResources({ onError }: UseSidecarResourcesOptions) {
     connectionPollers.current.set(requestId, poller);
   }, [bumpCatalogRefresh, refreshConnections]);
 
-  const connectToolkit = useCallback((toolkit: { slug: string }) => {
+  const connectToolkit = useCallback((toolkit: { slug: string }, addAccount = false) => {
     const toolkitSlug = toolkit.slug;
     if (connectingToolkitSlugsRef.current.has(toolkitSlug)) return;
 
@@ -143,7 +153,7 @@ export function useSidecarResources({ onError }: UseSidecarResourcesOptions) {
 
     void (async () => {
       try {
-        const request = await createConnectionRequest(toolkitSlug);
+        const request = await createConnectionRequest(toolkitSlug, addAccount);
         bumpCatalogRefresh();
         if (request.status === 'pending') {
           openConnectionRequest(request.id);
@@ -189,15 +199,20 @@ export function useSidecarResources({ onError }: UseSidecarResourcesOptions) {
   }, []);
 
   useEffect(() => {
-    if (!connected) return;
+    if (!connected || customConnectors.length === 0) return;
     const awaitingLiveStatus = customConnectors.some((connector) => (
       connector.status.state === 'pending_auth'
+      || connector.status.state === 'connecting'
       || (connector.status.state === 'connected' && connector.status.cached === true)
     ));
-    if (!awaitingLiveStatus) return;
-    const timer = window.setInterval(() => { void refreshConnections(); }, 2_000);
-    return () => window.clearInterval(timer);
-  }, [connected, customConnectors, refreshConnections]);
+    // Keep checking live connections too: saved credentials do not guarantee
+    // the MCP session survived an idle timeout or a network interruption.
+    let active = true;
+    const timer = window.setInterval(() => {
+      void getCustomConnectors().then((items) => { if (active) setCustomConnectors(items); }).catch(() => {});
+    }, awaitingLiveStatus ? 2_000 : 15_000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [connected, customConnectors]);
 
   useEffect(() => {
     const onModelAuthChanged = () => { void refreshModelStatus(); };

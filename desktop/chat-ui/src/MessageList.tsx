@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { ChatMessage, ActivityStep, ConnectionRequestView, ConnectionView, ToolkitView } from './types';
 import {
   discardDraft,
+  getConnections,
   draftIdForArgs,
   resolveSidecarUrl,
   sendDraft,
@@ -272,6 +273,7 @@ function CodexConnectRequiredCard({ onConnected }: { onConnected: () => void }) 
 }
 
 interface DraftFields {
+  connectedAccountId: string;
   // The widget is intentionally limited to the communication channels
   // that Verso can dispatch and durably resolve itself.
   channel: string;
@@ -332,6 +334,7 @@ function parseDraftInput(input: unknown): DraftFields {
     subject: typeof obj.subject === 'string' ? obj.subject : '',
     body,
     threadId: firstStringField(obj, ['threadId', 'thread_id', 'thread_ts']),
+    connectedAccountId: firstStringField(obj, ['connected_account_id', 'connectedAccountId']),
   };
 }
 
@@ -382,6 +385,23 @@ function MessageDraftCard({
   const [isHidden, setIsHidden] = useState(false);
   const [showCc, setShowCc] = useState(initial.cc.trim().length > 0);
 
+  const [accounts, setAccounts] = useState<ConnectionView[]>([]);
+  const [accountsLoading, setAccountsLoading] = useState(true);
+  useEffect(() => {
+    let cancelled = false;
+    void getConnections().then((result) => {
+      if (cancelled) return;
+      const available = result.connections.filter((account) => account.toolkitSlug === fields.channel && account.status === 'active');
+      setAccounts(available);
+      setFields((current) => ({ ...current, connectedAccountId:
+        available.some((account) => account.connectedAccountId === current.connectedAccountId)
+          ? current.connectedAccountId : !current.connectedAccountId && available.length === 1 ? available[0].connectedAccountId : '' }));
+    }).catch(() => {
+      if (!cancelled) setErrorMessage('Could not load sending accounts. Reopen this draft to try again.');
+    }).finally(() => { if (!cancelled) setAccountsLoading(false); });
+    return () => { cancelled = true; };
+  }, [fields.channel]);
+
   const finalized = isDraftFinalized(step);
 
   // A resolution can arrive from session rehydration or another view. Hide
@@ -408,6 +428,7 @@ function MessageDraftCard({
     || prettyChannelLabel(fields.channel);
 
   const sendDisabled = status === 'sending' || status === 'sent'
+    || accountsLoading || !fields.connectedAccountId
     || fields.to.trim().length === 0
     || fields.body.trim().length === 0;
 
@@ -429,6 +450,7 @@ function MessageDraftCard({
       subject: fields.subject.trim() || undefined,
       body: fields.body,
       threadId: fields.threadId.trim() || undefined,
+      connectedAccountId: fields.connectedAccountId || undefined,
     };
     try {
       if (!sessionId) throw new Error('Cannot send draft before the session is ready.');
@@ -529,6 +551,14 @@ function MessageDraftCard({
       </div>
 
       <div className="message-draft-card-fields">
+        <DraftRow label="From">
+          <select className="message-draft-card-input" aria-label="Sending account"
+            value={fields.connectedAccountId} onChange={(event) => update('connectedAccountId', event.target.value)}
+            disabled={status === 'sending' || accountsLoading}>
+            <option value="">{accountsLoading ? 'Loading accounts…' : 'Choose an account'}</option>
+            {accounts.map((account) => <option key={account.connectedAccountId} value={account.connectedAccountId}>{account.accountLabel || account.connectedAccountId}</option>)}
+          </select>
+        </DraftRow>
         <DraftRow label="To">
           {fields.toAvatarUrl && (
             <img
@@ -599,7 +629,7 @@ function MessageDraftCard({
         />
       </div>
 
-      {errorMessage && status === 'error' && (
+      {errorMessage && (
         <div className="message-draft-card-error">{errorMessage}</div>
       )}
 

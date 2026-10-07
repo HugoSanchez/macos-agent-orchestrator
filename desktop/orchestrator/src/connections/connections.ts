@@ -69,7 +69,7 @@ export function buildConnectionsRoutes(connections: ConnectionsService): Route[]
           return json(res, 400, { error: 'bad_request', message: 'Missing "toolkit"' });
         }
 
-        const request = await connections.requestConnection(toolkit, requestBaseUrl(req));
+        const request = await connections.requestConnection(toolkit, requestBaseUrl(req), (body as { addAccount?: unknown }).addAccount === true);
         json(res, 201, { request });
       } catch (error: unknown) {
         handleHttpError(res, error);

@@ -154,7 +154,7 @@ describe('Draft resolutions', () => {
       },
     });
 
-    const input = { channel: 'gmail', to: 'hugo@example.com', subject: 'Hi', body: 'Hello' };
+    const input = { channel: 'gmail', to: 'hugo@example.com', subject: 'Hi', body: 'Hello', connectedAccountId: 'personal' };
     const draftId = draftIdForArgs(input);
     const res = await fetch(`http://127.0.0.1:${port}/drafts/send`, {
       method: 'POST',
@@ -165,6 +165,7 @@ describe('Draft resolutions', () => {
     expect(res.status).toBe(200);
     expect(calls).toHaveLength(1);
     expect(calls[0].slug).toBe('GMAIL_SEND_EMAIL');
+    expect(calls[0].args.connected_account_id).toBe('personal');
     expect(store.listDraftResolutions(session.id)[0]).toMatchObject({
       draftId,
       status: 'sent',

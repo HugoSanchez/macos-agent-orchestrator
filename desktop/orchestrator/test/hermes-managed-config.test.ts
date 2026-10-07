@@ -155,6 +155,19 @@ describe('HermesSupervisor: managed config override', () => {
     });
   });
 
+  it('routes Opus 5.5 through Anthropic when the account has a key', () => {
+    const managedHome = path.join(tempRoot, 'profiles', 'verso');
+    mkdirSync(managedHome, { recursive: true });
+    writeFileSync(path.join(managedHome, '.env'), 'ANTHROPIC_API_KEY=test-anthropic-key\n');
+    const supervisor = new HermesSupervisor({ runtimeMode: 'managed' });
+    (supervisor as unknown as { ensureManagedHermesHome: () => void }).ensureManagedHermesHome();
+    const parsed = YAML.parse(readFileSync(path.join(managedHome, 'config.yaml'), 'utf8'));
+    expect(parsed.platforms.api_server.extra.model_routes['claude-opus-5-5']).toEqual({
+      model: 'claude-opus-5-5', provider: 'anthropic',
+    });
+    expect(readFileSync(path.join(managedHome, 'config.yaml'), 'utf8')).not.toContain('test-anthropic-key');
+  });
+
   it('routes a configured custom model without persisting its API key', () => {
     const store = new CustomModelProviderStore(path.join(tempRoot, 'custom-model.json'));
     store.set('https://modal.example/v1', 'Qwen/Qwen3.5-4B', true);

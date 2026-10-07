@@ -2,6 +2,33 @@ import Foundation
 import XCTest
 
 final class SidebarAPIClientTests: XCTestCase {
+    func testAddAccountRequestsAnotherConnectionForTheSameApp() async throws {
+        let transport = SidebarStubTransport { request in
+            XCTAssertEqual(request.url?.path, "/connections/request")
+            XCTAssertEqual(request.httpMethod, "POST")
+            let body = try JSONSerialization.jsonObject(with: request.httpBody!) as! [String: Any]
+            XCTAssertEqual(body["toolkit"] as? String, "gmail")
+            XCTAssertEqual(body["addAccount"] as? Bool, true)
+            return try Self.response(for: request, body: #"{"request":{"id":"personal","status":"pending","redirectUrl":"https://connect.example.com","errorMessage":null}}"#)
+        }
+        let client = SidebarAPIClient(baseURL: URL(string: "http://127.0.0.1:4242")!, authToken: "secret", transport: transport)
+        let request = try await client.addConnection(toolkit: "gmail")
+        XCTAssertEqual(request.id, "personal")
+        XCTAssertEqual(request.redirectUrl, "https://connect.example.com")
+    }
+
+    func testSidebarGroupsAccountsAndKeepsAppHealthyWhileAnyAccountIsActive() {
+        let connections = [
+            SidebarConnection(connectedAccountId: "work", toolkitSlug: "gmail", toolkitName: "Gmail", logoUrl: nil, status: "inactive"),
+            SidebarConnection(connectedAccountId: "personal", toolkitSlug: "gmail", toolkitName: "Gmail", logoUrl: nil, status: "active"),
+        ]
+        let apps = SidebarConnection.apps(from: connections)
+        XCTAssertEqual(apps.count, 1)
+        XCTAssertEqual(apps.first?.toolkitSlug, "gmail")
+        XCTAssertEqual(apps.first?.status, "active")
+        XCTAssertEqual(SidebarConnection.apps(from: [connections[0]]).count, 1)
+    }
+
     func testFetchSessionsUsesAuthenticatedTypedRequest() async throws {
         let transport = SidebarStubTransport { request in
             XCTAssertEqual(request.url?.path, "/chat/sessions")

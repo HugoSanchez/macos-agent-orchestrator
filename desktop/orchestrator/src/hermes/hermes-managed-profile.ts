@@ -20,6 +20,7 @@ import { computePinnedToolNames } from './hermes-pinned-tools.ts';
 import { ANTHROPIC_CHAT_MODELS, CODEX_CHAT_MODELS } from '../models/model-catalog.ts';
 import { readAnthropicKeyFromEnvFile } from '../models/model-auth.ts';
 import { CustomConnectorsStore } from '../connections/custom-connectors-store.ts';
+import { MCP_OAUTH_REDIRECT_URI } from '../connections/mcp-oauth-callback.ts';
 import {
   CUSTOM_MODEL_KEY_ENV,
   CUSTOM_MODEL_PROVIDER_NAME,
@@ -389,6 +390,14 @@ export class HermesManagedProfile {
       };
       if (connector.transport === 'sse') entry.transport = 'sse';
       if (connector.auth === 'oauth') entry.auth = 'oauth';
+      if (connector.auth === 'oauth' && connector.oauth) {
+        entry.oauth = {
+          client_id: connector.oauth.clientId,
+          redirect_uri: MCP_OAUTH_REDIRECT_URI,
+          ...(connector.oauth.hasClientSecret
+            ? { client_secret: `\${VERSO_CC_${connector.id}_CLIENT_SECRET}` } : {}),
+        };
+      }
       if (connector.auth === 'bearer') {
         entry.headers = { Authorization: `Bearer \${VERSO_CC_${connector.id}_TOKEN}` };
       }
