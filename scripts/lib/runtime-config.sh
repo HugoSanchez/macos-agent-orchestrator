@@ -26,16 +26,20 @@ HERMES_PATCHES=(
     "verso-browser-guardrails.patch"
     "verso-cron-running-status.patch"
     "verso-gateway-mcp-oauth.patch"
+    "verso-mcp-oauth-recovery.patch"
     "verso-personal-assistant-prompts.patch"
     "verso-web-routing.patch"
     "verso-request-overrides.patch"
     "verso-tool-search-pinned.patch"
     "verso-credential-env-filter.patch"
+    "verso-progress-updates.patch"
 )
 
 HERMES_SOURCE_TEST_PATCHES=(
+    "verso-gateway-mcp-oauth-tests.patch"
     "verso-web-routing-tests.patch"
     "verso-credential-env-filter-tests.patch"
+    "verso-progress-updates-tests.patch"
 )
 
 hermes_runtime_patch_stamp() {

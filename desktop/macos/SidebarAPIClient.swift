@@ -47,6 +47,23 @@ struct SidebarConnection: Decodable, Identifiable, Equatable {
 
     var id: String { connectedAccountId }
     var displayToolkitName: String { sidebarDisplayToolkitName(toolkitName) }
+
+    static func apps(from connections: [SidebarConnection]) -> [SidebarConnection] {
+        Dictionary(grouping: connections, by: \.toolkitSlug).values.compactMap { accounts in
+            accounts.first { $0.status == "active" } ?? accounts.first
+        }.sorted { $0.displayToolkitName.localizedCaseInsensitiveCompare($1.displayToolkitName) == .orderedAscending }
+    }
+}
+
+struct SidebarConnectionRequest: Decodable {
+    let id: String
+    let status: String
+    let redirectUrl: String?
+    let errorMessage: String?
+}
+
+private struct SidebarConnectionRequestResponse: Decodable {
+    let request: SidebarConnectionRequest
 }
 
 struct SidebarCustomConnector: Decodable, Identifiable, Equatable {
@@ -68,6 +85,8 @@ struct SidebarCustomConnector: Decodable, Identifiable, Equatable {
         switch status.state {
         case "connected":
             return "Connected"
+        case "connecting":
+            return "Connecting…"
         case "pending_auth":
             return "Waiting for sign-in"
         default:
@@ -154,6 +173,8 @@ private struct SidebarRenameSessionRequest: Encodable {
 protocol SidebarAPIClientProtocol {
     func fetchSessions() async throws -> [SidebarChatSession]
     func fetchConnections() async throws -> [SidebarConnection]
+    func addConnection(toolkit: String) async throws -> SidebarConnectionRequest
+    func fetchConnectionRequest(id: String) async throws -> SidebarConnectionRequest
     func fetchCustomConnectors() async throws -> [SidebarCustomConnector]
     func fetchSkills() async throws -> [SidebarSkill]
     func fetchCrons() async throws -> [SidebarCron]
@@ -190,6 +211,15 @@ struct SidebarAPIClient: SidebarAPIClientProtocol {
 
     func fetchConnections() async throws -> [SidebarConnection] {
         try await http.decode(SidebarConnectionsResponse.self, path: "connections").connections
+    }
+
+    func addConnection(toolkit: String) async throws -> SidebarConnectionRequest {
+        let body = try JSONSerialization.data(withJSONObject: ["toolkit": toolkit, "addAccount": true])
+        return try await http.decode(SidebarConnectionRequestResponse.self, path: "connections/request", method: "POST", body: body).request
+    }
+
+    func fetchConnectionRequest(id: String) async throws -> SidebarConnectionRequest {
+        try await http.decode(SidebarConnectionRequestResponse.self, path: "connections/requests/\(id)").request
     }
 
     func fetchCustomConnectors() async throws -> [SidebarCustomConnector] {

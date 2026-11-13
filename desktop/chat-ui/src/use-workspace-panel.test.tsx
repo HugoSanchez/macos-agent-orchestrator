@@ -139,6 +139,40 @@ describe('useWorkspacePanel', () => {
     expect(currentPanel().hasUnsavedChanges).toBe(true);
   });
 
+  it('hands claimed entries to document tabs instead of the panel preview', async () => {
+    api.getWorkspaces.mockResolvedValue([firstWorkspace]);
+    api.getWorkspaceTree.mockResolvedValue({ workspace: firstWorkspace, entries: [note] });
+    const open = vi.fn();
+    const documentTabs = {
+      claims: () => true,
+      open,
+      onEntryMoved: vi.fn(),
+      onEntryDeleted: vi.fn(),
+    };
+
+    await renderHook({ open: true, connected: true, accountId: 'account-a', documentTabs });
+    await act(async () => {
+      currentPanel().selectEntry(note.path);
+      await flushPromises();
+    });
+
+    expect(currentPanel().selectedEntryPath).toBe(note.path);
+    expect(currentPanel().loadedFile).toBeNull();
+    expect(api.getWorkspaceFile).not.toHaveBeenCalled();
+    expect(open).toHaveBeenCalledWith(firstWorkspace.id, note);
+
+    // Re-clicking the selected document brings its tab forward again.
+    act(() => currentPanel().selectEntry(note.path));
+    expect(open).toHaveBeenCalledTimes(2);
+
+    api.deleteWorkspaceEntry.mockResolvedValue({ workspace: workspace(firstWorkspace.id, 2), entries: [] });
+    await act(async () => {
+      currentPanel().deleteEntry(note.path);
+      await flushPromises();
+    });
+    expect(documentTabs.onEntryDeleted).toHaveBeenCalledWith(firstWorkspace.id, note.path);
+  });
+
   it('keeps edits typed while a save request is in flight', async () => {
     api.getWorkspaces.mockResolvedValue([firstWorkspace]);
     api.getWorkspaceTree.mockResolvedValue({ workspace: firstWorkspace, entries: [note] });

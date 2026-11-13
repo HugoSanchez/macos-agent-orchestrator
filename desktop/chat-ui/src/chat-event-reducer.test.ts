@@ -78,6 +78,39 @@ describe('applyChatSSEEvent', () => {
     ]);
   });
 
+  it.each([false, true])('keeps commentary before tools and the final answer separate (streamed=%s)', (streamed) => {
+    let current = message({ content: streamed ? 'I will check' : '' });
+    current = applyChatSSEEvent(current, event({
+      type: 'commentary', text: 'I will check your calendar.', already_streamed: streamed,
+    }));
+    current = applyChatSSEEvent(current, event({
+      type: 'assistant', content: [{ type: 'tool_use', id: 'calendar-1', name: 'calendar' }],
+    }));
+    current = applyChatSSEEvent(current, event({
+      type: 'commentary', text: 'I found two conflicts.', already_streamed: false,
+    }));
+    current = applyChatSSEEvent(current, event({ type: 'text', text: 'Tuesday is available.' }));
+    current = applyChatSSEEvent(current, event({ type: 'done' }));
+
+    expect(current.content).toBe('Tuesday is available.');
+    expect(current.steps).toEqual([
+      { type: 'text', text: 'I will check your calendar.' },
+      { type: 'tool', id: 'calendar-1', name: 'calendar', input: undefined },
+      { type: 'text', text: 'I found two conflicts.' },
+    ]);
+    expect(current.reasoning).toBeUndefined();
+    expect(current.isStreaming).toBe(false);
+  });
+
+  it('ignores empty commentary and does not duplicate a repeated boundary', () => {
+    const original = message({ content: 'I will check your calendar.' });
+    expect(applyChatSSEEvent(original, event({ type: 'commentary', text: '  ' }))).toBe(original);
+    const update = event({ type: 'commentary', text: original.content, already_streamed: true });
+    const result = applyChatSSEEvent(applyChatSSEEvent(original, update), update);
+    expect(result.content).toBe('');
+    expect(result.steps).toEqual([{ type: 'text', text: original.content }]);
+  });
+
   it('falls back to the latest unresolved tool and stringifies multipart results', () => {
     const result = applyChatSSEEvent(
       message({

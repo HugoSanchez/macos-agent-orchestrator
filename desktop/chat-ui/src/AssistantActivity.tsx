@@ -163,7 +163,7 @@ function StepView({
     const body = step.text.trim();
     if (!body) return null;
     return (
-      <div className="message-content assistant-message-content">
+      <div className="message-content assistant-message-content assistant-interim-message">
         <MarkdownContent content={body} />
       </div>
     );

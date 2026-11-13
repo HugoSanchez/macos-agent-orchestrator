@@ -16,20 +16,20 @@ export class UserComposioProvider implements ConnectedAppsProvider {
   listToolkits(query?: string, limit?: number) {
     return this.call((s) => s.listToolkits(this.userId, { query, limit }));
   }
-  requestConnection(toolkit: string, callbackUrl: string) {
+  requestConnection(toolkit: string, callbackUrl: string, addAccount = false) {
     // Only the loopback callback produced by ConnectionsService.
     const match = /^http:\/\/127\.0\.0\.1:([0-9]{1,5})\/connections\/callback$/.exec(callbackUrl);
     if (!match || Number(match[1]) < 1 || Number(match[1]) > 65535) {
       return Promise.reject(new ConnectedAppsError(400, 'Invalid connection callback.'));
     }
-    return this.call((s) => s.requestConnection(this.userId, toolkit, callbackUrl));
+    return this.call((s) => s.requestConnection(this.userId, toolkit, callbackUrl, addAccount));
   }
   getRequest(id: string) { return this.call((s) => s.getRequest(this.userId, id)); }
   listTools(toolkits: string[]) { return this.call((s) => s.listTools(this.userId, toolkits)); }
   getToolSchemas(slugs: string[]) { return this.call((s) => s.getToolSchemas(this.userId, slugs)); }
-  executeTool(slug: string, args: Record<string, unknown>) {
+  executeTool(slug: string, args: Record<string, unknown>, connectedAccountId?: string) {
     return this.call(async (s) => {
-      const result = await s.executeTool(this.userId, slug, args);
+      const result = await s.executeTool(this.userId, slug, args, connectedAccountId);
       return { ...result, error: result.error ? 'The connected app could not complete this tool call.' : null };
     });
   }

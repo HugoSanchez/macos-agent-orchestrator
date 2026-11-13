@@ -132,7 +132,12 @@ def search_toolkits(query: str, limit: int | None = None) -> types.CallToolResul
 
 @mcp.tool()
 def list_connections() -> types.CallToolResult:
-    """List catalog app and custom MCP connections with their current status."""
+    """List connected accounts (IDs, accountLabel identities, status) and custom MCPs.
+
+    When an app has multiple accounts, match the requested identity and pass its
+    connectedAccountId as connected_account_id to app tools and message drafts.
+    Ask the user which account to use if their intent is ambiguous.
+    """
 
     payload = _request("GET", "/connections")
     if isinstance(payload, dict):
@@ -175,12 +180,16 @@ def propose_message_draft(
     subject: str | None = None,
     cc: str | None = None,
     threadId: str | None = None,
+    connected_account_id: str | None = None,
     channel_label: str | None = None,
     channel_logo_url: str | None = None,
     to_display: str | None = None,
     to_avatar_url: str | None = None,
 ) -> types.CallToolResult:
     """Surface a Gmail, Slack, or Microsoft Teams message for review.
+
+    Use connected_account_id from list_connections to select the sending account.
+    Ask which account to use if multiple accounts exist and the intent is unclear.
 
     Use this only for outbound Gmail email, Slack messages, and top-level
     Microsoft Teams messages. Never use it for Notion pages or tables,
@@ -215,6 +224,7 @@ def propose_message_draft(
         "subject": subject,
         "cc": cc,
         "threadId": threadId,
+        "connected_account_id": connected_account_id,
         "channel_label": channel_label,
         "channel_logo_url": channel_logo_url,
         "to_display": to_display,

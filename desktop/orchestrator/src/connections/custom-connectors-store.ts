@@ -13,6 +13,7 @@ export interface CustomConnectorRecord {
   url: string;
   transport: CustomConnectorTransport;
   auth: CustomConnectorAuth;
+  oauth?: { clientId: string; hasClientSecret: boolean };
   logoUrl: string | null;
   iconPath?: string | null;
   iconContentType?: string | null;
@@ -120,6 +121,9 @@ function isRecord(value: unknown): value is CustomConnectorRecord {
     && typeof item.url === 'string'
     && (item.transport === 'http' || item.transport === 'sse')
     && (item.auth === 'none' || item.auth === 'bearer' || item.auth === 'oauth')
+    && (item.oauth === undefined || (item.auth === 'oauth' && item.oauth !== null
+      && typeof item.oauth.clientId === 'string' && item.oauth.clientId.length > 0
+      && typeof item.oauth.hasClientSecret === 'boolean'))
     && (typeof item.logoUrl === 'string' || item.logoUrl === null)
     && (typeof item.iconPath === 'string' || item.iconPath === null || item.iconPath === undefined)
     && (typeof item.iconContentType === 'string' || item.iconContentType === null || item.iconContentType === undefined)

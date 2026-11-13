@@ -10,4 +10,5 @@
 @import './styles/overlays.css';
 @import './styles/pages.css';
 @import './styles/workspace.css';
+@import './styles/document.css';
 @import './styles/toasts.css';

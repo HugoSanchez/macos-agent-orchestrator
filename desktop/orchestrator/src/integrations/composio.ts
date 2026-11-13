@@ -27,6 +27,7 @@ export interface ConnectionRequestView {
 
 export interface ConnectionView {
   connectedAccountId: string;
+  accountLabel?: string | null;
   toolkitSlug: string;
   toolkitName: string;
   logoUrl: string | null;
@@ -193,11 +194,15 @@ export class ConnectionsService {
     };
   }
 
-  async requestConnection(toolkitSlug: string, baseUrl: string): Promise<ConnectionRequestView> {
+  async requestConnection(toolkitSlug: string, baseUrl: string, addAccount = false): Promise<ConnectionRequestView> {
     this.assertConfigured();
 
     try {
-      const request = await this.bridgeClient.requestConnection(toolkitSlug, `${baseUrl}/connections/callback`);
+      const request = await this.bridgeClient.requestConnection(toolkitSlug, `${baseUrl}/connections/callback`, addAccount);
+      if (addAccount && request.status === 'connected' && !request.redirectUrl
+        && this.store.listConnections().some((connection) => connection.connectedAccountId === request.connectedAccountId)) {
+        throw new HttpError(503, 'The connection service returned your existing account. Adding another account requires the updated connection service.');
+      }
       syncRemoteRequestIntoStore(this.store, request);
       this.notifyConnectionsChanged();
       return request;
@@ -253,6 +258,7 @@ export class ConnectionsService {
 }
 
 function mapRemoteBridgeError(error: unknown): HttpError {
+  if (error instanceof HttpError) return error;
   if (error instanceof RemoteBridgeHttpError) {
     return new HttpError(error.status, error.message);
   }
@@ -275,6 +281,7 @@ function toRequestView(record: ConnectionRequestRecord): ConnectionRequestView {
 function toConnectionView(record: ConnectionRecord): ConnectionView {
   return {
     connectedAccountId: record.connectedAccountId,
+    accountLabel: record.accountLabel ?? null,
     toolkitSlug: record.toolkitSlug,
     toolkitName: record.toolkitName,
     logoUrl: record.logoUrl,
@@ -292,6 +299,7 @@ function syncRemoteConnectionsIntoStore(
     const existing = existingById.get(connection.connectedAccountId);
     return {
       connectedAccountId: connection.connectedAccountId,
+      accountLabel: connection.accountLabel ?? null,
       toolkitSlug: connection.toolkitSlug,
       toolkitName: connection.toolkitName,
       logoUrl: connection.logoUrl,
@@ -327,6 +335,7 @@ function syncRemoteRequestIntoStore(
       .find((item) => item.connectedAccountId === request.connectedAccountId);
     store.upsertConnection({
       connectedAccountId: request.connectedAccountId,
+      accountLabel: existingConnection?.accountLabel ?? null,
       toolkitSlug: request.toolkitSlug,
       toolkitName: request.toolkitName,
       logoUrl: request.logoUrl,

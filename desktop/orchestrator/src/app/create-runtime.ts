@@ -1,5 +1,7 @@
 import { ComposioProject } from '../connections/composio-project.ts';
 import { RemoteComposioBridgeClient } from '../integrations/composio-bridge-client.ts';
+import { multiAccountSource } from '../memory/ingestion/multi-account-source.ts';
+import type { IngestionBridge } from '../memory/ingestion/ingestion-source.ts';
 import { scopeSource } from '../memory/ingestion/scoped-source.ts';
 import path from 'node:path';
 import { BrowserHost } from '../browser/browser-host.ts';
@@ -157,17 +159,23 @@ export async function createSidecarRuntime(): Promise<SidecarRuntime> {
     ingestionStore,
     memoryProvider,
     [
-      new GmailSource(composioBridge),
-      new GranolaSource(composioBridge),
-      new SlackSource(composioBridge, {
-        userDirectory: new ComposioSlackUserDirectory(composioBridge),
-        conversationDirectory: new ComposioSlackConversationDirectory(composioBridge),
+      (bridge: IngestionBridge) => new GmailSource(bridge),
+      (bridge: IngestionBridge) => new GranolaSource(bridge),
+      (bridge: IngestionBridge) => new SlackSource(bridge, {
+        userDirectory: new ComposioSlackUserDirectory(bridge),
+        conversationDirectory: new ComposioSlackConversationDirectory(bridge),
       }),
-      new TeamsSource(composioBridge),
-      new GdriveSource(composioBridge),
-      new OneDriveSource(composioBridge),
-      new ClickupSource(composioBridge),
-    ].map((source) => scopeSource(source, composioProject.namespace)),
+      (bridge: IngestionBridge) => new TeamsSource(bridge),
+      (bridge: IngestionBridge) => new GdriveSource(bridge),
+      (bridge: IngestionBridge) => new OneDriveSource(bridge),
+      (bridge: IngestionBridge) => new ClickupSource(bridge),
+    ].map((factory) => {
+      const source = factory(composioBridge).source;
+      const toolkit = SOURCE_TOOLKITS[source] ?? source;
+      return scopeSource(multiAccountSource(factory, composioBridge, () => connectionsStore.listConnections()
+        .filter((account) => account.toolkitSlug === toolkit)
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.connectedAccountId.localeCompare(b.connectedAccountId))), composioProject.namespace);
+    }),
     {
       extractionGate,
       connectionGate: (source) => {

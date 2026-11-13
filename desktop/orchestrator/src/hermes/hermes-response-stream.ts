@@ -80,6 +80,13 @@ export function buildHermesRequestBody(opts: {
     store: true,
   };
 
+  // Request-scoped opt-in: older gateways ignore it. Disabling this switch
+  // restores the original gateway behavior, including its original prompt.
+  const progressSetting = process.env.VERSO_HERMES_PROGRESS_UPDATES?.trim().toLowerCase();
+  if (!['0', 'false', 'no'].includes(progressSetting ?? '')) {
+    body.verso_progress_updates = true;
+  }
+
   if (opts.reasoningEffort) {
     body.reasoning = { effort: opts.reasoningEffort };
   }

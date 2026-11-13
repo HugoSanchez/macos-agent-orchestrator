@@ -236,9 +236,6 @@ export function buildChatRoutes(
         return json(res, 400, { error: 'bad_request', message });
       }
 
-      const priorMessageCount = store.getMessages(params.id)?.length ?? 0;
-      const isFirstUserMessage = priorMessageCount === 0;
-
       // Reserve before appending the message or starting Hermes. This closes
       // the duplicate-send race without blocking independent sessions.
       const activeRequest = requests.begin(params.id, hermes.gatewayConfig.baseUrl);
@@ -295,7 +292,6 @@ export function buildChatRoutes(
             activeRequest,
             userPrompt: promptForHermes,
             attachments,
-            isFirstUserMessage,
             reasoningEffort,
             model,
             res,
@@ -545,9 +541,8 @@ async function runHermesMessage(
     activeRequest: ActiveChatRequest;
     userPrompt: string;
     attachments?: ChatAttachment[];
-    isFirstUserMessage: boolean;
     reasoningEffort?: HermesReasoningEffort | null;
-    model?: ChatModel | null;
+    model: ChatModel;
     res: ServerResponse;
   },
   store: ChatStore,
@@ -600,6 +595,21 @@ async function runHermesMessage(
       if (text) {
         finalText = text;
       }
+      return;
+    }
+
+    if (eventName === 'hermes.commentary') {
+      const text = typeof data?.text === 'string' ? data.text : '';
+      if (!text.trim()) return;
+      // Commentary ends the current intermediate text segment. It must not
+      // become the saved final answer when the gateway finishes the turn.
+      streamedText = '';
+      sendSSE(opts.res, {
+        type: 'commentary',
+        session_id: opts.session.id,
+        text,
+        already_streamed: data?.already_streamed === true,
+      });
       return;
     }
 
@@ -777,12 +787,17 @@ async function runHermesMessage(
   // in the response timer shown to the user.
   sendSSE(opts.res, { type: 'done', session_id: opts.session.id });
 
-  if (opts.isFirstUserMessage && assistantText) {
+  if (assistantText) {
     const currentTitle = store.getSessionRecord(opts.session.id)?.title ?? '';
     if (currentTitle === DEFAULT_SESSION_TITLE) {
-      const title = await generateSessionTitle(config, opts.userPrompt, assistantText)
+      // Also recover older untitled conversations on their next successful turn.
+      const firstPrompt = store.getMessages(opts.session.id)?.find((message) => message.role === 'user')?.content
+        || opts.userPrompt;
+      const generatedTitle = await generateSessionTitle(config, firstPrompt, assistantText, opts.model)
         .catch(() => null);
-      if (title) {
+      const title = generatedTitle ?? sanitizeGeneratedTitle(firstPrompt);
+      // A manual rename while the model is responding always takes precedence.
+      if (title && store.getSessionRecord(opts.session.id)?.title === DEFAULT_SESSION_TITLE) {
         store.renameSession(opts.session.id, title);
         sendSSE(opts.res, { type: 'session_title', session_id: opts.session.id, title });
       }
@@ -826,8 +841,10 @@ async function generateSessionTitle(
   config: HermesGatewayConfig,
   userPrompt: string,
   assistantText: string,
+  model: ChatModel,
 ): Promise<string | null> {
-  const raw = await hermesOneShotText(config, TITLE_PROMPT_TEMPLATE(userPrompt, assistantText), TITLE_GEN_TIMEOUT_MS);
+  // Use the provider that just answered, not a possibly disconnected default.
+  const raw = await hermesOneShotText(config, TITLE_PROMPT_TEMPLATE(userPrompt, assistantText), TITLE_GEN_TIMEOUT_MS, { model });
   return sanitizeGeneratedTitle(raw);
 }
 

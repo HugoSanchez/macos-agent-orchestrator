@@ -33,11 +33,24 @@ import { useIsSystemAsleep } from './useSystemSleep';
 
 const POLL_MS = 2_000;
 
+/**
+ * Hand-off to document tabs (experimental): entries `claims` accepts open in
+ * the chat column via `open` instead of the panel preview, and tabs follow
+ * panel moves/deletes.
+ */
+export interface WorkspaceDocumentTabsBridge {
+  claims: (entry: WorkspaceEntryView) => boolean;
+  open: (workspaceId: string, entry: WorkspaceEntryView) => void;
+  onEntryMoved: (workspaceId: string, sourcePath: string, destinationPath: string) => void;
+  onEntryDeleted: (workspaceId: string, path: string) => void;
+}
+
 export interface UseWorkspacePanelOptions {
   /** Panel visibility — polling only runs while the panel is showing. */
   open: boolean;
   connected: boolean;
   accountId: string | null;
+  documentTabs?: WorkspaceDocumentTabsBridge;
 }
 
 export interface WorkspacePanelController extends WorkspacePanelState {
@@ -47,6 +60,8 @@ export interface WorkspacePanelController extends WorkspacePanelState {
   isLoading: boolean;
   isSaving: boolean;
   canImportFiles: boolean;
+  /** True for entries that open in a document tab rather than the panel preview. */
+  opensInDocumentTab: (entry: WorkspaceEntryView) => boolean;
   selectWorkspace: (id: string) => void;
   createWorkspace: (name: string) => void;
   renameSelectedWorkspace: (name: string) => void;
@@ -67,11 +82,23 @@ export interface WorkspacePanelController extends WorkspacePanelState {
  * live in `workspace-panel-model`. Workspaces are panel state only — selecting
  * one never changes the current conversation or its prompt context.
  */
-export function useWorkspacePanel({ open, connected, accountId }: UseWorkspacePanelOptions): WorkspacePanelController {
+export function useWorkspacePanel({
+  open,
+  connected,
+  accountId,
+  documentTabs,
+}: UseWorkspacePanelOptions): WorkspacePanelController {
   const [state, setState] = useState<WorkspacePanelState>(EMPTY_WORKSPACE_PANEL_STATE);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const asleep = useIsSystemAsleep();
+  // Read through a ref so callers can pass a fresh object every render.
+  const documentTabsRef = useRef(documentTabs);
+  documentTabsRef.current = documentTabs;
+  const opensInDocumentTab = useCallback(
+    (entry: WorkspaceEntryView) => documentTabsRef.current?.claims(entry) === true,
+    [],
+  );
 
   // Async flows read the latest state through this ref so a poll landing
   // mid-operation can't act on a stale snapshot.
@@ -116,7 +143,7 @@ export function useWorkspacePanel({ open, connected, accountId }: UseWorkspacePa
     entry: WorkspaceEntryView,
     generation: number,
   ) => {
-    if (entry.kind !== 'file' || !entry.editable) return;
+    if (entry.kind !== 'file' || !entry.editable || opensInDocumentTab(entry)) return;
     try {
       const file = await getWorkspaceFile(workspaceId, entry.path);
       if (generation !== generationRef.current) return;
@@ -128,7 +155,7 @@ export function useWorkspacePanel({ open, connected, accountId }: UseWorkspacePa
     } catch (error: unknown) {
       fail(error, generation);
     }
-  }, [fail]);
+  }, [fail, opensInDocumentTab]);
 
   /** Returns the fetched tree so callers can act on the fresh entries. */
   const loadTree = useCallback(async (
@@ -316,24 +343,27 @@ export function useWorkspacePanel({ open, connected, accountId }: UseWorkspacePa
         const { workspace, file } = await createWorkspaceFile(id, ensureMarkdownExtension(path), '');
         if (generation !== generationRef.current) return;
         setState((prev) => ({ ...prev, workspaces: upsertWorkspace(prev.workspaces, workspace) }));
-        await loadTree(id, generation);
+        const tree = await loadTree(id, generation);
         if (generation !== generationRef.current) return;
+        const created = tree?.entries.find((entry) => entry.path === file.path);
+        const asDocument = created !== undefined && opensInDocumentTab(created);
         setState((prev) => (
           prev.selectedWorkspaceId === id
             ? {
                 ...prev,
                 selectedEntryPath: file.path,
-                loadedFile: file,
-                draftContent: file.content,
+                loadedFile: asDocument ? null : file,
+                draftContent: asDocument ? '' : file.content,
                 errorMessage: null,
               }
             : prev
         ));
+        if (asDocument) documentTabsRef.current?.open(id, created);
       } catch (error: unknown) {
         fail(error, generation);
       }
     })();
-  }, [canLeaveDraft, fail, loadTree]);
+  }, [canLeaveDraft, fail, loadTree, opensInDocumentTab]);
 
   const handleMoveEntry = useCallback((path: string, destinationPath: string) => {
     if (!canLeaveDraft()) return;
@@ -344,6 +374,7 @@ export function useWorkspacePanel({ open, connected, accountId }: UseWorkspacePa
       try {
         const tree = await moveWorkspaceEntry(id, path, destinationPath);
         if (generation !== generationRef.current) return;
+        documentTabsRef.current?.onEntryMoved(id, path, destinationPath);
         const movedSelection = movedSelectionPath(
           stateRef.current.selectedEntryPath,
           path,
@@ -372,6 +403,7 @@ export function useWorkspacePanel({ open, connected, accountId }: UseWorkspacePa
       try {
         const tree = await deleteWorkspaceEntry(id, path);
         if (generation !== generationRef.current) return;
+        documentTabsRef.current?.onEntryDeleted(id, path);
         const removedSelection = selectionInside(stateRef.current.selectedEntryPath, path);
         applyTreeForWorkspace(id, tree, (next) => (
           removedSelection ? clearSelection(next) : next
@@ -384,18 +416,28 @@ export function useWorkspacePanel({ open, connected, accountId }: UseWorkspacePa
 
   const handleSelectEntry = useCallback((path: string) => {
     const { selectedWorkspaceId, selectedEntryPath, entries } = stateRef.current;
-    if (path === selectedEntryPath || !selectedWorkspaceId || !canLeaveDraft()) return;
+    if (!selectedWorkspaceId) return;
     const entry = entries.find((candidate) => candidate.path === path);
     if (!entry) return;
-    setState((prev) => ({
-      ...prev,
-      selectedEntryPath: path,
-      loadedFile: null,
-      draftContent: '',
-      errorMessage: null,
-    }));
+    const asDocument = opensInDocumentTab(entry);
+    // Re-clicking an already-selected document still brings its tab forward.
+    if (path === selectedEntryPath && !asDocument) return;
+    if (path !== selectedEntryPath) {
+      if (!canLeaveDraft()) return;
+      setState((prev) => ({
+        ...prev,
+        selectedEntryPath: path,
+        loadedFile: null,
+        draftContent: '',
+        errorMessage: null,
+      }));
+    }
+    if (asDocument) {
+      documentTabsRef.current?.open(selectedWorkspaceId, entry);
+      return;
+    }
     void loadFile(selectedWorkspaceId, entry, generationRef.current);
-  }, [canLeaveDraft, loadFile]);
+  }, [canLeaveDraft, loadFile, opensInDocumentTab]);
 
   const handleSetDraftContent = useCallback((content: string) => {
     setState((prev) => ({ ...prev, draftContent: content }));
@@ -456,6 +498,7 @@ export function useWorkspacePanel({ open, connected, accountId }: UseWorkspacePa
     isLoading,
     isSaving,
     canImportFiles: canPickNativeFiles(),
+    opensInDocumentTab,
     selectWorkspace: handleSelectWorkspace,
     createWorkspace: handleCreateWorkspace,
     renameSelectedWorkspace: handleRenameWorkspace,

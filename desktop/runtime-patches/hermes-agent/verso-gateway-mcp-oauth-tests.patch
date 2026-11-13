@@ -1,0 +1,173 @@
+--- /dev/null
++++ b/tests/gateway/test_verso_mcp_oauth.py
+@@ -0,0 +1,170 @@
++"""Keep browser OAuth alive through the real transport initialization deadline."""
++import asyncio
++import tempfile
++import unittest
++from contextlib import asynccontextmanager
++from unittest.mock import patch
++
++from gateway.platforms import verso_mcp_oauth
++from tools.mcp_dashboard_oauth import DashboardOAuthFlow
++from tools import mcp_tool
++
++
++class BrowserOAuthTimeoutTest(unittest.TestCase):
++    def test_browser_callback_outlives_configured_connection_timeout(self):
++        with tempfile.TemporaryDirectory() as home:
++            flow = DashboardOAuthFlow("fixture", "custom_fixture", None, home,
++                                      "http://localhost:43821/oauth/callback")
++            config = {"url": "https://mcp.example.test", "auth": "oauth",
++                      "timeout": 0.01, "connect_timeout": 0.01,
++                      "oauth": {"client_id": "fixture-client"}}
++
++            class BrowserSession:
++                def __init__(self, *args, **kwargs):
++                    pass
++
++                async def __aenter__(self):
++                    return self
++
++                async def __aexit__(self, *args):
++                    pass
++
++                async def initialize(self):
++                    await flow.publish_authorization_url("https://provider.test/auth?state=original-state")
++
++                    async def browser_returns():
++                        # Scale the original 30s / user's 70s wait down for CI.
++                        await asyncio.sleep(0.05)
++                        flow.deliver_callback(code="fixture-code", state="original-state", error=None)
++
++                    callback = asyncio.create_task(browser_returns())
++                    try:
++                        await flow.wait_for_callback(timeout=1)
++                    finally:
++                        await callback
++
++            @asynccontextmanager
++            async def transport(*args, **kwargs):
++                yield None, None, None
++
++            async def discover(_self):
++                pass
++
++            async def done(_self):
++                return "shutdown"
++
++            def probe(name, cfg, connect_timeout):
++                # Exercise the deadline in Hermes itself, not a duplicate of it.
++                async def connect():
++                    server = mcp_tool.MCPServerTask(name)
++                    await asyncio.wait_for(server._run_http(cfg), timeout=connect_timeout)
++                asyncio.run(connect())
++                return [("fixture_tool", "Fixture")]
++
++            with patch("hermes_cli.mcp_config._probe_single_server", side_effect=probe), \
++                 patch("hermes_cli.mcp_config._oauth_tokens_present", return_value=True), \
++                 patch.object(mcp_tool, "ClientSession", BrowserSession), \
++                 patch.object(mcp_tool, "streamable_http_client", transport), \
++                 patch.object(mcp_tool, "_MCP_NEW_HTTP", True), \
++                 patch.object(mcp_tool, "_MCP_HTTP_AVAILABLE", True), \
++                 patch.object(mcp_tool.MCPServerTask, "_discover_tools", discover), \
++                 patch.object(mcp_tool.MCPServerTask, "_wait_for_lifecycle_event", done), \
++                 patch.object(mcp_tool, "reconnect_mcp_server"):
++                verso_mcp_oauth._run_flow(flow, config)
++
++            self.assertEqual(flow.status, "approved", flow.error)
++            self.assertEqual(flow.expected_state, "original-state")
++            self.assertTrue(flow.worker_done)
++
++
++
++class OAuthRecoveryTest(unittest.IsolatedAsyncioTestCase):
++    async def asyncSetUp(self):
++        from types import SimpleNamespace
++        from unittest.mock import AsyncMock
++        from mcp.shared.auth import OAuthClientMetadata, OAuthToken
++        from tools import mcp_oauth_manager
++        self.manager_patch = patch.object(mcp_oauth_manager, "get_manager", return_value=SimpleNamespace(
++            invalidate_if_disk_changed=AsyncMock(return_value=False)))
++        self.manager_patch.start()
++        self.addCleanup(self.manager_patch.stop)
++        self.provider = mcp_oauth_manager._make_hermes_provider_class()(
++            server_url="https://mcp.example.test", server_name="fixture",
++            client_metadata=OAuthClientMetadata(redirect_uris=["http://localhost:43821/oauth/callback"]),
++            storage=AsyncMock())
++        self.provider._initialized = True
++        self.provider.context.current_tokens = OAuthToken(access_token="fixture-token", token_type="Bearer", expires_in=3600)
++        self.provider.context.update_token_expiry(self.provider.context.current_tokens)
++
++    def flow(self):
++        import httpx
++        return self.provider.async_auth_flow(httpx.Request("POST", "https://mcp.example.test"))
++
++    async def test_cross_task_teardown_does_not_poison_the_cached_provider(self):
++        import httpx
++        first = self.flow()
++        await first.__anext__()
++        await asyncio.create_task(first.aclose())
++        second = self.flow()
++        try:
++            request = await asyncio.wait_for(second.__anext__(), timeout=0.3)
++            self.assertEqual(request.headers["Authorization"], "Bearer fixture-token")
++            with self.assertRaises(StopAsyncIteration):
++                await second.asend(httpx.Response(200, request=request))
++        finally:
++            await second.aclose()
++
++    async def test_network_failure_does_not_break_the_next_httpx_request(self):
++        import httpx
++        attempts = 0
++
++        async def transport(request):
++            nonlocal attempts
++            attempts += 1
++            if attempts == 1:
++                raise httpx.ReadError("connection interrupted", request=request)
++            return httpx.Response(200, json={"ok": True}, request=request)
++
++        async with httpx.AsyncClient(auth=self.provider, transport=httpx.MockTransport(transport)) as client:
++            with self.assertRaises(httpx.ReadError):
++                await client.post("https://mcp.example.test")
++            response = await asyncio.wait_for(client.post("https://mcp.example.test"), timeout=0.3)
++            self.assertEqual(response.status_code, 200)
++            self.assertEqual(attempts, 2)
++
++    async def test_requests_stay_serialized_and_cancelling_a_waiter_does_not_unlock_the_owner(self):
++        first, second, third = self.flow(), self.flow(), self.flow()
++        await first.__anext__()
++        waiter = asyncio.create_task(second.__anext__())
++        await asyncio.sleep(0.01)
++        self.assertFalse(waiter.done())
++        waiter.cancel()
++        with self.assertRaises(asyncio.CancelledError):
++            await waiter
++        next_waiter = asyncio.create_task(third.__anext__())
++        await asyncio.sleep(0.01)
++        self.assertFalse(next_waiter.done())
++        try:
++            await asyncio.create_task(first.aclose())
++            await asyncio.wait_for(next_waiter, timeout=0.3)
++        finally:
++            await third.aclose()
++
++
++class LiveMCPStatusTest(unittest.IsolatedAsyncioTestCase):
++    async def test_disconnected_sessions_cannot_advertise_stale_registered_tools(self):
++        import json
++        from types import SimpleNamespace
++        from unittest.mock import Mock
++        tasks = {
++            "live": SimpleNamespace(session=object(), _task=Mock(done=lambda: False), _registered_tool_names=["live_tool"]),
++            "retrying": SimpleNamespace(session=None, _task=Mock(done=lambda: False), _registered_tool_names=["stale_tool"]),
++            "stopped": SimpleNamespace(session=object(), _task=Mock(done=lambda: True), _registered_tool_names=["dead_tool"]),
++        }
++        with patch.object(mcp_tool, "_servers", tasks):
++            response = await verso_mcp_oauth.handle_registered_tools(SimpleNamespace(_check_auth=lambda req: None), None)
++        self.assertEqual(json.loads(response.text)["servers"], {"live": ["live_tool"], "retrying": [], "stopped": []})
++
++
++if __name__ == "__main__":
++    unittest.main()

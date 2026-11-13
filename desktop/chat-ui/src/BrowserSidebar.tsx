@@ -1,11 +1,14 @@
 import { resolveSidecarUrl } from './chat';
 import { formatRelativeTime } from './session-format';
-import type { ChatSessionSummary, CustomConnectorView } from './types';
+import type { ChatSessionSummary, ConnectionView, CustomConnectorView } from './types';
 
 export interface BrowserSidebarProps {
   activeSessions: ChatSessionSummary[];
   archivedSessions: ChatSessionSummary[];
   connected: boolean;
+  connections: ConnectionView[];
+  connectingApps: ReadonlySet<string>;
+  onAddAccount: (slug: string) => void;
   customConnectors: CustomConnectorView[];
   isHydratingSession: boolean;
   isLoadingSessions: boolean;
@@ -64,6 +67,20 @@ export function BrowserSidebar(props: BrowserSidebarProps) {
           emptyText="No archived sessions."
         />
       )}
+
+      {props.connections.length > 0 && <section className="session-section">
+        <div className="session-section-title">Connected apps</div>
+        {[...new Map(props.connections.map((connection) => [connection.toolkitSlug, connection])).values()].map((app) => (
+          <div className="sidebar-connected-app" key={app.toolkitSlug}>
+            <span>{app.toolkitName}</span>
+            <button type="button" className="sidebar-add-account"
+              title={`Add another ${app.toolkitName} account`} aria-label={`Add another ${app.toolkitName} account`}
+              disabled={props.connectingApps.has(app.toolkitSlug)} onClick={() => props.onAddAccount(app.toolkitSlug)}>
+              {props.connectingApps.has(app.toolkitSlug) ? '…' : '+'}
+            </button>
+          </div>
+        ))}
+      </section>}
 
       <CustomConnectorSection
         connectors={props.customConnectors}
@@ -154,16 +171,19 @@ function CustomConnectorSection({
             )}
             <div className="custom-connector-main">
               <div className="custom-connector-name">
-                <span className={`custom-connector-dot is-${connector.status.state}`} />
+                <span className={`custom-connector-dot is-${connector.status.state}`}
+                  role={connector.status.state === 'connecting' ? 'status' : undefined}
+                  aria-label={connector.status.state === 'connecting' ? `Connecting to ${connector.name}` : undefined}
+                  title={connector.status.state === 'connecting' ? 'Connecting…' : undefined} />
                 <span>{connector.name}</span>
                 <span className="custom-connector-tag">custom</span>
               </div>
-              {connector.status.state !== 'connected' && (
+              {connector.status.state !== 'connected' && connector.status.state !== 'connecting' && (
                 <div className="custom-connector-status">{customConnectorStatusText(connector)}</div>
               )}
             </div>
             <div className="custom-connector-actions">
-              {connector.status.state !== 'connected' && (
+              {connector.status.state !== 'connected' && connector.status.state !== 'connecting' && (
                 <button
                   type="button"
                   onClick={() => onSignIn(connector.id)}
@@ -188,6 +208,7 @@ function CustomConnectorSection({
 }
 
 function customConnectorStatusText(connector: CustomConnectorView): string {
+  if (connector.status.state === 'connecting') return 'Connecting…';
   if (connector.status.state === 'pending_auth') return 'Waiting for sign-in';
   if (connector.status.state === 'connected') return 'Connected';
   return connector.status.reason;

@@ -740,6 +740,20 @@ function PanelPreview({ panel }: { panel: WorkspacePanelController }) {
           onChange={(event) => panel.setDraftContent(event.target.value)}
           spellCheck={false}
         />
+      ) : panel.opensInDocumentTab(entry) ? (
+        <div className="workspace-panel-placeholder">
+          <span className="workspace-preview-glyph">
+            <EntryFileIcon entry={entry} />
+          </span>
+          <div className="workspace-placeholder-text">Opens as a tab next to the chat.</div>
+          <button
+            type="button"
+            className="workspace-text-button is-save-ready"
+            onClick={() => panel.selectEntry(entry.path)}
+          >
+            Open
+          </button>
+        </div>
       ) : (
         <div className="workspace-panel-placeholder">
           <span className="workspace-preview-glyph">
