@@ -8,9 +8,11 @@ import { CustomConnectorKeychain } from './keychain.ts';
 import { probeMcpServer } from './mcp-probe.ts';
 import { countCustomConnectorTools, fetchRegisteredToolNames, hermesGatewayAuthHeaders } from '../hermes/hermes-gateway-client.ts';
 import type { HermesSupervisor } from '../hermes/hermes-supervisor.ts';
+import { MCP_OAUTH_REDIRECT_URI, mcpOAuthCallback, type OAuthCallbackLease } from './mcp-oauth-callback.ts';
 
 export type CustomConnectorStatus =
   | { state: 'connected'; toolCount: number; cached?: true }
+  | { state: 'connecting'; toolCount: 0 }
   | { state: 'pending_auth'; toolCount: 0 }
   | { state: 'failed'; toolCount: 0; reason: string };
 
@@ -25,6 +27,9 @@ export function buildCustomConnectorRoutes(
 ): Route[] {
   const service = new CustomConnectorService(store, keychain, hermes);
   return [
+    route('GET', '/connectors/custom/oauth-settings', async (_req, res) => {
+      json(res, 200, { redirectUri: MCP_OAUTH_REDIRECT_URI });
+    }),
     route('GET', '/connectors/custom', async (_req, res) => {
       json(res, 200, { connectors: await service.list() });
     }),
@@ -61,6 +66,7 @@ export class CustomConnectorService {
   // only: it exists to explain a stuck "pending sign-in" state in the UI, and
   // a fresh launch (or a retry) should start clean.
   private readonly lastAuthErrors = new Map<string, string>();
+  private readonly missingToolsSince = new Map<string, number>();
   private readonly authWatchers = new Map<string, AbortController>();
 
   constructor(
@@ -85,13 +91,14 @@ export class CustomConnectorService {
     const slug = sanitizeCustomConnectorSlug(parsed.name);
     if (!slug) throw new HttpInputError('Connector name must include letters or numbers.');
     const probe = await probeMcpServer(parsed.url, { token: parsed.token });
-    const auth = parsed.token ? 'bearer' : probe.auth;
+    const auth = parsed.oauth ? 'oauth' : parsed.token ? 'bearer' : probe.auth;
     const record = this.store.create({
       name: parsed.name,
       slug,
       url: parsed.url,
       transport: probe.transport,
       auth,
+      ...(parsed.oauth ? { oauth: { clientId: parsed.oauth.clientId, hasClientSecret: Boolean(parsed.oauth.clientSecret) } } : {}),
       logoUrl: null,
       iconPath: probe.iconPath,
       iconContentType: probe.iconContentType,
@@ -101,6 +108,7 @@ export class CustomConnectorService {
     });
     try {
       if (auth === 'bearer') await this.keychain.setSecret(record.id, parsed.token ?? '');
+      if (parsed.oauth?.clientSecret) await this.keychain.setSecret(record.id, parsed.oauth.clientSecret);
       await this.hermes.restart();
       return this.view(displayRecord, await this.waitForConnectorTools(displayRecord));
     } catch (error) {
@@ -114,12 +122,13 @@ export class CustomConnectorService {
     const current = this.store.get(id);
     if (!current) throw new HttpInputError(`Unknown custom connector: ${id}`, 404);
     this.lastAuthErrors.delete(id);
+    this.missingToolsSince.delete(id);
     try {
       const token = current.auth === 'bearer' ? await this.keychain.getSecret(current.id) : null;
       const probe = await probeMcpServer(current.url, { token });
       const updated = this.store.update(id, {
         transport: probe.transport,
-        auth: current.auth === 'bearer' ? 'bearer' : probe.auth,
+        auth: current.oauth ? 'oauth' : current.auth === 'bearer' ? 'bearer' : probe.auth,
         logoUrl: probe.iconPath ? `/connectors/custom/${encodeURIComponent(current.id)}/icon` : current.logoUrl,
         iconPath: probe.iconPath ?? current.iconPath ?? null,
         iconContentType: probe.iconContentType ?? current.iconContentType ?? null,
@@ -152,14 +161,31 @@ export class CustomConnectorService {
       return;
     }
 
-    const result = await this.startGatewayOAuthFlow(record);
+    let callback: OAuthCallbackLease | undefined;
+    const controller = new AbortController();
+    let result: Awaited<ReturnType<CustomConnectorService['startGatewayOAuthFlow']>>;
+    try {
+      if (record.oauth) callback = await mcpOAuthCallback.acquire();
+      result = await this.startGatewayOAuthFlow(record);
+      if (result.kind === 'redirect' && callback) {
+        callback.register(result.url,
+          `${this.hermes.gatewayConfig.baseUrl}/api/mcp/oauth/callback/${encodeURIComponent(`custom_${record.slug}`)}`,
+          (message) => {
+            if (this.authWatchers.get(record.id) !== controller) return;
+            this.setAuthError(record, message, controller.signal);
+            controller.abort();
+          });
+      }
+    } catch (error) {
+      result = { kind: 'error', message: customConnectorErrorMessage(error) };
+    }
     if (result.kind === 'redirect') {
       this.lastAuthErrors.delete(record.id);
       this.authWatchers.get(record.id)?.abort();
-      const controller = new AbortController();
       this.authWatchers.set(record.id, controller);
       void this.watchAuthFlow(record, result.flowId, controller.signal)
         .finally(() => {
+          callback?.release();
           if (this.authWatchers.get(record.id) === controller) {
             this.authWatchers.delete(record.id);
           }
@@ -168,6 +194,7 @@ export class CustomConnectorService {
       res.end();
       return;
     }
+    callback?.release();
     this.lastAuthErrors.set(record.id, result.message);
     sendHtml(res, 500, renderCallbackPage('Sign-in unavailable', result.message));
   }
@@ -176,6 +203,7 @@ export class CustomConnectorService {
     this.authWatchers.get(id)?.abort();
     this.authWatchers.delete(id);
     this.lastAuthErrors.delete(id);
+    this.missingToolsSince.delete(id);
     const removed = this.store.delete(id);
     if (!removed) return;
     await this.keychain.deleteSecret(removed.id);
@@ -211,7 +239,19 @@ export class CustomConnectorService {
     }
     const hasOAuthSession = current.auth === 'oauth'
       && hasHermesOAuthTokens(this.hermes.hermesHome, `custom_${current.slug}`);
-    return viewFor(current, registered, this.lastAuthErrors.get(current.id), hasOAuthSession);
+    const authError = this.lastAuthErrors.get(current.id);
+    const view = viewFor(current, registered, authError, hasOAuthSession);
+    if (view.status.state !== 'failed' || authError) {
+      this.missingToolsSince.delete(current.id);
+      return view;
+    }
+    // Tool discovery can lag behind sidecar startup or a reconnect. Present
+    // that interval as progress, but do not hide a sustained outage forever.
+    const now = Date.now();
+    const since = this.missingToolsSince.get(current.id) ?? now;
+    this.missingToolsSince.set(current.id, since);
+    if (now - since < 30_000) return { ...current, status: { state: 'connecting', toolCount: 0 } };
+    return view;
   }
 
   /**
@@ -379,7 +419,10 @@ function viewFor(
   if (hasOAuthSession) {
     return {
       ...record,
-      status: { state: 'connected', toolCount: record.lastKnownToolCount ?? 0, cached: true },
+      status: {
+        state: 'failed', toolCount: 0,
+        reason: 'Unable to connect. Try again.',
+      },
     };
   }
   if (record.auth === 'oauth') return { ...record, status: { state: 'pending_auth', toolCount: 0 } };
@@ -393,13 +436,24 @@ function viewFor(
   };
 }
 
-function parseCreateBody(body: unknown): { name: string; url: string; token: string | null } {
+function parseCreateBody(body: unknown): {
+  name: string; url: string; token: string | null;
+  oauth?: { clientId: string; clientSecret: string | null };
+} {
   const input = body && typeof body === 'object' ? body as Record<string, unknown> : {};
   const name = typeof input.name === 'string' ? input.name.trim() : '';
   const url = typeof input.url === 'string' ? input.url.trim() : '';
   const token = typeof input.token === 'string' && input.token.length > 0 ? input.token : null;
   if (!name) throw new HttpInputError('Missing "name".');
   if (!url) throw new HttpInputError('Missing "url".');
+  if (input.oauth !== undefined) {
+    const oauth = input.oauth && typeof input.oauth === 'object' ? input.oauth as Record<string, unknown> : {};
+    const clientId = typeof oauth.clientId === 'string' ? oauth.clientId.trim() : '';
+    const clientSecret = typeof oauth.clientSecret === 'string' ? oauth.clientSecret.trim() || null : null;
+    if (!clientId) throw new HttpInputError('OAuth settings require a client ID.');
+    if (token) throw new HttpInputError('Choose OAuth credentials or an API token, not both.');
+    return { name, url, token, oauth: { clientId, clientSecret } };
+  }
   return { name, url, token };
 }
 

@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import type { ChildProcess } from 'node:child_process';
+import { once } from 'node:events';
 import os from 'node:os';
 import path from 'node:path';
 import YAML from 'yaml';
@@ -8,6 +10,7 @@ import { CustomConnectorKeychain, type KeychainExec } from '../src/connections/k
 import { probeMcpServer } from '../src/connections/mcp-probe.ts';
 import { HermesSupervisor } from '../src/hermes/hermes-supervisor.ts';
 import { countCustomConnectorTools } from '../src/hermes/hermes-gateway-client.ts';
+import { MCP_OAUTH_REDIRECT_URI, mcpOAuthCallback } from '../src/connections/mcp-oauth-callback.ts';
 import {
   CustomConnectorService,
   customConnectorErrorMessage,
@@ -28,6 +31,7 @@ describe('custom MCP connectors', () => {
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     for (const [key, value] of Object.entries(envSnapshot)) {
       if (value === undefined) delete process.env[key];
       else process.env[key] = value;
@@ -265,6 +269,108 @@ describe('custom MCP connectors', () => {
     expect(existsSync(path.join(tokenDir, 'custom_linear.meta.json'))).toBe(false);
   });
 
+  it('passes manual OAuth credentials to Hermes using a secret reference and the shared callback', () => {
+    seedHermesTemplate(tempRoot);
+    const store = new CustomConnectorsStore(path.join(tempRoot, 'store.json'));
+    const connector = store.create({
+      name: 'HubSpot', slug: 'hubspot', url: 'https://mcp.hubspot.com', transport: 'http',
+      auth: 'oauth', logoUrl: null, oauth: { clientId: 'hubspot-client', hasClientSecret: true },
+    });
+    const supervisor = new HermesSupervisor({ runtimeMode: 'managed', customConnectorsStore: store,
+      launch: { command: '/bin/true', args: [], cwd: null, startupTimeoutMs: 1 } });
+    (supervisor as unknown as { ensureManagedHermesHome: () => void }).ensureManagedHermesHome();
+    const config = YAML.parse(readFileSync(path.join(tempRoot, 'profiles/verso/config.yaml'), 'utf8'));
+    expect(config.mcp_servers.custom_hubspot.oauth).toEqual({
+      client_id: 'hubspot-client', redirect_uri: MCP_OAUTH_REDIRECT_URI,
+      client_secret: `\${VERSO_CC_${connector.id}_CLIENT_SECRET}`,
+    });
+  });
+
+  it('injects the Keychain client secret into the gateway child environment', async () => {
+    seedHermesTemplate(tempRoot);
+    const store = new CustomConnectorsStore(path.join(tempRoot, 'store.json'));
+    const connector = store.create({
+      name: 'HubSpot', slug: 'hubspot', url: 'https://mcp.hubspot.com', transport: 'http',
+      auth: 'oauth', logoUrl: null, oauth: { clientId: 'client', hasClientSecret: true },
+    });
+    const keychain = fakeKeychain();
+    const supervisor = new HermesSupervisor({ runtimeMode: 'managed', customConnectorsStore: store,
+      customConnectorKeychain: keychain.instance,
+      launch: { command: process.execPath, args: ['-e',
+        `process.exit(process.env[${JSON.stringify(`VERSO_CC_${connector.id}_CLIENT_SECRET`)}] === 'secret-token' ? 0 : 1)`],
+        cwd: null, startupTimeoutMs: 1 } });
+    const internals = supervisor as unknown as { spawnManagedProcess: () => Promise<ChildProcess> };
+    const child = await internals.spawnManagedProcess();
+    const [code] = await once(child, 'exit');
+    expect(code).toBe(0);
+    expect(keychain.getSecret).toHaveBeenCalledWith(connector.id);
+    keychain.getSecret.mockResolvedValueOnce(null as any);
+    await expect(internals.spawnManagedProcess()).rejects.toThrow(/client secret.*Keychain/);
+  });
+
+  it('registers a manual OAuth callback before browser redirect and releases it when the flow ends', async () => {
+    const store = new CustomConnectorsStore(path.join(tempRoot, 'store.json'));
+    const connector = store.create({
+      name: 'HubSpot', slug: 'hubspot', url: 'https://mcp.hubspot.com', transport: 'http',
+      auth: 'oauth', logoUrl: null, oauth: { clientId: 'client', hasClientSecret: true },
+    });
+    const callback = { register: vi.fn(), release: vi.fn() };
+    vi.spyOn(mcpOAuthCallback, 'acquire').mockResolvedValue(callback);
+    const authorizationUrl = `https://provider.example/authorize?state=hubspot&redirect_uri=${encodeURIComponent(MCP_OAUTH_REDIRECT_URI)}`;
+    vi.stubGlobal('fetch', vi.fn(async (input: string | URL) => {
+      if (String(input).endsWith('/auth')) return Response.json({ status: 'authorization_required', flow_id: 'manual', authorization_url: authorizationUrl });
+      if (String(input).includes('/flows/')) return Response.json({ status: 'error', error: 'Access denied' });
+      return toolsetsResponse([]);
+    }));
+    const service = new CustomConnectorService(store, fakeKeychain().instance, fakeHermes(tempRoot), {
+      authPollDelayMs: 0, authPollAttempts: 1,
+    });
+    const res = fakeResponse();
+    await service.openAuth(connector.id, res as any);
+    expect(callback.register).toHaveBeenCalledWith(authorizationUrl, 'http://127.0.0.1:65535/api/mcp/oauth/callback/custom_hubspot', expect.any(Function));
+    expect(res.status).toBe(302);
+    await vi.waitFor(() => expect(callback.release).toHaveBeenCalledOnce());
+  });
+
+  it('releases the callback listener when starting manual OAuth fails', async () => {
+    const store = new CustomConnectorsStore(path.join(tempRoot, 'store.json'));
+    const connector = store.create({
+      name: 'HubSpot', slug: 'hubspot', url: 'https://mcp.hubspot.com', transport: 'http',
+      auth: 'oauth', logoUrl: null, oauth: { clientId: 'client', hasClientSecret: true },
+    });
+    const callback = { register: vi.fn(), release: vi.fn() };
+    vi.spyOn(mcpOAuthCallback, 'acquire').mockResolvedValue(callback);
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ error: 'Invalid client' }, { status: 400 })));
+    const service = new CustomConnectorService(store, fakeKeychain().instance, fakeHermes(tempRoot));
+    const res = fakeResponse();
+    await service.openAuth(connector.id, res as any);
+    expect(res.status).toBe(500);
+    expect(callback.release).toHaveBeenCalledOnce();
+    expect(callback.register).not.toHaveBeenCalled();
+  });
+
+  it('immediately marks a rejected callback as failed instead of waiting for gateway polling', async () => {
+    const store = new CustomConnectorsStore(path.join(tempRoot, 'store.json'));
+    const connector = store.create({
+      name: 'HubSpot', slug: 'hubspot', url: 'https://mcp.hubspot.com', transport: 'http',
+      auth: 'oauth', logoUrl: null, oauth: { clientId: 'client', hasClientSecret: true },
+    });
+    const callback = { register: vi.fn(), release: vi.fn() };
+    vi.spyOn(mcpOAuthCallback, 'acquire').mockResolvedValue(callback);
+    vi.stubGlobal('fetch', vi.fn(async (input: string | URL) => {
+      if (String(input).endsWith('/auth')) return Response.json({ status: 'authorization_required', flow_id: 'manual',
+        authorization_url: 'https://provider.example/authorize?state=hubspot' });
+      return toolsetsResponse([]);
+    }));
+    const service = new CustomConnectorService(store, fakeKeychain().instance, fakeHermes(tempRoot), { authPollDelayMs: 60_000 });
+    await service.openAuth(connector.id, fakeResponse() as any);
+    const reportFailure = callback.register.mock.calls[0][2] as (message: string) => void;
+    reportFailure('The sign-in session expired. Return to Verso and start sign-in again.');
+    expect((await service.list())[0].status).toEqual({ state: 'failed', toolCount: 0,
+      reason: 'The sign-in session expired. Return to Verso and start sign-in again.' });
+    await vi.waitFor(() => expect(callback.release).toHaveBeenCalledOnce());
+  });
+
   it('openAuth starts a gateway OAuth flow and redirects to its authorization URL', async () => {
     const store = new CustomConnectorsStore(path.join(tempRoot, 'store.json'));
     const keychain = fakeKeychain();
@@ -456,7 +562,7 @@ describe('custom MCP connectors', () => {
     });
   });
 
-  it('hydrates an existing OAuth connection from persisted credentials while tools warm up', async () => {
+  it('shows connecting during discovery, fails sustained outages, and resets after recovery', async () => {
     const store = new CustomConnectorsStore(path.join(tempRoot, 'store.json'));
     const keychain = fakeKeychain();
     const hermes = fakeHermes(tempRoot);
@@ -477,7 +583,17 @@ describe('custom MCP connectors', () => {
     const [view] = await service.list();
 
     expect(view.id).toBe(connector.id);
-    expect(view.status).toEqual({ state: 'connected', toolCount: 47, cached: true });
+    expect(view.status).toEqual({ state: 'connecting', toolCount: 0 });
+
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('gateway unreachable'); }));
+    expect((await service.list())[0].status).toEqual({ state: 'connecting', toolCount: 0 });
+    const now = Date.now();
+    vi.spyOn(Date, 'now').mockReturnValue(now + 31_000);
+    expect((await service.list())[0].status).toEqual({ state: 'failed', toolCount: 0, reason: 'Unable to connect. Try again.' });
+    vi.stubGlobal('fetch', vi.fn(async () => toolsetsResponse(['mcp__custom_holded__search'])));
+    expect((await service.list())[0].status).toEqual({ state: 'connected', toolCount: 1 });
+    vi.stubGlobal('fetch', vi.fn(async () => toolsetsResponse([])));
+    expect((await service.list())[0].status).toEqual({ state: 'connecting', toolCount: 0 });
 
     writeFileSync(path.join(tempRoot, 'mcp-tokens', 'custom_holded.json'), JSON.stringify({
       access_token: 'expired',
@@ -620,6 +736,38 @@ describe('custom MCP connectors', () => {
     expect(view.status).toEqual({ state: 'pending_auth', toolCount: 0 });
     expect(keychain.setSecret).not.toHaveBeenCalled();
     expect(hermes.restart).toHaveBeenCalledTimes(1);
+  });
+
+  it('stores a manual client secret only in Keychain and preserves OAuth on retry', async () => {
+    const store = new CustomConnectorsStore(path.join(tempRoot, 'store.json'));
+    const keychain = fakeKeychain();
+    const hermes = fakeHermes(tempRoot);
+    vi.stubGlobal('fetch', vi.fn(async (input: string | URL) => {
+      if (String(input).endsWith('/favicon.ico')) return new Response('', { status: 404 });
+      if (String(input).endsWith('/api/mcp/tools')) return toolsetsResponse([]);
+      return initializeResponse('HubSpot');
+    }));
+    const service = new CustomConnectorService(store, keychain.instance, hermes, { registrationAttempts: 1 });
+    const view = await service.add({ name: 'HubSpot', url: 'https://hubspot.example/mcp',
+      oauth: { clientId: 'client-id', clientSecret: 'private-client-secret' } });
+    expect(view.auth).toBe('oauth');
+    expect(view.status.state).toBe('pending_auth');
+    expect(view.oauth).toEqual({ clientId: 'client-id', hasClientSecret: true });
+    expect(keychain.setSecret).toHaveBeenCalledWith(view.id, 'private-client-secret');
+    expect(JSON.stringify(view)).not.toContain('private-client-secret');
+    expect(readFileSync(store.path, 'utf8')).not.toContain('private-client-secret');
+    expect(new CustomConnectorsStore(store.path).get(view.id)?.oauth).toEqual(view.oauth);
+    expect((await service.retry(view.id)).auth).toBe('oauth');
+    expect(hermes.restart).toHaveBeenCalledOnce();
+  });
+
+  it('rejects incomplete or conflicting OAuth input before probing', async () => {
+    const service = new CustomConnectorService(new CustomConnectorsStore(path.join(tempRoot, 'store.json')), fakeKeychain().instance, fakeHermes(tempRoot));
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(service.add({ name: 'HubSpot', url: 'https://mcp.hubspot.com', oauth: { clientSecret: 'secret' } })).rejects.toThrow(/client ID/);
+    await expect(service.add({ name: 'HubSpot', url: 'https://mcp.hubspot.com', token: 'token', oauth: { clientId: 'id' } })).rejects.toThrow(/not both/);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('service add rolls back store and keychain when restart fails', async () => {

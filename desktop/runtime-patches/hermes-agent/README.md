@@ -47,12 +47,25 @@ gateway and exercises streaming plus the MCP OAuth routes.
     Streamed prefixes are promoted to complete commentary without duplication;
     a final answer returned without deltas still receives its fallback delta.
     Depends on patches 1 and 8.
+12. `verso-mcp-oauth-recovery.patch` — keeps OAuth requests serialized with a
+    semaphore that can be released by the task closing the HTTP auth generator,
+    and explicitly closes the nested SDK generator on cancellation or failure.
+    Prevents an interrupted connection from leaving its cached OAuth provider
+    permanently blocked ([MCP SDK #3382](https://github.com/modelcontextprotocol/python-sdk/issues/3382)).
 
-`verso-web-routing-tests.patch`, `verso-credential-env-filter-tests.patch`, and
+`verso-gateway-mcp-oauth-tests.patch`, `verso-web-routing-tests.patch`, `verso-credential-env-filter-tests.patch`, and
 `verso-progress-updates-tests.patch`
 are source-only companions containing upstream regression tests. The patch
 helper applies them to Hermes source checkouts, but skips them for release
 `site-packages` trees because wheels do not ship `tests/`.
+
+The MCP OAuth regression exercises Hermes' actual HTTP initialization deadline
+with a delayed browser callback. Both the probe deadline and the connection
+configuration must allow the browser sign-in window; otherwise an inner retry
+replaces the OAuth state while the user is still approving access.
+It also checks reuse of the same OAuth provider after network errors and
+cross-task teardown, serialization of concurrent requests, cancellation of a
+waiting request, and exclusion of disconnected sessions from live tool status.
 
 ## Progress updates: rollout and rollback
 

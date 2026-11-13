@@ -1,0 +1,25 @@
+--- a/tools/mcp_oauth_manager.py
++++ b/tools/mcp_oauth_manager.py
+@@ -137,6 +137,11 @@
+             **kwargs: Any,
+         ):
+             super().__init__(*args, **kwargs)
++            # Verso: httpx can close an auth generator from a different task.
++            # anyio.Lock is owner-bound and then never releases (MCP SDK #3382).
++            # Keep refreshes serialized, but permit teardown in the closing task.
++            import anyio
++            self.context.lock = anyio.Semaphore(1)
+             self._hermes_server_name = server_name
+             self._hermes_home = ""
+             # When the client_id comes from config.yaml (pre-registered), an
+@@ -430,6 +435,10 @@
+                 # 401 branch so a subsequent cold-load skips discovery.
+                 self._persist_oauth_metadata_if_changed()
+                 return
++            finally:
++                # Close the SDK generator deterministically on network errors,
++                # cancellation, and aclose; never leave its auth gate held until GC.
++                await inner.aclose()
+ 
+     return HermesMCPOAuthProvider
+ 

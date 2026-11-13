@@ -22,6 +22,7 @@ describe('GET /health', () => {
     const body = response.json();
     expect(body.status).toBe('ok');
     expect(body.service).toBe('verso-backend');
+    expect(body.revision).toBeNull();
     expect(body.capabilities).toEqual({
       databaseConfigured: false,
       workosConfigured: false,
@@ -35,6 +36,7 @@ describe('GET /health', () => {
       NODE_ENV: 'test',
       HOST: '127.0.0.1',
       PORT: '8788',
+      RENDER_GIT_COMMIT: '0123456789abcdef0123456789abcdef01234567',
       WORKOS_API_KEY: 'sk_test',
       WORKOS_CLIENT_ID: 'client_test',
     });
@@ -42,6 +44,7 @@ describe('GET /health', () => {
 
     const response = await app.inject({ method: 'GET', url: '/health' });
     expect(response.statusCode).toBe(200);
+    expect(response.json().revision).toBe(config.RENDER_GIT_COMMIT);
     expect(response.json().capabilities).toEqual({
       databaseConfigured: false,
       workosConfigured: true,

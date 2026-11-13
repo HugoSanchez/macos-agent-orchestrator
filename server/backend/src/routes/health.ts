@@ -11,6 +11,7 @@ export async function registerHealthRoutes(app: FastifyInstance, config: Backend
       status: healthy ? 'ok' : 'degraded',
       service: 'verso-backend',
       environment: config.NODE_ENV,
+      revision: config.RENDER_GIT_COMMIT ?? null,
       timestamp: Date.now(),
       capabilities: {
         databaseConfigured: config.databaseConfigured,

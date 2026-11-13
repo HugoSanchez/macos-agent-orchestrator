@@ -53,7 +53,7 @@ export async function registerComposioRoutes(app: FastifyInstance, deps: Composi
       const body = (request.body ?? {}) as Record<string, unknown>;
       const toolkit = requiredString(body, 'toolkit');
       const callbackUrl = validateLoopbackCallbackUrl(requiredString(body, 'callbackUrl'));
-      const result = await deps.composioService.requestConnection(auth.user.id, toolkit, callbackUrl);
+      const result = await deps.composioService.requestConnection(auth.user.id, toolkit, callbackUrl, body.addAccount === true);
       return reply.code(201).send({ request: result });
     } catch (error) {
       return handleError(reply, error);

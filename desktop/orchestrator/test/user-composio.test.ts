@@ -166,7 +166,7 @@ describe('Connected-app provider integration', () => {
       scheduler.setSourceEnabled('gmail', true, now);
       await scheduler.tick(now);
       expect(await memory.search('albatross', 5)).toHaveLength(1);
-      expect(f.service.executeTool).toHaveBeenCalledWith('local-user', 'GMAIL_FETCH_EMAILS', expect.objectContaining({ verbose: true }));
+      expect(f.service.executeTool).toHaveBeenCalledWith('local-user', 'GMAIL_FETCH_EMAILS', expect.objectContaining({ verbose: true }), undefined);
       expect(await connections.deleteConnection('ca_gmail')).toMatchObject({ providerRevocation: 'revoked' });
       expect(f.service.deleteConnection).toHaveBeenCalledWith('local-user', 'ca_gmail');
       expect(externalFetch).not.toHaveBeenCalled();

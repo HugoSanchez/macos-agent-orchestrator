@@ -80,7 +80,7 @@ final class SidecarManagedSessionPolicyTests: XCTestCase {
     }
 
     @MainActor
-    func testExpiredPersistedSessionIsDeletedWithoutPublishingItsIdentity() async {
+    func testExpiredPersistedSessionWithoutBackendKeepsRefreshCredentials() async {
         let recorder = ManagedSessionPersistenceRecorder()
         let expired = managedSession(userId: "expired-user", expiresAt: "2000-01-01T00:00:00Z")
         let store = ManagedSessionStore(persistence: .init(
@@ -98,9 +98,9 @@ final class SidecarManagedSessionPolicyTests: XCTestCase {
 
         await waitUntilRestored(store)
 
-        XCTAssertNil(store.currentSession)
-        XCTAssertEqual(publishedUserIds, [])
-        XCTAssertEqual(recorder.deleteCount, 1)
+        XCTAssertEqual(store.currentSession, expired)
+        XCTAssertEqual(publishedUserIds, [expired.userId])
+        XCTAssertEqual(recorder.deleteCount, 0)
         _ = cancellable
     }
 
@@ -163,6 +163,138 @@ final class SidecarManagedSessionPolicyTests: XCTestCase {
         XCTAssertEqual(recorder.loadCount, 0)
         XCTAssertEqual(recorder.writeCount, 0)
         XCTAssertEqual(recorder.deleteCount, 0)
+    }
+
+    @MainActor
+    func testExpiredSessionSurvivesOfflineStartupAndAutomaticallyRecovers() async throws {
+        let expired = managedSession(userId: "owner", expiresAt: "2000-01-01T00:00:00Z")
+        let recorder = ManagedSessionPersistenceRecorder()
+        let recovered = expectation(description: "Refresh retried after network recovery")
+        var requests = 0
+        let store = ManagedSessionStore(persistence: .init(
+            load: { expired },
+            write: { data in
+                recorder.writeCount += 1
+                XCTAssertEqual(try? JSONDecoder().decode(ManagedAppSession.self, from: data).refreshToken, "rotated-refresh")
+                recovered.fulfill()
+            },
+            delete: { recorder.deleteCount += 1 }
+        ), transport: .init(data: { request in
+            requests += 1
+            if requests == 1 { throw URLError(.notConnectedToInternet) }
+            return self.refreshResponse(request, session: expired)
+        }), backendURL: "https://backend.example", refreshRetryDelay: 0.05)
+
+        await waitUntilRestored(store)
+        XCTAssertEqual(store.currentSession, expired)
+        XCTAssertEqual(recorder.deleteCount, 0)
+        let configuration = VersoRuntimeConfiguration.resolve(
+            environment: ["VERSO_RUNTIME_MODE": "managed"], infoDictionary: [:]
+        )
+        XCTAssertEqual(AppStartupPolicy.destination(
+            configuration: configuration, isRestoringManagedSession: false,
+            managedSession: store.currentSession
+        ), .content)
+        await fulfillment(of: [recovered], timeout: 2)
+        XCTAssertEqual(requests, 2)
+        XCTAssertEqual(store.currentSession?.token, "renewed-access")
+        XCTAssertEqual(recorder.deleteCount, 0)
+    }
+
+    @MainActor
+    func testTemporaryRefreshErrorsKeepExpiredCredentialsButRejectionSignsOut() async throws {
+        for status in [429, 500, 502, 503, 401] {
+            let expired = managedSession(userId: "owner", expiresAt: "2000-01-01T00:00:00Z")
+            let recorder = ManagedSessionPersistenceRecorder()
+            let store = ManagedSessionStore(persistence: .init(
+                load: { expired }, write: { _ in }, delete: { recorder.deleteCount += 1 }
+            ), transport: .init(data: { request in
+                (Data("{\"message\":\"Refresh failed\"}".utf8), HTTPURLResponse(
+                    url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil
+                )!)
+            }), backendURL: "https://backend.example")
+            await waitUntilRestored(store)
+            XCTAssertEqual(store.currentSession, status == 401 ? nil : expired, "HTTP \(status)")
+            XCTAssertEqual(recorder.deleteCount, status == 401 ? 1 : 0, "HTTP \(status)")
+        }
+    }
+
+    @MainActor
+    func testWakeRetriesExpiredSessionBeforeBackgroundRetryIsDue() async throws {
+        let expired = managedSession(userId: "owner", expiresAt: "2000-01-01T00:00:00Z")
+        var requests = 0
+        let store = ManagedSessionStore(persistence: .init(
+            load: { expired }, write: { _ in }, delete: { XCTFail("Must retain credentials") }
+        ), transport: .init(data: { request in
+            requests += 1
+            if requests == 1 { throw URLError(.timedOut) }
+            return self.refreshResponse(request, session: expired)
+        }), backendURL: "https://backend.example")
+        await waitUntilRestored(store)
+        XCTAssertEqual(requests, 1)
+        await store.refreshAfterWake()
+        XCTAssertEqual(requests, 2)
+        XCTAssertEqual(store.currentSession?.token, "renewed-access")
+        await store.refreshAfterWake()
+        XCTAssertEqual(requests, 2, "An unexpired session does not need another exchange")
+    }
+
+    @MainActor
+    func testConcurrentRefreshesExchangeRotatingTokenOnlyOnce() async throws {
+        let session = managedSession(userId: "owner", expiresAt: "2099-01-01T00:00:00Z")
+        var requests = 0
+        var resume: CheckedContinuation<Void, Never>?
+        let store = ManagedSessionStore(persistence: .init(
+            load: { session }, write: { _ in }, delete: {}
+        ), transport: .init(data: { request in
+            requests += 1
+            await withCheckedContinuation { resume = $0 }
+            return self.refreshResponse(request, session: session)
+        }), backendURL: "https://backend.example")
+        await waitUntilRestored(store)
+        let first = Task { try await store.refreshCurrentSession() }
+        while resume == nil { await Task.yield() }
+        let second = Task { try await store.refreshCurrentSession() }
+        for _ in 0..<20 { await Task.yield() }
+        XCTAssertEqual(requests, 1)
+        resume?.resume()
+        try await first.value
+        try await second.value
+        XCTAssertEqual(store.currentSession?.refreshToken, "rotated-refresh")
+    }
+
+    @MainActor
+    func testSignOutDuringStartupRefreshCannotRestoreOrPersistSession() async throws {
+        let expired = managedSession(userId: "owner", expiresAt: "2000-01-01T00:00:00Z")
+        let recorder = ManagedSessionPersistenceRecorder()
+        var resume: CheckedContinuation<Void, Never>?
+        let returned = expectation(description: "Late response returned")
+        let store = ManagedSessionStore(persistence: .init(
+            load: { expired }, write: { _ in recorder.writeCount += 1 },
+            delete: { recorder.deleteCount += 1 }
+        ), transport: .init(data: { request in
+            await withCheckedContinuation { resume = $0 }
+            returned.fulfill()
+            return self.refreshResponse(request, session: expired)
+        }), backendURL: "https://backend.example")
+        while resume == nil { await Task.yield() }
+        store.clearSession()
+        resume?.resume()
+        await fulfillment(of: [returned], timeout: 2)
+        for _ in 0..<20 { await Task.yield() }
+        XCTAssertNil(store.currentSession)
+        XCTAssertEqual(recorder.writeCount, 0)
+        XCTAssertEqual(recorder.deleteCount, 1)
+    }
+
+    private func refreshResponse(_ request: URLRequest, session: ManagedAppSession) -> (Data, URLResponse) {
+        let body: [String: Any] = [
+            "session": ["accessToken": "renewed-access", "refreshToken": "rotated-refresh", "expiresAt": "2099-01-01T00:00:00Z"],
+            "user": ["id": session.userId], "device": ["id": session.deviceId],
+        ]
+        return (try! JSONSerialization.data(withJSONObject: body), HTTPURLResponse(
+            url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil
+        )!)
     }
 
     private func managedSession(userId: String, expiresAt: String) -> ManagedAppSession {

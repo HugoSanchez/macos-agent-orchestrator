@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { addCustomConnector, getToolkits, openCustomConnectorAuth, resolveSidecarUrl } from './chat';
+import { addCustomConnector, getCustomConnectorOAuthSettings, getToolkits, openCustomConnectorAuth, resolveSidecarUrl } from './chat';
 import { displayToolkitName } from './display-names';
 import type { CustomConnectorView, ToolkitView } from './types';
 
@@ -37,6 +37,11 @@ export function CatalogOverlay({
   const [customName, setCustomName] = useState('');
   const [customUrl, setCustomUrl] = useState('');
   const [customToken, setCustomToken] = useState('');
+  const [customOAuth, setCustomOAuth] = useState(false);
+  const [customClientId, setCustomClientId] = useState('');
+  const [customClientSecret, setCustomClientSecret] = useState('');
+  const [redirectUri, setRedirectUri] = useState('');
+  const [redirectCopied, setRedirectCopied] = useState(false);
   const [customBusy, setCustomBusy] = useState(false);
   const [customError, setCustomError] = useState<string | null>(null);
 
@@ -45,6 +50,15 @@ export function CatalogOverlay({
 
   const activePageSize = searchQuery ? SEARCH_PAGE_SIZE : DEFAULT_PAGE_SIZE;
   const canFetchMore = Boolean(searchQuery);
+
+  useEffect(() => {
+    if (!isOpen || !showCustomForm || !customOAuth) return;
+    let active = true;
+    void getCustomConnectorOAuthSettings()
+      .then((settings) => { if (active) setRedirectUri(settings.redirectUri); })
+      .catch((err: unknown) => { if (active) setCustomError(friendlyError(err)); });
+    return () => { active = false; };
+  }, [isOpen, showCustomForm, customOAuth]);
 
   // Debounce search input -> search query. Composio requires queries to be
   // at least MIN_SEARCH_CHARS long; shorter inputs fall back to the default
@@ -141,7 +155,9 @@ export function CatalogOverlay({
     void addCustomConnector({
       name: customName.trim(),
       url: customUrl.trim(),
-      ...(customToken ? { token: customToken } : {}),
+      ...(customOAuth
+        ? { oauth: { clientId: customClientId.trim(), clientSecret: customClientSecret } }
+        : customToken ? { token: customToken } : {}),
     })
       .then((connector) => {
         onCustomConnectorAdded?.(connector);
@@ -151,6 +167,10 @@ export function CatalogOverlay({
         setCustomName('');
         setCustomUrl('');
         setCustomToken('');
+        setCustomOAuth(false);
+        setCustomClientId('');
+        setCustomClientSecret('');
+        setRedirectCopied(false);
         setShowCustomForm(false);
       })
       .catch((err: unknown) => setCustomError(friendlyError(err)))
@@ -249,19 +269,51 @@ export function CatalogOverlay({
                 spellCheck={false}
                 autoCapitalize="off"
               />
-              <input
+              {!customOAuth && <input
                 className="catalog-overlay-search-input"
                 value={customToken}
                 onChange={(event) => setCustomToken(event.target.value)}
                 placeholder="API token — leave empty for OAuth or public servers"
                 type="password"
-              />
+              />}
+              <button type="button" className="catalog-custom-trigger" aria-expanded={customOAuth}
+                disabled={customBusy} onClick={() => { setCustomOAuth(!customOAuth); setCustomError(null); }}>
+                {customOAuth ? 'Hide OAuth settings' : 'OAuth settings (optional)'}
+              </button>
+              {customOAuth && <div className="catalog-custom-oauth">
+                <p>For servers such as HubSpot that require you to register an OAuth app.</p>
+                <label htmlFor="custom-oauth-redirect">Redirect URL</label>
+                <div className="catalog-custom-redirect">
+                  <input id="custom-oauth-redirect" className="catalog-overlay-search-input" readOnly
+                    value={redirectUri} placeholder="Loading…" onFocus={(event) => event.target.select()} />
+                  <button type="button" className="catalog-overlay-link" disabled={!redirectUri}
+                    onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(redirectUri);
+                        setRedirectCopied(true);
+                      } catch {
+                        setCustomError('Select the redirect URL and copy it with ⌘C.');
+                      }
+                    }}>{redirectCopied ? 'Copied' : 'Copy'}</button>
+                </div>
+                <p>Copy this URL into your provider’s OAuth app, then enter its credentials below.</p>
+                <label htmlFor="custom-oauth-client-id">Client ID</label>
+                <input id="custom-oauth-client-id" className="catalog-overlay-search-input"
+                  value={customClientId} onChange={(event) => setCustomClientId(event.target.value)}
+                  spellCheck={false} autoCapitalize="off" autoComplete="off" />
+                <label htmlFor="custom-oauth-client-secret">Client secret</label>
+                <input id="custom-oauth-client-secret" className="catalog-overlay-search-input" type="password"
+                  value={customClientSecret} onChange={(event) => setCustomClientSecret(event.target.value)}
+                  placeholder="If required by your provider" autoComplete="off" />
+              </div>}
               {customError && <div className="catalog-overlay-error">{customError}</div>}
               <div className="catalog-custom-actions">
-                <button type="button" className="catalog-row-pill is-connected" disabled={customBusy || !customName.trim() || !customUrl.trim()} onClick={submitCustomConnector}>
+                <button type="button" className="catalog-row-pill is-connected" disabled={customBusy || !customName.trim() || !customUrl.trim() || (customOAuth && (!customClientId.trim() || !redirectUri))} onClick={submitCustomConnector}>
                   {customBusy ? 'Connecting…' : 'Connect'}
                 </button>
-                <button type="button" className="catalog-row-pill is-pending" disabled={customBusy} onClick={() => setShowCustomForm(false)}>
+                <button type="button" className="catalog-row-pill is-pending" disabled={customBusy} onClick={() => {
+                  setShowCustomForm(false); setCustomToken(''); setCustomClientSecret('');
+                }}>
                   Cancel
                 </button>
               </div>

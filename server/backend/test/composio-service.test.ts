@@ -9,6 +9,7 @@ import {
 } from '../src/composio/service.ts';
 
 const slackSearchTool = {
+  version: '20261001_00',
   slug: 'SLACK_SEARCH_MESSAGES',
   name: 'Search messages',
   description: null,
@@ -22,6 +23,7 @@ const slackSearchTool = {
 
 function createFixture(dependencies: Omit<ComposioServiceDependencies, 'client'> = {}) {
   const execute = vi.fn(async () => ({ data: { ok: true }, error: null, logId: 'log_1' }));
+  const directExecute = vi.fn(async (_slug: string, options: { connectedAccountId: string }) => ({ data: { account: options.connectedAccountId }, error: null, logId: 'log_direct' }));
   const search = vi.fn(async () => ({ results: [] }));
   const authorize = vi.fn(async () => ({
     id: 'request_1',
@@ -49,6 +51,8 @@ function createFixture(dependencies: Omit<ComposioServiceDependencies, 'client'>
       })),
     },
     tools: {
+      proxyExecute: vi.fn(async () => ({ status: 200, data: { emailAddress: 'work@example.com' } })),
+      execute: directExecute,
       getRawComposioToolBySlug: vi.fn(async () => slackSearchTool),
     },
     create: vi.fn(async () => ({ sessionId: 'session_1', search, execute, authorize })),
@@ -60,7 +64,7 @@ function createFixture(dependencies: Omit<ComposioServiceDependencies, 'client'>
     revoke: vi.fn(async (_id: string): Promise<ProviderRevocationResult> => ({ status: 'revoked' })),
   };
   const service = new ComposioService('test-key', { client, fetch, accountRevoker, ...dependencies });
-  return { service, client, fetch, execute, search, authorize, accountRevoker };
+  return { service, client, fetch, execute, directExecute, search, authorize, accountRevoker };
 }
 
 afterEach(() => {
@@ -68,6 +72,112 @@ afterEach(() => {
 });
 
 describe('ComposioService tool execution', () => {
+  test('routes a selected owned account and rejects foreign or wrong-app IDs', async () => {
+    const fixture = createFixture({ log: vi.fn() });
+    vi.mocked(fixture.client.connectedAccounts.list).mockResolvedValue({ items: [
+      { id: 'work', status: 'ACTIVE', toolkit: { slug: 'slack' } },
+      { id: 'personal', status: 'ACTIVE', toolkit: { slug: 'slack' } },
+      { id: 'gmail', status: 'ACTIVE', toolkit: { slug: 'gmail' } },
+    ] });
+    await fixture.service.executeTool('user_1', 'SLACK_SEARCH_MESSAGES', { query: 'hello' }, 'personal');
+    expect(fixture.directExecute).toHaveBeenCalledWith('SLACK_SEARCH_MESSAGES', {
+      userId: 'user_1', connectedAccountId: 'personal', arguments: { query: 'hello' }, version: '20261001_00',
+    });
+    const work = await fixture.service.executeTool('user_1', 'SLACK_SEARCH_MESSAGES', { query: 'hello' }, 'work');
+    expect(work.data).toEqual({ account: 'work' });
+    expect(fixture.execute).not.toHaveBeenCalled();
+    expect(fixture.client.create).not.toHaveBeenCalled();
+    for (const id of ['foreign', 'gmail']) {
+      await expect(fixture.service.executeTool('user_1', 'SLACK_SEARCH_MESSAGES', { query: 'hello' }, id))
+        .rejects.toMatchObject({ status: 404 });
+    }
+    expect(fixture.directExecute).toHaveBeenCalledTimes(2);
+  });
+
+  test('explicit accounts cannot bypass the configured toolkit scope', async () => {
+    const fixture = createFixture({ toolRouterToolkits: 'gmail', log: vi.fn() });
+    await expect(fixture.service.executeTool('user_1', 'SLACK_SEARCH_MESSAGES', { query: 'hello' }, 'work'))
+      .rejects.toMatchObject({ status: 403 });
+    expect(fixture.directExecute).not.toHaveBeenCalled();
+  });
+
+  test('does not fall back to a session if account-bound execution fails', async () => {
+    const fixture = createFixture({ log: vi.fn() });
+    vi.mocked(fixture.client.connectedAccounts.list).mockResolvedValue({ items: [
+      { id: 'work', status: 'ACTIVE', toolkit: { slug: 'slack' } },
+    ] });
+    fixture.directExecute.mockRejectedValue(new Error('Account unavailable'));
+    await expect(fixture.service.executeTool('user_1', 'SLACK_SEARCH_MESSAGES', { query: 'hello' }, 'work'))
+      .rejects.toThrow('Account unavailable');
+    expect(fixture.execute).not.toHaveBeenCalled();
+  });
+
+  test('resolves missing Gmail labels through each owned account and caches separately', async () => {
+    const fixture = createFixture({ log: vi.fn() });
+    vi.mocked(fixture.client.connectedAccounts.list).mockResolvedValue({ items: [
+      { id: 'work', status: 'ACTIVE', toolkit: { slug: 'gmail' } },
+      { id: 'personal', status: 'ACTIVE', toolkit: { slug: 'gmail' } },
+      { id: 'disabled', status: 'ACTIVE', isDisabled: true, toolkit: { slug: 'gmail' } },
+    ] });
+    vi.mocked(fixture.client.tools.proxyExecute).mockImplementation(async ({ connectedAccountId }) => ({
+      status: 200, data: { emailAddress: `${connectedAccountId}@example.com`, ignored: 'private provider data' },
+    }));
+    const connections = await fixture.service.listConnections('user_1');
+    expect(connections.map(({ accountLabel }) => accountLabel)).toEqual(['work@example.com', 'personal@example.com']);
+    expect(JSON.stringify(connections)).not.toContain('private provider data');
+    expect(fixture.client.tools.proxyExecute).toHaveBeenNthCalledWith(1, {
+      connectedAccountId: 'work', endpoint: 'https://gmail.googleapis.com/gmail/v1/users/me/profile', method: 'GET',
+    });
+    expect(fixture.client.tools.proxyExecute).toHaveBeenNthCalledWith(2, {
+      connectedAccountId: 'personal', endpoint: 'https://gmail.googleapis.com/gmail/v1/users/me/profile', method: 'GET',
+    });
+    await fixture.service.listConnections('user_1');
+    expect(fixture.client.tools.proxyExecute).toHaveBeenCalledTimes(2);
+  });
+
+  test('an unavailable Gmail profile leaves connections usable and retries after a short cache', async () => {
+    let now = 0;
+    const fixture = createFixture({ log: vi.fn(), now: () => now });
+    vi.mocked(fixture.client.connectedAccounts.list).mockResolvedValue({ items: [
+      { id: 'work', status: 'ACTIVE', toolkit: { slug: 'gmail' } },
+    ] });
+    vi.mocked(fixture.client.tools.proxyExecute).mockRejectedValueOnce(new Error('Provider unavailable'));
+    expect((await fixture.service.listConnections('user_1'))[0].accountLabel).toBeNull();
+    await fixture.service.listConnections('user_1');
+    expect(fixture.client.tools.proxyExecute).toHaveBeenCalledTimes(1);
+    now = 30_001;
+    expect((await fixture.service.listConnections('user_1'))[0].accountLabel).toBe('work@example.com');
+  });
+
+  test('does not request Gmail profiles for inactive or already labeled accounts', async () => {
+    const fixture = createFixture({ log: vi.fn() });
+    vi.mocked(fixture.client.connectedAccounts.list).mockResolvedValue({ items: [
+      { id: 'inactive', status: 'INACTIVE', toolkit: { slug: 'gmail' } },
+      { id: 'labeled', status: 'ACTIVE', toolkit: { slug: 'gmail' }, state: { val: { displayName: 'known@example.com' } } },
+    ] });
+    expect((await fixture.service.listConnections('user_1')).map(({ accountLabel }) => accountLabel))
+      .toEqual([null, 'known@example.com']);
+    expect(fixture.client.tools.proxyExecute).not.toHaveBeenCalled();
+  });
+
+  test('adding another account authorizes again while ordinary connect reuses the active account', async () => {
+    const fixture = createFixture({ log: vi.fn() });
+    vi.mocked(fixture.client.connectedAccounts.list).mockResolvedValue({ items: [
+      { id: 'work', status: 'ACTIVE', toolkit: { slug: 'slack' }, state: { val: { displayName: 'work@example.com' } } },
+      { id: 'personal', status: 'ACTIVE', toolkit: { slug: 'slack' }, alias: 'Personal' },
+    ] });
+    const existing = await fixture.service.requestConnection('user_1', 'slack', 'http://127.0.0.1:4242/connections/callback');
+    expect(existing.connectedAccountId).toBe('work');
+    expect(fixture.authorize).not.toHaveBeenCalled();
+    const added = await fixture.service.requestConnection('user_1', 'slack', 'http://127.0.0.1:4242/connections/callback', true);
+    expect(added.redirectUrl).toBe('https://connect.example.test');
+    expect(fixture.authorize).toHaveBeenCalledOnce();
+    expect(await fixture.service.listConnections('user_1')).toEqual([
+      expect.objectContaining({ connectedAccountId: 'work', accountLabel: 'work@example.com' }),
+      expect.objectContaining({ connectedAccountId: 'personal', accountLabel: 'Personal' }),
+    ]);
+  });
+
   test('uses injected SDK schema lookup and Tool Router execution without raw REST', async () => {
     const log = vi.fn();
     const fixture = createFixture({ log });
@@ -76,7 +186,7 @@ describe('ComposioService tool execution', () => {
       .resolves.toEqual({ data: { ok: true }, error: null, logId: 'log_1' });
 
     expect(fixture.client.tools.getRawComposioToolBySlug).toHaveBeenCalledWith('SLACK_SEARCH_MESSAGES');
-    expect(fixture.client.create).toHaveBeenCalledWith('user_1', { manageConnections: false });
+    expect(fixture.client.create).toHaveBeenCalledWith('user_1', { manageConnections: false, multiAccount: { enable: true, requireExplicitSelection: true } });
     expect(fixture.execute).toHaveBeenCalledWith('SLACK_SEARCH_MESSAGES', { query: 'katana' });
     expect(fixture.fetch).not.toHaveBeenCalled();
   });
@@ -234,7 +344,7 @@ describe('ComposioService caching and invalidation', () => {
     await fixture.service.executeTool('user_1', 'SLACK_SEARCH_MESSAGES', { query: 'three' });
     await fixture.service.executeTool('user_2', 'SLACK_SEARCH_MESSAGES', { query: 'four' });
     expect(fixture.client.create).toHaveBeenCalledTimes(3);
-    expect(fixture.client.create).toHaveBeenNthCalledWith(3, 'user_1', { manageConnections: false });
+    expect(fixture.client.create).toHaveBeenNthCalledWith(3, 'user_1', { manageConnections: false, multiAccount: { enable: true, requireExplicitSelection: true } });
   });
 });
 
@@ -286,6 +396,7 @@ describe('ComposioService search fallback and policy', () => {
     expect(fixture.client.create).toHaveBeenCalledWith('user_1', {
       toolkits: ['slack'],
       manageConnections: false,
+      multiAccount: { enable: true, requireExplicitSelection: true },
     });
   });
 
@@ -372,6 +483,60 @@ describe('ComposioService connection ownership', () => {
         message: 'Connection request "req_foreign" not found.',
       });
     expect(fixture.client.connectedAccounts.get).not.toHaveBeenCalled();
+  });
+
+  test('removes a verified duplicate without revoking the retained Google authorization', async () => {
+    const fixture = createFixture({ log: vi.fn() });
+    vi.mocked(fixture.client.connectedAccounts.list).mockResolvedValue({ items: [
+      { id: 'duplicate', status: 'ACTIVE', toolkit: { slug: 'gmail' } },
+      { id: 'keep', status: 'ACTIVE', toolkit: { slug: 'gmail' } },
+    ] });
+    await expect(fixture.service.deleteConnection('user_1', 'duplicate')).resolves.toMatchObject({
+      composioAccountDeleted: true, providerRevocation: 'retained_for_duplicate',
+    });
+    expect(fixture.accountRevoker.revoke).not.toHaveBeenCalled();
+    expect(fixture.client.connectedAccounts.disable).not.toHaveBeenCalled();
+    expect(fixture.client.connectedAccounts.delete).toHaveBeenCalledExactlyOnceWith('duplicate');
+    expect(fixture.client.tools.proxyExecute).toHaveBeenCalledTimes(2);
+  });
+
+  test('matching aliases do not suppress revocation for different Google identities', async () => {
+    const fixture = createFixture({ log: vi.fn() });
+    vi.mocked(fixture.client.connectedAccounts.list).mockResolvedValue({ items: [
+      { id: 'work', alias: 'Gmail', status: 'ACTIVE', toolkit: { slug: 'gmail' } },
+      { id: 'personal', alias: 'Gmail', status: 'ACTIVE', toolkit: { slug: 'gmail' } },
+    ] });
+    vi.mocked(fixture.client.tools.proxyExecute).mockImplementation(async ({ connectedAccountId }) => ({
+      status: 200, data: { emailAddress: `${connectedAccountId}@example.com` },
+    }));
+    await expect(fixture.service.deleteConnection('user_1', 'work')).resolves.toMatchObject({ providerRevocation: 'revoked' });
+    expect(fixture.accountRevoker.revoke).toHaveBeenCalledExactlyOnceWith('work');
+  });
+
+  test.each(['ACTIVE', 'INACTIVE'])('does not remove a %s account if duplicate identity verification fails', async (status) => {
+    const fixture = createFixture({ log: vi.fn() });
+    vi.mocked(fixture.client.connectedAccounts.list).mockResolvedValue({ items: [
+      { id: 'work', status, toolkit: { slug: 'gmail' } },
+      { id: 'personal', status: 'ACTIVE', toolkit: { slug: 'gmail' } },
+    ] });
+    vi.mocked(fixture.client.tools.proxyExecute).mockRejectedValue(new Error('Provider unavailable'));
+    await expect(fixture.service.deleteConnection('user_1', 'work')).rejects.toMatchObject({ status: 502 });
+    expect(fixture.accountRevoker.revoke).not.toHaveBeenCalled();
+    expect(fixture.client.connectedAccounts.delete).not.toHaveBeenCalled();
+    expect(fixture.client.connectedAccounts.disable).not.toHaveBeenCalled();
+  });
+
+  test('serializes duplicate removals and revokes the final remaining authorization', async () => {
+    const fixture = createFixture({ log: vi.fn() });
+    let items = ['first', 'last'].map((id) => ({ id, status: 'ACTIVE', toolkit: { slug: 'gmail' } }));
+    vi.mocked(fixture.client.connectedAccounts.list).mockImplementation(async () => ({ items }));
+    vi.mocked(fixture.client.connectedAccounts.delete).mockImplementation(async (id) => {
+      items = items.filter((item) => item.id !== id);
+      return {};
+    });
+    const results = await Promise.all(['first', 'last'].map((id) => fixture.service.deleteConnection('user_1', id)));
+    expect(results.map((result) => result.providerRevocation)).toEqual(['retained_for_duplicate', 'revoked']);
+    expect(fixture.accountRevoker.revoke).toHaveBeenCalledExactlyOnceWith('last');
   });
 
   test('verifies ownership with trimmed ids, then revokes, disables, and deletes in order', async () => {

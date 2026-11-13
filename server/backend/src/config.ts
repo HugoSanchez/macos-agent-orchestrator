@@ -11,6 +11,7 @@ const envSchema = z.object({
   HOST: z.string().min(1).default('127.0.0.1'),
   PORT: z.coerce.number().int().positive().default(8788),
   DATABASE_URL: optionalString(),
+  RENDER_GIT_COMMIT: optionalString(),
   WORKOS_API_KEY: optionalString(),
   WORKOS_CLIENT_ID: optionalString(),
   WORKOS_ISSUER_URL: z.preprocess(

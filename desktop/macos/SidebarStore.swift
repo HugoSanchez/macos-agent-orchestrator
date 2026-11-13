@@ -13,13 +13,15 @@ final class SidebarStore: ObservableObject {
     @Published private(set) var hasLoadedInitialData = false
     @Published private(set) var sessionError: String?
     @Published private(set) var connections: [SidebarConnection] = []
+    @Published private(set) var connectingApps: Set<String> = []
+    @Published private(set) var connectionError: String?
     @Published private(set) var customConnectors: [SidebarCustomConnector] = []
     @Published private(set) var skills: [SidebarSkill] = []
     @Published private(set) var crons: [SidebarCron] = []
 
     var needsCustomConnectorRefresh: Bool {
         customConnectors.contains {
-            $0.status.state == "pending_auth" || $0.status.cached == true
+            $0.status.state == "pending_auth" || $0.status.state == "connecting" || $0.status.cached == true
         }
     }
 
@@ -30,6 +32,7 @@ final class SidebarStore: ObservableObject {
     private var hasCompletedInitialSelection = false
     private var sessionRefreshSequence = 0
     private var connectionRefreshSequence = 0
+    private var customConnectorRefreshSequence = 0
     private var skillRefreshSequence = 0
     private var cronRefreshSequence = 0
 
@@ -54,6 +57,7 @@ final class SidebarStore: ObservableObject {
     func activate(client: (any SidebarAPIClientProtocol)?, accountId: String?) {
         generation += 1
         self.client = client
+        connectingApps = []
         isLoadingSessions = false
 
         guard self.accountId != accountId else { return }
@@ -145,9 +149,16 @@ final class SidebarStore: ObservableObject {
         }
 
         guard accepts(context), refreshSequence == connectionRefreshSequence else { return }
+        await refreshCustomConnectors()
+    }
+
+    func refreshCustomConnectors() async {
+        guard let context = requestContext() else { return }
+        customConnectorRefreshSequence += 1
+        let refreshSequence = customConnectorRefreshSequence
         do {
             let fetched = try await context.client.fetchCustomConnectors()
-            guard accepts(context), refreshSequence == connectionRefreshSequence else { return }
+            guard accepts(context), refreshSequence == customConnectorRefreshSequence else { return }
             customConnectors = fetched
         } catch {
             // Keep the last known list during a transient sidecar failure.
@@ -244,6 +255,45 @@ final class SidebarStore: ObservableObject {
         }
     }
 
+    func addConnection(toolkit: String, openURL: (URL) -> Bool) async {
+        guard let context = requestContext() else {
+            connectionError = "Connections are still loading. Try again in a moment."
+            return
+        }
+        guard !connectingApps.contains(toolkit) else { return }
+        connectingApps.insert(toolkit)
+        connectionError = nil
+        defer { if accepts(context) { connectingApps.remove(toolkit) } }
+        do {
+            var request = try await context.client.addConnection(toolkit: toolkit)
+            guard accepts(context) else { return }
+            if let redirect = request.redirectUrl, let url = URL(string: redirect), url.scheme == "https" {
+                guard openURL(url) else {
+                    throw NSError(domain: "Connections", code: 3, userInfo: [NSLocalizedDescriptionKey: "Could not open your browser for account sign-in. Try again."])
+                }
+            } else if request.status == "connected" && connections.contains(where: { $0.connectedAccountId == request.id }) {
+                throw NSError(domain: "Connections", code: 4, userInfo: [NSLocalizedDescriptionKey: "The connection service returned your existing account. Adding another account requires the updated connection service."])
+            } else if request.status != "connected" {
+                throw NSError(domain: "Connections", code: 1, userInfo: [NSLocalizedDescriptionKey: "Could not open account sign-in. Try again."])
+            }
+            for _ in 0..<150 {
+                guard accepts(context), !Task.isCancelled else { return }
+                if request.status == "connected" { await refreshConnections(); return }
+                if request.status == "failed" || request.status == "expired" {
+                    throw NSError(domain: "Connections", code: 2, userInfo: [NSLocalizedDescriptionKey: request.errorMessage ?? "Account sign-in did not complete. Try again."])
+                }
+                try await Task.sleep(for: .seconds(2))
+                guard accepts(context) else { return }
+                request = try await context.client.fetchConnectionRequest(id: request.id)
+            }
+            connectionError = "Account sign-in timed out. Try adding the account again."
+        } catch {
+            guard accepts(context) else { return }
+            connectionError = error.localizedDescription
+            reportError(error, "add connection")
+        }
+    }
+
     func disconnectConnection(id: String) async {
         guard let context = requestContext() else { return }
         let original = connections
@@ -331,6 +381,8 @@ final class SidebarStore: ObservableObject {
         hasLoadedInitialData = false
         sessionError = nil
         connections = []
+        connectingApps = []
+        connectionError = nil
         customConnectors = []
         skills = []
         crons = []
@@ -338,6 +390,7 @@ final class SidebarStore: ObservableObject {
         sessionRefreshSequence += 1
         connectionRefreshSequence += 1
         skillRefreshSequence += 1
+        customConnectorRefreshSequence += 1
         cronRefreshSequence += 1
     }
 

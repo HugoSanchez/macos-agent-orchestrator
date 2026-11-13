@@ -107,6 +107,7 @@ export class ComposioService {
     const lifecycleLog: ComposioLog = dependencies.log
       ?? ((event, details) => console.warn(`[composio] ${event}`, details));
     this.connections = new ComposioConnections({
+      now: dependencies.now,
       client: this.client,
       catalog: this.catalog,
       accountRevoker: dependencies.accountRevoker ?? new ComposioAccountRevoker({
@@ -146,9 +147,10 @@ export class ComposioService {
     userId: string,
     toolkitSlug: string,
     callbackUrl: string,
+    addAccount = false,
   ): Promise<BridgeConnectionRequestView> {
     this.assertConfigured();
-    return this.connections!.request(userId, toolkitSlug, callbackUrl);
+    return this.connections!.request(userId, toolkitSlug, callbackUrl, addAccount);
   }
 
   async getRequest(userId: string, requestId: string): Promise<BridgeConnectionRequestView> {
@@ -176,10 +178,10 @@ export class ComposioService {
     userId: string,
     toolSlug: string,
     arguments_: Record<string, unknown> | undefined,
-    _connectedAccountId?: string,
+    connectedAccountId?: string,
   ): Promise<BridgeToolExecutionView> {
     this.assertConfigured();
-    return this.toolRouter!.execute(userId, toolSlug, arguments_);
+    return this.toolRouter!.execute(userId, toolSlug, arguments_, connectedAccountId);
   }
 
   private assertConfigured(): void {

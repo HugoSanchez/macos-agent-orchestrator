@@ -11,11 +11,12 @@ export async function hermesOneShotText(
   config: Pick<HermesGatewayConfig, 'baseUrl' | 'apiKey'>,
   input: string,
   timeoutMs: number,
+  options: { model?: string | null } = {},
 ): Promise<string> {
   const res = await fetch(`${config.baseUrl}/v1/responses`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...hermesGatewayAuthHeaders(config) },
-    body: JSON.stringify({ input, truncation: 'auto', stream: false, store: false }),
+    body: JSON.stringify({ input, truncation: 'auto', stream: false, store: false, model: options.model ?? undefined }),
     signal: AbortSignal.timeout(timeoutMs),
   });
   if (!res.ok) return '';

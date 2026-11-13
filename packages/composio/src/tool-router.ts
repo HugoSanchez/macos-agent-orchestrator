@@ -125,6 +125,7 @@ export class ComposioToolRouter {
     userId: string,
     toolSlug: string,
     arguments_: Record<string, unknown> | undefined,
+    connectedAccountId?: string,
   ): Promise<BridgeToolExecutionView> {
     const normalizedUserId = normalizeUserId(userId);
     const slug = toolSlug.trim();
@@ -148,6 +149,25 @@ export class ComposioToolRouter {
 
     const executionSlug = tool?.slug ?? slug;
     this.assertToolkitAllowed(tool?.toolkit?.slug ?? null);
+    if (connectedAccountId) {
+      if (this.options.toolkitScope && !this.options.toolkitScope.includes(tool?.toolkit?.slug ?? '')) {
+        throw new ComposioServiceError(403, 'Toolkit is outside the configured execution scope.');
+      }
+      // IDs are supplied by callers. Verify user ownership and toolkit before
+      // passing one to the project-scoped SDK execution endpoint.
+      let cursor: string | undefined;
+      const visited = new Set<string>();
+      let owned = false;
+      do {
+        const page = await this.options.client.connectedAccounts.list({ userIds: [normalizedUserId], statuses: ['ACTIVE'], limit: 100, ...(cursor ? { cursor } : {}) });
+        owned = page.items.some((account) => account.id === connectedAccountId && !account.isDisabled
+          && account.toolkit.slug === tool?.toolkit?.slug);
+        cursor = page.nextCursor || undefined;
+        if (owned || !cursor || visited.has(cursor)) break;
+        visited.add(cursor);
+      } while (cursor);
+      if (!owned) throw new ComposioServiceError(404, 'Connected account not found for this tool.');
+    }
     if (tool) {
       const missing = getMissingRequiredToolArguments(tool.inputParameters, argumentRecord);
       if (missing.length > 0) {
@@ -167,7 +187,20 @@ export class ComposioToolRouter {
     }
 
     try {
-      const result = await (await this.getSession(normalizedUserId)).execute(executionSlug, argumentRecord);
+      // Bind explicit selections at the credential endpoint instead of relying
+      // on a shared session to resolve the selected account.
+      const result = connectedAccountId
+        ? await this.options.client.tools.execute(executionSlug, {
+          userId: normalizedUserId,
+          connectedAccountId,
+          arguments: argumentRecord,
+          ...(tool?.version && tool.version !== 'latest'
+            ? { version: tool.version }
+            // Dynamic discovery already uses the current schema. Older tool
+            // metadata can omit its version, as with session execution.
+            : { dangerouslySkipVersionCheck: true }),
+        })
+        : await (await this.getSession(normalizedUserId)).execute(executionSlug, argumentRecord);
       const record = asRecord(result);
       const error = record ? asString(record.error) : null;
       const logId = record ? asString(record.logId ?? record.log_id) : null;
@@ -201,6 +234,7 @@ export class ComposioToolRouter {
     const session = this.options.client.create(userId, {
       ...(this.options.toolkitScope ? { toolkits: this.options.toolkitScope } : {}),
       manageConnections: false,
+      multiAccount: { enable: true, requireExplicitSelection: true },
     });
     // Treat an in-flight creation as live so concurrent calls share it. Start
     // the TTL only after creation succeeds, rather than consuming it during a
@@ -242,6 +276,7 @@ export class ComposioToolRouter {
     const toolkit = asRecord(record.toolkit);
     return {
       slug: asString(record.slug) ?? slug,
+      version: asString(record.version),
       name: asString(record.name) ?? slug,
       description: asString(record.description),
       toolkit: toolkit ? { slug: asString(toolkit.slug), name: asString(toolkit.name) } : null,

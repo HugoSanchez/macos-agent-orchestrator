@@ -268,3 +268,23 @@
   cursor: pointer;
   text-align: right;
 }
+
+.custom-connector-dot.is-connecting {
+  background: transparent;
+  border: 1px solid currentColor;
+  border-right-color: transparent;
+  animation: connector-spin 1s linear infinite;
+}
+
+@keyframes connector-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .custom-connector-dot.is-connecting { animation: none; }
+}
+.sidebar-connected-app { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; }
+.sidebar-add-account { opacity: 0; padding: 0; border: 0; background: transparent; color: var(--ink-dim); cursor: pointer; font-size: 12px; line-height: 16px; width: 16px; height: 16px; }
+.sidebar-connected-app:hover .sidebar-add-account,
+.sidebar-connected-app:focus-within .sidebar-add-account,
+.sidebar-add-account:disabled { opacity: 1; }

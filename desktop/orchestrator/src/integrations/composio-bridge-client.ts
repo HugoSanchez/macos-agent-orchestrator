@@ -81,11 +81,12 @@ export class RemoteComposioBridgeClient implements ConnectedAppsProvider {
   async requestConnection(
     toolkit: string,
     callbackUrl: string,
+    addAccount = false,
   ): Promise<RemoteBridgeConnectionRequestView> {
     const body = await this.request<{ request: RemoteBridgeConnectionRequestView }>(
       'POST',
       '/v1/composio/connections/request',
-      { toolkit, callbackUrl },
+      { toolkit, callbackUrl, ...(addAccount ? { addAccount: true } : {}) },
     );
     return body.request;
   }
@@ -121,6 +122,7 @@ export class RemoteComposioBridgeClient implements ConnectedAppsProvider {
   async executeTool(
     toolSlug: string,
     arguments_: Record<string, unknown>,
+    connectedAccountId?: string,
   ): Promise<RemoteBridgeToolExecutionView> {
     const body = await this.request<{ result: RemoteBridgeToolExecutionView }>(
       'POST',
@@ -128,6 +130,7 @@ export class RemoteComposioBridgeClient implements ConnectedAppsProvider {
       {
         toolSlug,
         arguments: arguments_,
+        ...(connectedAccountId ? { connectedAccountId } : {}),
       },
     );
     return body.result;
@@ -174,7 +177,7 @@ export class RemoteComposioBridgeClient implements ConnectedAppsProvider {
 }
 
 const REMOTE_PROVIDER_REVOCATIONS: readonly RemoteProviderRevocation[] =
-  ['revoked', 'already_absent', 'manual_action_required'];
+  ['revoked', 'already_absent', 'manual_action_required', 'retained_for_duplicate'];
 
 // A 200 body must positively confirm the deletion of the account we asked
 // about before the caller may drop the local row. Missing fields, a false

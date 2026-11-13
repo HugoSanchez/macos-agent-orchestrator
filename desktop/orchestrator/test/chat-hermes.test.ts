@@ -12,6 +12,7 @@ describe('Hermes Chat Streaming', () => {
   let breakConversationChain = false;
   let holdResponseStream = false;
   let holdTitleResponse = false;
+  let titleFailure: 'http' | 'network' | 'empty' | null = null;
   let emitCommentary = false;
   let releaseTitleResponse: (() => void) | null = null;
   let responseCounter = 0;
@@ -33,6 +34,7 @@ describe('Hermes Chat Streaming', () => {
     breakConversationChain = false;
     holdResponseStream = false;
     holdTitleResponse = false;
+    titleFailure = null;
     emitCommentary = false;
     releaseTitleResponse = null;
     responseCounter = 0;
@@ -75,6 +77,27 @@ describe('Hermes Chat Streaming', () => {
         req.on('end', () => {
           const parsed = JSON.parse(body) as Record<string, unknown>;
           requestLog.push(parsed);
+
+          if (parsed.stream === false) {
+            const writeTitle = () => {
+              // Model-less requests fall through to a disconnected Codex default.
+              if (!parsed.model || titleFailure === 'http') {
+                res.writeHead(401, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'Model account disconnected' }));
+              } else if (titleFailure === 'network') {
+                res.destroy();
+              } else {
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ output: [{
+                  type: 'message', role: 'assistant',
+                  content: [{ type: 'output_text', text: titleFailure === 'empty' ? '' : 'Planning a weekend in Madrid' }],
+                }] }));
+              }
+            };
+            if (holdTitleResponse) releaseTitleResponse = writeTitle;
+            else writeTitle();
+            return;
+          }
 
           if (holdResponseStream) {
             res.writeHead(200, {
@@ -148,10 +171,6 @@ describe('Hermes Chat Streaming', () => {
             });
             writeResponseStream(res, responseId, outputText, 'Thinking through inflation drivers.', emitCommentary);
           };
-          if (holdTitleResponse && input.startsWith('Generate a concise title')) {
-            releaseTitleResponse = writeStream;
-            return;
-          }
           writeStream();
         });
         return;
@@ -319,6 +338,91 @@ describe('Hermes Chat Streaming', () => {
     }
     await doneReceived;
     while (!(await reader.read()).done) { /* drain the completed response */ }
+  });
+
+  it.each(['claude-opus-5-5', 'gpt-5.6-sol'])('titles %s chats using their model when the gateway default is disconnected', async (model) => {
+    const created = await fetchJson('/chat/sessions', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model }),
+    });
+    const sessionId = created.body.session.id as string;
+    const response = await fetch(url(`/chat/sessions/${sessionId}/messages`), {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: 'Help me plan a relaxing weekend in Madrid' }),
+    });
+    expect(await response.text()).toContain('"title":"Planning a weekend in Madrid"');
+    expect(requestLog).toHaveLength(2);
+    expect(requestLog[1]).toMatchObject({ model, stream: false, store: false });
+    expect((await fetchJson('/chat/sessions')).body.sessions.find((s: any) => s.id === sessionId).title)
+      .toBe('Planning a weekend in Madrid');
+  });
+
+  it.each(['http', 'network', 'empty'] as const)('uses the first prompt as a fallback when title generation fails: %s', async (failure) => {
+    titleFailure = failure;
+    const created = await fetchJson('/chat/sessions', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: 'claude-opus-5-5' }),
+    });
+    const sessionId = created.body.session.id as string;
+    const response = await fetch(url(`/chat/sessions/${sessionId}/messages`), {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: 'Help me plan a relaxing weekend in Madrid with friends' }),
+    });
+    const events = await response.text();
+    expect(events).toContain('"type":"done"');
+    expect(events).toContain('"title":"Help me plan a relaxing weekend in Madrid"');
+    expect((await fetchJson('/chat/sessions')).body.sessions.find((s: any) => s.id === sessionId).title)
+      .toBe('Help me plan a relaxing weekend in Madrid');
+  });
+
+  it('recovers an older untitled chat using the model selected on the new message', async () => {
+    const created = await fetchJson('/chat/sessions', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: 'Temporary title', model: 'gpt-5.6-sol' }),
+    });
+    const sessionId = created.body.session.id as string;
+    const first = await fetch(url(`/chat/sessions/${sessionId}/messages`), {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: 'Plan a weekend in Madrid' }),
+    });
+    await first.text();
+    await fetchJson(`/chat/sessions/${sessionId}/rename`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: 'New chat' }),
+    });
+    const next = await fetch(url(`/chat/sessions/${sessionId}/messages`), {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: 'Continue please', model: 'claude-opus-5-5' }),
+    });
+    expect(await next.text()).toContain('"title":"Planning a weekend in Madrid"');
+    expect(requestLog).toHaveLength(3);
+    expect(requestLog[2].model).toBe('claude-opus-5-5');
+    expect(requestLog[2].input).toContain('User: Plan a weekend in Madrid');
+  });
+
+  it('preserves a manual rename made while title generation is pending', async () => {
+    holdTitleResponse = true;
+    const created = await fetchJson('/chat/sessions', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: 'claude-opus-5-5' }),
+    });
+    const sessionId = created.body.session.id as string;
+    const response = await fetch(url(`/chat/sessions/${sessionId}/messages`), {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: 'Plan a weekend in Madrid' }),
+    });
+    try {
+      await vi.waitFor(() => expect(releaseTitleResponse).not.toBeNull());
+      await fetchJson(`/chat/sessions/${sessionId}/rename`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: 'My trip' }),
+      });
+    } finally {
+      releaseTitleResponse?.();
+    }
+    expect(await response.text()).not.toContain('"type":"session_title"');
+    expect((await fetchJson('/chat/sessions')).body.sessions.find((s: any) => s.id === sessionId).title)
+      .toBe('My trip');
   });
 
   it('rejects a second send for the same session and keeps cancellation reserved until unwind', async () => {

@@ -31,7 +31,9 @@ struct SessionSidebar: View {
     let onToggleSkillsCatalog: () -> Void
     let onOpenCron: (String) -> Void
     let onDeleteCron: (String) -> Void
-    let onDisconnectConnection: (String) -> Void
+    let connectingApps: Set<String>
+    let connectionError: String?
+    let onAddConnection: (String) -> Void
     let onRetryCustomConnector: (String) -> Void
     let onDisconnectCustomConnector: (String) -> Void
 
@@ -254,6 +256,9 @@ struct SessionSidebar: View {
                         )
 
                         if isConnectionsExpanded {
+                            if let connectionError {
+                                Text(connectionError).font(ConductorType.meta).foregroundStyle(theme.orange)
+                            }
                             VStack(alignment: .leading, spacing: 0) {
                                 if connections.isEmpty && customConnectors.isEmpty {
                                     if isBootstrapping {
@@ -264,11 +269,12 @@ struct SessionSidebar: View {
                                             .foregroundStyle(secondaryText)
                                     }
                                 } else {
-                                    ForEach(connections) { connection in
+                                    ForEach(SidebarConnection.apps(from: connections), id: \.toolkitSlug) { connection in
                                         SidebarConnectionRow(
                                             connection: connection,
                                             theme: theme,
-                                            onDisconnect: { onDisconnectConnection(connection.connectedAccountId) }
+                                            isConnecting: connectingApps.contains(connection.toolkitSlug),
+                                            onAdd: { onAddConnection(connection.toolkitSlug) }
                                         )
                                     }
                                     ForEach(customConnectors) { connector in
@@ -883,8 +889,10 @@ private struct SidebarCronRow: View {
 private struct SidebarConnectionRow: View {
     let connection: SidebarConnection
     let theme: ConductorThemePalette
-    let onDisconnect: () -> Void
+    let isConnecting: Bool
+    let onAdd: () -> Void
 
+    @FocusState private var isAddFocused: Bool
     @State private var isHovered = false
 
     // A live connection reads ink-faint; anything not active/connected
@@ -911,13 +919,20 @@ private struct SidebarConnectionRow: View {
 
             Spacer(minLength: 0)
 
-            if isHovered {
-                SidebarDisconnectAction(
-                    theme: theme,
-                    help: "Revoke access and remove this connection",
-                    onDisconnect: onDisconnect
-                )
-            } else if !isHealthy {
+            Button(action: onAdd) {
+                Image(systemName: isConnecting ? "hourglass" : "plus")
+                    .font(.system(size: 10, weight: .regular))
+                    .frame(width: 16, height: 16)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(theme.inkDim)
+            .opacity(isHovered || isConnecting || isAddFocused ? 1 : 0)
+            .focused($isAddFocused)
+            .disabled(isConnecting)
+            .help("Add another \(connection.displayToolkitName) account")
+            .accessibilityLabel("Add another \(connection.displayToolkitName) account")
+            if !isHealthy && !isHovered && !isConnecting {
                 Text(connection.status.capitalized)
                     .font(ConductorType.meta)
                     .foregroundStyle(statusColor)
@@ -943,6 +958,10 @@ private struct SidebarCustomConnectorRow: View {
         connector.status.state == "connected"
     }
 
+    private var isConnecting: Bool {
+        connector.status.state == "connecting"
+    }
+
     var body: some View {
         HStack(spacing: 10) {
             ConnectionLogo(
@@ -956,7 +975,7 @@ private struct SidebarCustomConnectorRow: View {
                     .font(ConductorType.rowTitle)
                     .foregroundStyle(isHovered ? theme.ink : theme.ink2)
                     .lineLimit(1)
-                if !isHealthy {
+                if !isHealthy && !isConnecting {
                     Text(connector.statusText)
                         .font(ConductorType.meta)
                         .foregroundStyle(theme.orange)
@@ -965,6 +984,14 @@ private struct SidebarCustomConnectorRow: View {
             }
 
             Spacer(minLength: 0)
+
+            if isConnecting {
+                ProgressView()
+                    .controlSize(.mini)
+                    .tint(theme.ink2)
+                    .help("Connecting…")
+                    .accessibilityLabel("Connecting to \(connector.displayName)")
+            }
 
             if isHovered {
                 SidebarDisconnectAction(
@@ -980,7 +1007,7 @@ private struct SidebarCustomConnectorRow: View {
             isHovered = hovering
         }
         .contextMenu {
-            if !isHealthy {
+            if !isHealthy && !isConnecting {
                 Button("Sign in again", action: onRetry)
             }
             Button("Disconnect", role: .destructive, action: onDisconnect)

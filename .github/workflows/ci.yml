@@ -178,10 +178,11 @@ jobs:
           pip install -q pytest pytest-asyncio pytest-timeout
           hermes --version || true
 
-      - name: Check progress delivery and rollback through the patched gateway
+      - name: Check OAuth sign-in and progress delivery through the patched gateway
         run: |
           HERMES_PYTHON="$(command -v python)" hermes-src/scripts/run_tests.sh \
-            tests/gateway/test_verso_progress_updates.py
+            tests/gateway/test_verso_progress_updates.py \
+            tests/gateway/test_verso_mcp_oauth.py
 
       - name: Boot gateway and run the shared smoke assertions
         run: |

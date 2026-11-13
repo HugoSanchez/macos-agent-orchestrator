@@ -6,25 +6,35 @@ import type {
   ComposioLog,
   ConnectedAccountItem,
   DisconnectConnectionResult,
+  ProviderRevocationStatus,
 } from './contracts.ts';
 import type { ConnectedAccountRevoker } from './account-revoker.ts';
 import type { ComposioToolkitCatalog } from './toolkit-catalog.ts';
-import { mapConnectedAccountStatus, normalizeUserId } from './shared.ts';
+import { asRecord, asString, mapConnectedAccountStatus, normalizeUserId } from './shared.ts';
 
 export interface ComposioConnectionsOptions {
   client: ComposioClient;
   catalog: ComposioToolkitCatalog;
   accountRevoker: ConnectedAccountRevoker;
   log?: ComposioLog;
+  now?: () => number;
   onConnectionsChanged?: (userId: string) => void;
 }
 
 /** Owns connected-account lifecycle and the user-ownership security boundary. */
 export class ComposioConnections {
+  private readonly identities = new Map<string, { expiresAt: number; value: Promise<string | null> }>();
+
+  private readonly deletions = new Map<string, Promise<void>>();
+
   constructor(private readonly options: ComposioConnectionsOptions) {}
 
   async list(userId: string): Promise<BridgeConnectionView[]> {
     const normalizedUserId = normalizeUserId(userId);
+    const now = (this.options.now ?? Date.now)();
+    for (const [key, cached] of this.identities) {
+      if (cached.expiresAt <= now) this.identities.delete(key);
+    }
     const accounts: ConnectedAccountItem[] = [];
     for await (const page of this.accountPages(normalizedUserId, ['ACTIVE', 'INACTIVE'])) {
       accounts.push(...page);
@@ -35,6 +45,7 @@ export class ComposioConnections {
         const metadata = await this.options.catalog.getMetadata(item.toolkit.slug);
         return {
           connectedAccountId: item.id,
+          accountLabel: await this.resolveAccountLabel(normalizedUserId, item),
           toolkitSlug: item.toolkit.slug,
           toolkitName: metadata.toolkitName,
           logoUrl: metadata.logoUrl,
@@ -44,8 +55,70 @@ export class ComposioConnections {
     return items.sort((left, right) => left.toolkitName.localeCompare(right.toolkitName));
   }
 
+  private async resolveAccountLabel(userId: string, item: ConnectedAccountItem): Promise<string | null> {
+    const label = accountLabel(item);
+    if (label || item.toolkit.slug !== 'gmail' || item.status !== 'ACTIVE') return label;
+    // Only called for accounts from the authenticated user's owned-account list.
+    // Use a fixed Google endpoint and expose only its email, never credentials.
+    const key = JSON.stringify([userId, item.id]);
+    const cached = this.identities.get(key);
+    if (cached) return cached.value;
+    const entry = {
+      expiresAt: Number.POSITIVE_INFINITY,
+      value: this.readGmailIdentity(item.id).catch(() => null),
+    };
+    this.identities.set(key, entry);
+    const identity = await entry.value;
+    entry.expiresAt = (this.options.now ?? Date.now)() + (identity ? 10 * 60_000 : 30_000);
+    return identity;
+  }
+
+  private async readGmailIdentity(id: string): Promise<string | null> {
+    const response = await this.options.client.tools.proxyExecute({
+      connectedAccountId: id,
+      endpoint: 'https://gmail.googleapis.com/gmail/v1/users/me/profile',
+      method: 'GET',
+    });
+    return response.status === 200 ? asString(asRecord(response.data)?.emailAddress)?.trim() || null : null;
+  }
+
+  private async hasActiveGmailDuplicate(userId: string, owned: ConnectedAccountItem): Promise<boolean> {
+    if (owned.toolkit.slug !== 'gmail' || owned.status === 'REVOKED') return false;
+    const candidates: ConnectedAccountItem[] = [];
+    for await (const page of this.accountPages(userId, ['ACTIVE'])) {
+      candidates.push(...page.filter((item) => item.id !== owned.id && item.toolkit.slug === 'gmail'
+        && item.status === 'ACTIVE' && !item.isDisabled));
+    }
+    if (!candidates.length) return false;
+    // Labels can be aliases or stale. Verify both Google identities afresh before
+    // retaining authorization for a second connection owned by this same user.
+    const identity = async (id: string) => {
+      const email = await this.readGmailIdentity(id).catch(() => null);
+      if (!email) throw new ComposioServiceError(502, 'Could not verify Gmail identities before removal. Try again.');
+      return email.toLowerCase();
+    };
+    const email = await identity(owned.id);
+    for (const candidate of candidates) {
+      if (await identity(candidate.id) === email) return true;
+    }
+    return false;
+  }
+
   async delete(userId: string, connectedAccountId: string): Promise<DisconnectConnectionResult> {
     const normalizedUserId = normalizeUserId(userId);
+    // Serialize removals so two simultaneous requests cannot both treat the
+    // other connection as retained and skip revoking the final authorization.
+    const previous = this.deletions.get(normalizedUserId) ?? Promise.resolve();
+    const result = previous.then(() => this.deleteOwnedConnection(normalizedUserId, connectedAccountId));
+    const settled = result.then(() => undefined, () => undefined);
+    this.deletions.set(normalizedUserId, settled);
+    try { return await result; }
+    finally {
+      if (this.deletions.get(normalizedUserId) === settled) this.deletions.delete(normalizedUserId);
+    }
+  }
+
+  private async deleteOwnedConnection(normalizedUserId: string, connectedAccountId: string): Promise<DisconnectConnectionResult> {
     const id = connectedAccountId.trim();
     if (!id) throw new ComposioServiceError(400, 'Missing "connectedAccountId"');
 
@@ -64,8 +137,10 @@ export class ComposioConnections {
     // would hide the row from the filtered connection list and strand a live
     // credential if the revoke needed a retry. A retryable revoke failure
     // throws here and leaves the account untouched.
-    const revocation = await this.options.accountRevoker.revoke(id);
-    if (revocation.status === 'manual_action_required') {
+    const retained = await this.hasActiveGmailDuplicate(normalizedUserId, owned);
+    const revocation = retained ? null : await this.options.accountRevoker.revoke(id);
+    const providerRevocation: ProviderRevocationStatus = revocation?.status ?? 'retained_for_duplicate';
+    if (revocation?.status === 'manual_action_required') {
       this.emitLifecycleEvent('composio.disconnect.manualActionRequired', {
         connectedAccountId: id,
         toolkitSlug: owned.toolkit.slug,
@@ -75,11 +150,16 @@ export class ComposioConnections {
 
     // Disable makes the UI update immediately while Composio's soft delete
     // converges. Deletion remains the security-critical operation.
-    try {
-      await this.options.client.connectedAccounts.disable(id);
-    } catch {
-      // Best effort only; deletion below still removes the credential record.
+    if (!retained) {
+      try {
+        await this.options.client.connectedAccounts.disable(id);
+      } catch {
+        // Best effort only; deletion below still removes the credential record.
+      }
     }
+    // For duplicate cleanup, leave the connection usable if deletion fails.
+    // Deleting its Composio record removes it without revoking Google's shared
+    // grant, which the retained connection still needs.
 
     try {
       await this.options.client.connectedAccounts.delete(id);
@@ -88,7 +168,7 @@ export class ComposioConnections {
         // Logged distinctly for monitoring: the provider grant is revoked but
         // Composio's credential record still exists. A retry is safe — revoke
         // then returns 409 and proceeds as manual_action_required.
-        this.emitLifecycleEvent('composio.disconnect.deleteFailedAfterRevoke', {
+        this.emitLifecycleEvent(retained ? 'composio.disconnect.duplicateDeleteFailed' : 'composio.disconnect.deleteFailedAfterRevoke', {
           connectedAccountId: id,
           toolkitSlug: owned.toolkit.slug,
         });
@@ -101,17 +181,17 @@ export class ComposioConnections {
     return {
       connectedAccountId: id,
       composioAccountDeleted: true,
-      providerRevocation: revocation.status,
+      providerRevocation,
     };
   }
 
-  async request(userId: string, toolkitInput: string, callbackUrl: string): Promise<BridgeConnectionRequestView> {
+  async request(userId: string, toolkitInput: string, callbackUrl: string, addAccount = false): Promise<BridgeConnectionRequestView> {
     const normalizedUserId = normalizeUserId(userId);
     const toolkit = await this.options.catalog.resolve(toolkitInput);
     const activeConnections = await this.list(normalizedUserId);
     const existing = activeConnections.find((connection) =>
       connection.toolkitSlug === toolkit.slug && connection.status === 'active');
-    if (existing) {
+    if (existing && !addAccount) {
       return {
         id: existing.connectedAccountId,
         toolkitSlug: existing.toolkitSlug,
@@ -127,6 +207,7 @@ export class ComposioConnections {
     const session = await this.options.client.create(normalizedUserId, {
       toolkits: [toolkit.slug],
       manageConnections: false,
+      multiAccount: { enable: true, requireExplicitSelection: true },
     });
     if (!session.authorize) throw new ComposioServiceError(502, 'Composio returned an invalid connection session.');
     const request = await session.authorize(toolkit.slug, { callbackUrl });
@@ -145,6 +226,7 @@ export class ComposioConnections {
   async getRequest(userId: string, requestId: string): Promise<BridgeConnectionRequestView> {
     const normalizedUserId = normalizeUserId(userId);
     const id = requestId.trim();
+    this.identities.delete(JSON.stringify([normalizedUserId, id]));
     if (!id) throw new ComposioServiceError(400, 'Missing "requestId"');
 
     // `connectedAccounts.get(id)` is project-scoped and does not enforce the
@@ -156,6 +238,7 @@ export class ComposioConnections {
     }
 
     const connectedAccount = await this.options.client.connectedAccounts.get(id);
+    if (connectedAccount.status === 'ACTIVE') this.options.onConnectionsChanged?.(normalizedUserId);
     const metadata = await this.options.catalog.getMetadata(connectedAccount.toolkit.slug);
     return {
       id: connectedAccount.id,
@@ -219,6 +302,12 @@ export class ComposioConnections {
       cursor = nextCursor;
     }
   }
+}
+
+// Only expose provider identity, never the credential-bearing state object.
+function accountLabel(item: ConnectedAccountItem): string | null {
+  const displayName = item.state?.val?.displayName;
+  return (typeof displayName === 'string' ? displayName.trim() : '') || item.alias?.trim() || null;
 }
 
 // The SDK does not expose a stable error type; recognize a missing-record

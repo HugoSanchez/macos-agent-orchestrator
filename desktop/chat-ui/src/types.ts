@@ -69,6 +69,7 @@ export interface ConnectionRequestView {
 
 export interface ConnectionView {
   connectedAccountId: string;
+  accountLabel?: string | null;
   toolkitSlug: string;
   toolkitName: string;
   logoUrl: string | null;
@@ -82,12 +83,14 @@ export interface CustomConnectorView {
   url: string;
   transport: 'http' | 'sse';
   auth: 'none' | 'bearer' | 'oauth';
+  oauth?: { clientId: string; hasClientSecret: boolean };
   logoUrl: string | null;
   lastKnownToolCount?: number;
   createdAt: string;
   updatedAt: string;
   status:
     | { state: 'connected'; toolCount: number; cached?: true }
+    | { state: 'connecting'; toolCount: 0 }
     | { state: 'pending_auth'; toolCount: 0 }
     | { state: 'failed'; toolCount: 0; reason: string };
 }
@@ -247,7 +250,7 @@ export const CODEX_CHAT_MODELS = [
   'gpt-5.6-luna',
   CODEX_ASTRA_MODEL,
 ] as const;
-export const ANTHROPIC_CHAT_MODELS = ['claude-opus-4-8', 'claude-fable-5', 'claude-sonnet-5', 'claude-haiku-4-5'] as const;
+export const ANTHROPIC_CHAT_MODELS = ['claude-opus-4-8', 'claude-opus-5-5', 'claude-fable-5', 'claude-sonnet-5', 'claude-haiku-4-5'] as const;
 export const CHAT_MODELS = [...CODEX_CHAT_MODELS, ...ANTHROPIC_CHAT_MODELS] as const;
 export type ChatModel = string;
 
@@ -258,6 +261,7 @@ export const CHAT_MODEL_LABELS: Record<string, string> = {
   'gpt-5.5': 'GPT-5.5',
   'gpt-6-astra': 'GPT-6 Astra',
   'claude-opus-4-8': 'Claude Opus 4.8',
+  'claude-opus-5-5': 'Claude Opus 5.5',
   'claude-fable-5': 'Claude Fable 5',
   'claude-sonnet-5': 'Claude Sonnet 5',
   'claude-haiku-4-5': 'Claude Haiku 4.5',

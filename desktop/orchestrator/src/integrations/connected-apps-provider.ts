@@ -10,11 +10,11 @@ export interface ConnectedAppsProvider {
   listConnections(): Promise<BridgeConnectionView[]>;
   deleteConnection(id: string): Promise<DisconnectConnectionResult>;
   listToolkits(query?: string, limit?: number): Promise<BridgeToolkitView[]>;
-  requestConnection(toolkit: string, callbackUrl: string): Promise<BridgeConnectionRequestView>;
+  requestConnection(toolkit: string, callbackUrl: string, addAccount?: boolean): Promise<BridgeConnectionRequestView>;
   getRequest(id: string): Promise<BridgeConnectionRequestView>;
   listTools(toolkits: string[]): Promise<BridgeSearchToolResult[]>;
   getToolSchemas(slugs: string[]): Promise<BridgeToolSchemaView[]>;
-  executeTool(slug: string, args: Record<string, unknown>): Promise<BridgeToolExecutionView>;
+  executeTool(slug: string, args: Record<string, unknown>, connectedAccountId?: string): Promise<BridgeToolExecutionView>;
 }
 
 export class ConnectedAppsError extends Error {

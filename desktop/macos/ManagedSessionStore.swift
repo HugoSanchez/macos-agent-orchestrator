@@ -1,5 +1,6 @@
 import Foundation
 import LocalAuthentication
+import OSLog
 import Security
 import SwiftUI
 
@@ -111,21 +112,26 @@ final class ManagedSessionStore: ObservableObject {
     @Published private(set) var isRestoringPersistedSession: Bool
     private var sessionLoadGeneration = 0
     private var refreshTask: Task<Void, Never>?
+    private var inFlightRefresh: Task<ManagedAppSession, Error>?
     private let persistence: Persistence
     private let transport: HTTPTransport
     private let backendURL: URL?
     private let isEnabled: Bool
+    private let refreshRetryDelay: TimeInterval
+    private let logger = Logger(subsystem: "com.verso.desktop", category: "ManagedSession")
 
     init(
         persistence: Persistence = .keychain,
         transport: HTTPTransport = .urlSession,
         backendURL: String? = nil,
-        isEnabled: Bool = true
+        isEnabled: Bool = true,
+        refreshRetryDelay: TimeInterval = 60
     ) {
         self.persistence = persistence
         self.transport = transport
         self.backendURL = backendURL.flatMap(URL.init(string:))
         self.isEnabled = isEnabled
+        self.refreshRetryDelay = refreshRetryDelay
         self.currentSession = nil
         self.isRestoringPersistedSession = isEnabled
         if isEnabled {
@@ -151,18 +157,59 @@ final class ManagedSessionStore: ObservableObject {
     }
 
     func refreshCurrentSession() async throws {
-        guard let currentSession else { return }
-        let refreshed = try await refresh(currentSession)
-        guard refreshed.userId == currentSession.userId else {
-            throw ManagedAuthError.invalidResponse
+        guard let session = currentSession else { return }
+        let generation = sessionLoadGeneration
+        // WorkOS rotates refresh tokens. Timer and wake requests must share one
+        // exchange, and a response must never restore a signed-out account.
+        let task: Task<ManagedAppSession, Error>
+        if let inFlightRefresh {
+            task = inFlightRefresh
+        } else {
+            task = Task { try await self.refresh(session) }
+            inFlightRefresh = task
         }
-        adopt(refreshed, message: nil)
+        do {
+            let refreshed = try await task.value
+            guard sessionLoadGeneration == generation else { return }
+            guard refreshed.userId == session.userId,
+                  refreshed.deviceId == session.deviceId,
+                  !refreshed.isExpired else {
+                throw ManagedAuthError.invalidResponse
+            }
+            inFlightRefresh = nil
+            adopt(refreshed, message: nil)
+        } catch {
+            guard sessionLoadGeneration == generation else { return }
+            inFlightRefresh = nil
+            if case ManagedAuthError.rejected(statusCode: 401, message: _) = error {
+                logger.notice("Session refresh rejected by backend; signing out")
+                clearSession(notify: false)
+                latestEvent = ManagedSessionEvent(
+                    id: UUID(),
+                    message: "Your session can no longer be renewed. Please sign in again.",
+                    isError: true
+                )
+            } else {
+                // Access-token expiry is not refresh-token revocation. Keep the
+                // credentials through offline periods, timeouts and server errors.
+                logger.notice("Session refresh unavailable; retaining credentials and scheduling retry")
+                scheduleRefresh(for: session, retryAfter: refreshRetryDelay)
+            }
+            throw error
+        }
+    }
+
+    func refreshAfterWake() async {
+        guard currentSession?.needsRefresh == true else { return }
+        try? await refreshCurrentSession()
     }
 
     func clearSession(notify: Bool = true) {
         guard isEnabled else { return }
         refreshTask?.cancel()
         refreshTask = nil
+        inFlightRefresh?.cancel()
+        inFlightRefresh = nil
         sessionLoadGeneration += 1
         currentSession = nil
         completeInitialRestoration()
@@ -173,6 +220,8 @@ final class ManagedSessionStore: ObservableObject {
     }
 
     private func adopt(_ session: ManagedAppSession, message: String?) {
+        inFlightRefresh?.cancel()
+        inFlightRefresh = nil
         sessionLoadGeneration += 1
         currentSession = session
         completeInitialRestoration()
@@ -200,71 +249,27 @@ final class ManagedSessionStore: ObservableObject {
                 return
             }
 
-            if restored.needsRefresh, self.backendURL != nil {
-                do {
-                    let refreshed = try await self.refresh(restored)
-                    guard refreshed.userId == restored.userId else {
-                        throw ManagedAuthError.invalidResponse
-                    }
-                    self.adopt(refreshed, message: nil)
-                    return
-                } catch {
-                    if restored.isExpired {
-                        persistence.delete()
-                        self.latestEvent = ManagedSessionEvent(
-                            id: UUID(),
-                            message: "Your session expired. Please sign in again.",
-                            isError: true
-                        )
-                        self.completeInitialRestoration()
-                        return
-                    }
-                }
-            }
-
-            guard !restored.isExpired else {
-                persistence.delete()
-                self.latestEvent = ManagedSessionEvent(
-                    id: UUID(),
-                    message: "Your session expired. Please sign in again.",
-                    isError: true
-                )
-                self.completeInitialRestoration()
-                return
-            }
-
             self.currentSession = restored
-            self.scheduleRefresh(for: restored)
+            if restored.needsRefresh, self.backendURL != nil {
+                try? await self.refreshCurrentSession()
+            } else {
+                self.scheduleRefresh(for: restored)
+            }
             self.completeInitialRestoration()
         }
     }
 
     private func scheduleRefresh(for session: ManagedAppSession, retryAfter: TimeInterval? = nil) {
         refreshTask?.cancel()
-        guard let expirationDate = session.expirationDate else {
-            clearSession(notify: false)
-            return
-        }
-        let delay = retryAfter ?? max(0, expirationDate.timeIntervalSinceNow - 5 * 60)
+        guard backendURL != nil else { return }
+        let delay = retryAfter ?? max(0, (session.expirationDate?.timeIntervalSinceNow ?? 0) - 5 * 60)
         refreshTask = Task { [weak self] in
             do {
                 try await Task.sleep(for: .seconds(delay))
                 guard let self, !Task.isCancelled, self.currentSession == session else { return }
                 try await self.refreshCurrentSession()
-            } catch is CancellationError {
-                return
             } catch {
-                guard let self, self.currentSession == session else { return }
-                if session.isExpired {
-                    self.clearSession(notify: false)
-                    self.latestEvent = ManagedSessionEvent(
-                        id: UUID(),
-                        message: "Your session expired. Please sign in again.",
-                        isError: true
-                    )
-                } else {
-                    self.scheduleRefresh(for: session, retryAfter: 60)
-                }
+                // refreshCurrentSession owns retries and terminal rejection.
             }
         }
     }
